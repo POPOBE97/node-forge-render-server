@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "name": "doubao-lalaland-v2-phase",
+  "fps": 60,
+  "track": {
+    "channels": [
+      "sp_effect_cycle_phase",
+      "sp_effect_pulse_gain",
+      "sp_effect_wave_radius_dp"
+    ],
+    "overrides": ["EffectPulseGain:value", "EffectWaveRadiusDp:value"]
+  },
+  "analyze": {
+    "jumpThresholdChannel": 2,
+    "jumpThresholdOverride": 128,
+    "checkPhysicIdentity": true,
+    "failOnJump": false
+  },
+  "actions": [
+    { "type": "step", "frames": 0 },
+    { "type": "label", "name": "to-collapsed-v2" },
+    { "type": "forceState", "stateId": "st_mt1ajfjb_q" },
+    { "type": "settle", "maxFrames": 360 },
+    { "type": "label", "name": "to-charging-v2" },
+    { "type": "forceState", "stateId": "st_mt1ajfjb_p" },
+    { "type": "settle", "maxFrames": 360 },
+    { "type": "step", "frames": 240 },
+    { "type": "label", "name": "to-supercharge-v2" },
+    { "type": "forceState", "stateId": "st_mt1ajfjb_r" },
+    { "type": "settle", "maxFrames": 360 },
+    { "type": "step", "frames": 120 },
+    { "type": "label", "name": "to-fastcharge-v2" },
+    { "type": "forceState", "stateId": "st_mt1ajfjb_s" },
+    { "type": "settle", "maxFrames": 360 },
+    { "type": "step", "frames": 120 }
+  ]
+}

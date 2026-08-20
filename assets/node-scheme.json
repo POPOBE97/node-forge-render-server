@@ -7200,8 +7200,14 @@
         "cosine-in-out",
         "cosine-out",
         "ease-in",
+        "ease-in-cubic",
         "ease-in-out",
+        "ease-in-out-cubic",
+        "ease-in-out-quartic",
+        "ease-in-quartic",
         "ease-out",
+        "ease-out-cubic",
+        "ease-out-quartic",
         "instant",
         "linear",
         "sine-in",
@@ -7224,6 +7230,12 @@
         "ease-in",
         "ease-out",
         "ease-in-out",
+        "ease-in-cubic",
+        "ease-out-cubic",
+        "ease-in-out-cubic",
+        "ease-in-quartic",
+        "ease-out-quartic",
+        "ease-in-out-quartic",
         "sine-in",
         "sine-out",
         "sine-in-out",
@@ -7237,6 +7249,12 @@
         "ease-in",
         "ease-out",
         "ease-in-out",
+        "ease-in-cubic",
+        "ease-out-cubic",
+        "ease-in-out-cubic",
+        "ease-in-quartic",
+        "ease-out-quartic",
+        "ease-in-out-quartic",
         "sine-in",
         "sine-out",
         "sine-in-out",
@@ -7265,32 +7283,6 @@
         ],
         "defaultPortType": "float",
         "defaultValue": 0
-      },
-      "blending": {
-        "ownerNodeTypes": [
-          "linear",
-          "ease-in",
-          "ease-out",
-          "ease-in-out",
-          "sine-in",
-          "sine-out",
-          "sine-in-out",
-          "cosine-in",
-          "cosine-out",
-          "cosine-in-out"
-        ],
-        "optional": true,
-        "type": "tween",
-        "defaults": {
-          "duration": 0.1,
-          "easing": "ease-in-out"
-        },
-        "easing": [
-          "linear",
-          "ease-in",
-          "ease-out",
-          "ease-in-out"
-        ]
       }
     }
   }

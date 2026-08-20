@@ -125,24 +125,38 @@ Render Graph
 
 #### Mutation Function ABI
 
-Graph Functions use ABI v8. Mutation Functions expose the Motion helpers:
+Graph Functions use ABI v10. Mutation Functions expose the Motion helpers:
 
 ```ts
 interface Motion<T> {
   readonly __nodeForgeMotionValue: T
+  repeat(n?: number): Motion<T>
+  delay(seconds: number): Motion<T>
 }
 
+interface MotionTiming {}
+
+declare function linear(options: { duration: number; delay?: number }): MotionTiming
+declare function spring(options: {
+  duration: number
+  bounce: number
+  delay?: number
+}): MotionTiming
 declare function setTo<T>(target: T, velocity?: T): Motion<T>
-declare function to<T>(
-  target: T,
-  spring: { duration: number; bounce: number },
-): Motion<T>
+declare function to<T>(target: T, timing: MotionTiming): Motion<T>
+declare function sequence<T>(steps: readonly Motion<T>[]): Motion<T>
 ```
 
 Every Function input is an ordinary value. `Motion<T>` is return-only and each Motion output binds
 exactly once to a formal State Output declaration. Derivation Functions have no Motion helpers and
 must return ordinary values. Function resources carry `kind`; scope, node type, ABI, source hash,
 and reflected ports must agree.
+
+`sequence` is non-empty and may be nested. `setTo` is instantaneous. `repeat(n = 1)` counts total
+plays, while `repeat(-1)` is infinite. Wrapper order is semantic: `plan.repeat(3).delay(1)` delays
+the group once; `plan.delay(1).repeat(3)` delays every play. The same descriptor on the same binding
+continues its persistent cursor; State activation or a descriptor change replaces it atomically.
+Plan advancement consumes the exact remaining `dt` across delays, segments, and repeat boundaries.
 
 #### Mutation transaction
 
@@ -156,7 +170,7 @@ MotionEngine.
 One declaration may receive at most one Motion return per frame. Duplicate applications are
 diagnostics, never last-write-wins. Each driver advances at most once per frame.
 
-Repeated per-frame `to(target, spring)` retargets the existing spring from its saved value and
+Repeated per-frame `to(target, spring(...))` retargets the existing spring from its saved value and
 velocity and advances it once; it never recreates the driver or resets elapsed time merely because
 the Function called it again. `setTo` writes `Q` directly. With no explicit velocity, finite
 difference adjacent target samples; activation at `dt=0` starts at zero velocity and does not

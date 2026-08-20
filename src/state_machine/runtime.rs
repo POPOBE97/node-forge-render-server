@@ -874,9 +874,12 @@ impl StateMachineRuntime {
     ) -> Option<AnimationTransition> {
         let mut candidates: Vec<&AnimationTransition> = Vec::new();
 
+        // A route that resolves back to the logical current State is a no-op,
+        // including AnyState -> current. Exclude it before condition matching
+        // so it cannot restart Motion or reset the State's local clock.
         // Current-state outgoing transitions first.
         for t in &self.definition.transitions {
-            if t.source == self.current_state_id {
+            if t.source == self.current_state_id && t.target != self.current_state_id {
                 candidates.push(t);
             }
         }
@@ -890,7 +893,7 @@ impl StateMachineRuntime {
             .map(|s| s.id.as_str());
         if let Some(any_id) = any_state_id {
             for t in &self.definition.transitions {
-                if t.source == any_id {
+                if t.source == any_id && t.target != self.current_state_id {
                     candidates.push(t);
                 }
             }
@@ -1452,7 +1455,6 @@ mod tests {
                 label: None,
                 duration,
                 delay: 0.0,
-                blending: None,
             },
         }];
         graph
@@ -1791,8 +1793,8 @@ mod tests {
             Some(serde_json::json!(5.0))
         );
 
-        let blending = rt.tick(0.5, &HashMap::new(), &vec![]);
-        assert_eq!(blending.current_state_id, "b");
+        let running = rt.tick(0.5, &HashMap::new(), &vec![]);
+        assert_eq!(running.current_state_id, "b");
         assert_eq!(
             rt.motion_engine
                 .physical_value(&StateParamKey::new("Node:x")),
@@ -1808,7 +1810,7 @@ mod tests {
         );
         assert!(
             triggered.overrides.is_empty()
-                && blending.overrides.is_empty()
+                && running.overrides.is_empty()
                 && completed.overrides.is_empty()
         );
     }
@@ -1927,6 +1929,57 @@ mod tests {
         // Fire event → transitions.
         let r2 = rt.tick(0.016, &HashMap::new(), &vec!["click".into()]);
         assert_eq!(r2.current_state_id, "s1");
+    }
+
+    #[test]
+    fn transitions_to_the_current_state_do_not_trigger_animation() {
+        let mut sm = minimal_sm();
+        declare_state_param(&mut sm, "Node:x", "float", serde_json::json!(0.0));
+        sm.states.push(AnimationState {
+            id: "a".into(),
+            name: "A".into(),
+            position: None,
+            state_param_overrides: [("Node:x".into(), serde_json::json!(1.0))]
+                .into_iter()
+                .collect(),
+            state_type: AnimationStateType::AnimationState,
+            mutation_graph: None,
+            derivation_id: None,
+        });
+        sm.transitions.push(AnimationTransition {
+            id: "entry_to_a".into(),
+            source: "entry".into(),
+            target: "a".into(),
+            motion_graph_id: "instant".into(),
+        });
+        sm.motion_graphs.push(with_event_condition(
+            timeline_motion_graph("same-state", 1.0),
+            "go",
+        ));
+        sm.transitions.extend([
+            AnimationTransition {
+                id: "a_to_a".into(),
+                source: "a".into(),
+                target: "a".into(),
+                motion_graph_id: "same-state".into(),
+            },
+            AnimationTransition {
+                id: "any_to_a".into(),
+                source: "any".into(),
+                target: "a".into(),
+                motion_graph_id: "same-state".into(),
+            },
+        ]);
+
+        let mut runtime = StateMachineRuntime::new(sm);
+        let entered = runtime.tick(0.0, &HashMap::new(), &vec![]);
+        assert_eq!(entered.current_state_id, "a");
+        assert_eq!(entered.active_transition_id, None);
+
+        let matched_same_state = runtime.tick(0.25, &HashMap::new(), &vec!["go".into()]);
+        assert_eq!(matched_same_state.current_state_id, "a");
+        assert_eq!(matched_same_state.active_transition_id, None);
+        assert_eq!(matched_same_state.state_local_times.get("a"), Some(&0.25));
     }
 
     #[test]

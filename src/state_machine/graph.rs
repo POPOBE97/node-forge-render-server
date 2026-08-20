@@ -641,8 +641,7 @@ fn evaluate_inner_node<'a>(
                     let value = match (phase, result) {
                         (
                             GraphEvaluationPhase::Render,
-                            super::graph_function::FunctionOutput::SetTo { .. }
-                            | super::graph_function::FunctionOutput::To { .. },
+                            super::graph_function::FunctionOutput::Motion(_),
                         ) => motion_engine.physical_value(&key).ok_or_else(|| {
                             anyhow::anyhow!(
                                 "MotionEngine has no physical value for '{}.{}'",
@@ -654,32 +653,19 @@ fn evaluate_inner_node<'a>(
                             GraphEvaluationPhase::Render,
                             super::graph_function::FunctionOutput::Value(_),
                         ) => bail!(
-                            "Graph Function '{}.{}' must return setTo(...) or to(...)",
+                            "Graph Function '{}.{}' must return a Motion plan",
                             node.id,
                             output.id
                         ),
                         (
                             GraphEvaluationPhase::All | GraphEvaluationPhase::Target,
-                            super::graph_function::FunctionOutput::SetTo { target, velocity },
-                        ) => motion_engine.set_to(
-                            &key,
-                            target.to_json(),
-                            velocity.map(|value| value.to_json()),
-                            ctx.dt,
-                        )?,
-                        (
-                            GraphEvaluationPhase::All | GraphEvaluationPhase::Target,
-                            super::graph_function::FunctionOutput::To {
-                                target,
-                                duration,
-                                bounce,
-                            },
-                        ) => motion_engine.to(&key, target.to_json(), duration, bounce, ctx.dt)?,
+                            super::graph_function::FunctionOutput::Motion(plan),
+                        ) => motion_engine.apply_mutation_plan(&key, plan, ctx.dt)?,
                         (
                             GraphEvaluationPhase::All | GraphEvaluationPhase::Target,
                             super::graph_function::FunctionOutput::Value(_),
                         ) => bail!(
-                            "Graph Function '{}.{}' must return setTo(...) or to(...)",
+                            "Graph Function '{}.{}' must return a Motion plan",
                             node.id,
                             output.id
                         ),
@@ -696,8 +682,7 @@ fn evaluate_inner_node<'a>(
                 } else {
                     match result {
                         super::graph_function::FunctionOutput::Value(value) => value,
-                        super::graph_function::FunctionOutput::SetTo { .. }
-                        | super::graph_function::FunctionOutput::To { .. } => bail!(
+                        super::graph_function::FunctionOutput::Motion(_) => bail!(
                             "Graph Function '{}.{}' returned Motion from a plain output",
                             node.id,
                             output.id

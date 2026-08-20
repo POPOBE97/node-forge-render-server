@@ -691,7 +691,6 @@ fn pinned_state_change_uses_authored_transition_without_resetting_the_clock() {
             label: None,
             duration: 1.0,
             delay: 0.0,
-            blending: None,
         },
     };
 

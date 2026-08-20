@@ -1209,11 +1209,6 @@ fn validate_motion_graphs(sm: &StateMachine) -> Result<()> {
                 if !timeline.delay.is_finite() || timeline.delay < 0.0 {
                     bail!("state_machine validation: timeline delay must be >= 0");
                 }
-                if let Some(blending) = &timeline.blending
-                    && (!blending.duration.is_finite() || blending.duration < 0.0)
-                {
-                    bail!("state_machine validation: blending duration must be >= 0");
-                }
                 continue;
             }
             match node {
@@ -1493,6 +1488,8 @@ fn validate_graph_core(
             .outputs
             .iter()
             .find(|port| port.id == connection.from.port_id)
+            .cloned()
+            .or_else(|| builtin_graph_output_port(source, &connection.from.port_id))
             .ok_or_else(|| {
                 anyhow::anyhow!(
                     "{label} connection '{}' has missing source port",
@@ -1509,7 +1506,7 @@ fn validate_graph_core(
                     connection.id
                 )
             })?;
-        validate_port_compatibility(label, source_port, target_port)?;
+        validate_port_compatibility(label, &source_port, target_port)?;
         if !incoming.insert((
             connection.to.node_id.as_str(),
             connection.to.port_id.as_str(),
@@ -1549,6 +1546,19 @@ fn validate_graph_core(
         bail!("{label} contains a cycle");
     }
     Ok(())
+}
+
+fn builtin_graph_output_port(node: &GraphInnerNode, port_id: &str) -> Option<GraphPort> {
+    match (node.node_type, port_id) {
+        (GraphInnerNodeType::FloatInput, "value") => Some(GraphPort {
+            id: "value".into(),
+            name: Some("Value".into()),
+            port_type: Some("float".into()),
+            array_length: None,
+            motion: None,
+        }),
+        _ => None,
+    }
 }
 
 fn validate_port_compatibility(label: &str, source: &GraphPort, target: &GraphPort) -> Result<()> {

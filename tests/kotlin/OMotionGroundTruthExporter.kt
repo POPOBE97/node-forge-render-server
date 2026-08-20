@@ -29,24 +29,6 @@ private data class Frame(
     val running: Boolean,
 )
 
-private data class MotionFrame(
-    val index: Int,
-    val time: Double,
-    val dt: Double,
-    val value: Double,
-    val velocity: Double,
-    val target: Double,
-    val driver: String,
-    val timelineProgress: Double?,
-    val blendingWeight: Double?,
-    val running: Boolean,
-)
-
-private data class MotionScenario(
-    val name: String,
-    val frames: List<MotionFrame>,
-)
-
 private fun repeated(delta: Float, count: Int) = List(count) { delta }
 
 private fun runScenario(scenario: Scenario): List<Frame> {
@@ -98,162 +80,6 @@ private fun Float.jsonNumber(): String = when {
     else -> toString()
 }
 
-private fun Double.jsonNumber(): String = when {
-    isNaN() -> error("NaN is not valid ground truth")
-    isInfinite() -> error("Infinity is not valid ground truth")
-    else -> toString()
-}
-
-private fun kotlinFrameSeconds(delta: Float): Double {
-    val nanos = (delta.toDouble() * NANOS_PER_SECOND).toLong()
-    return (nanos.toDouble() / NANOS_PER_SECOND).toFloat().toDouble()
-}
-
-private data class ScalarSample(val value: Double, val velocity: Double, val completed: Boolean)
-
-private fun timelineSample(from: Double, to: Double, elapsed: Double, duration: Double): ScalarSample {
-    val progress = if (duration <= 0.0) 1.0 else (elapsed / duration).coerceIn(0.0, 1.0)
-    val completed = progress >= 1.0
-    return ScalarSample(
-        value = from + (to - from) * progress,
-        velocity = if (completed || duration <= 0.0) 0.0 else (to - from) / duration,
-        completed = completed,
-    )
-}
-
-private fun easeInOut(value: Double): Pair<Double, Double> = if (value < 0.5) {
-    2.0 * value * value to 4.0 * value
-} else {
-    (-1.0 + (4.0 - 2.0 * value) * value) to (4.0 - 4.0 * value)
-}
-
-private fun tweenComposite(
-    outgoingValue: Double,
-    outgoingVelocity: Double,
-    incoming: ScalarSample,
-    blendElapsed: Double,
-    blendDuration: Double,
-): Triple<ScalarSample, Double, Double> {
-    val raw = if (blendDuration <= 0.0) 1.0 else (blendElapsed / blendDuration).coerceIn(0.0, 1.0)
-    val (weight, derivative) = easeInOut(raw)
-    val weightVelocity = if (blendDuration > 0.0 && raw < 1.0) {
-        derivative / blendDuration
-    } else {
-        0.0
-    }
-    val completed = raw >= 1.0 && incoming.completed
-    val value = outgoingValue + (incoming.value - outgoingValue) * weight
-    val velocity = if (completed) {
-        0.0
-    } else {
-        (1.0 - weight) * outgoingVelocity +
-            weight * incoming.velocity +
-            weightVelocity * (incoming.value - outgoingValue)
-    }
-    return Triple(ScalarSample(value, velocity, completed), raw, weight)
-}
-
-private fun holdToTimelineTween(): MotionScenario {
-    val delta = 1f / 60f
-    var elapsed = 0.0
-    var timelineElapsed = 0.0
-    var blendElapsed = 0.0
-    val frames = mutableListOf<MotionFrame>()
-    for (index in 0..60) {
-        val incoming = timelineSample(1.0, 2.0, timelineElapsed, 0.3)
-        val (sample, rawBlend, weight) = tweenComposite(1.0, 0.0, incoming, blendElapsed, 0.1)
-        frames += MotionFrame(
-            index,
-            elapsed,
-            if (index == 0) 0.0 else kotlinFrameSeconds(delta),
-            sample.value,
-            sample.velocity,
-            2.0,
-            "timeline+tween",
-            (timelineElapsed / 0.3).coerceIn(0.0, 1.0),
-            weight,
-            !sample.completed,
-        )
-        if (sample.completed) break
-        val dt = kotlinFrameSeconds(delta)
-        elapsed += dt
-        timelineElapsed = (timelineElapsed + dt).coerceAtMost(0.3)
-        blendElapsed = (blendElapsed + dt).coerceAtMost(0.1)
-        check(rawBlend <= 1.0)
-    }
-    return MotionScenario("stopped_hold_to_timeline_tween", frames)
-}
-
-private fun springToTimelineTween(): MotionScenario {
-    var presented = 0f
-    var clockNanos = INITIAL_CLOCK_NANOS
-    val delta = 1f / 60f
-    val frameDriver = ManualOMotionFrameDriver()
-    val controller = OMotionValueController.bindWithFrameDriver(
-        converter = OMotionVectorConverters.Float,
-        readCurrent = { presented },
-        applyValue = { presented = it },
-        frameDriver = frameDriver,
-    )
-    controller.animateTo(1f, OMotionSpringSpec(duration = 0.45f, bounce = 0.1f))
-    frameDriver.advance(clockNanos)
-    repeat(6) {
-        clockNanos += (delta.toDouble() * NANOS_PER_SECOND).toLong()
-        frameDriver.advance(clockNanos)
-    }
-
-    var elapsed = 0.0
-    var timelineElapsed = 0.0
-    var blendElapsed = 0.0
-    val frames = mutableListOf<MotionFrame>()
-    for (index in 0..60) {
-        val incoming = timelineSample(1.0, 2.0, timelineElapsed, 0.3)
-        val (sample, _, weight) = tweenComposite(
-            presented.toDouble(),
-            (controller.velocity ?: 0f).toDouble(),
-            incoming,
-            blendElapsed,
-            0.12,
-        )
-        frames += MotionFrame(
-            index,
-            elapsed,
-            if (index == 0) 0.0 else kotlinFrameSeconds(delta),
-            sample.value,
-            sample.velocity,
-            2.0,
-            "timeline+tween",
-            (timelineElapsed / 0.3).coerceIn(0.0, 1.0),
-            weight,
-            !sample.completed,
-        )
-        if (sample.completed) break
-        val dt = kotlinFrameSeconds(delta)
-        elapsed += dt
-        timelineElapsed = (timelineElapsed + dt).coerceAtMost(0.3)
-        blendElapsed = (blendElapsed + dt).coerceAtMost(0.12)
-        clockNanos += (delta.toDouble() * NANOS_PER_SECOND).toLong()
-        frameDriver.advance(clockNanos)
-    }
-    return MotionScenario("running_spring_to_timeline_tween", frames)
-}
-
-private fun writeMotionFrame(writer: java.io.Writer, frame: MotionFrame) {
-    writer.append("      {\"frame\": ").append(frame.index.toString())
-        .append(", \"time\": ").append(frame.time.jsonNumber())
-        .append(", \"dt\": ").append(frame.dt.jsonNumber())
-        .append(", \"value\": ").append(frame.value.jsonNumber())
-        .append(", \"velocity\": ").append(frame.velocity.jsonNumber())
-        .append(", \"target\": ").append(frame.target.jsonNumber())
-        .append(", \"driver\": \"").append(frame.driver).append("\"")
-        .append(", \"timelineProgress\": ")
-        .append(frame.timelineProgress?.jsonNumber() ?: "null")
-        .append(", \"blendingWeight\": ")
-        .append(frame.blendingWeight?.jsonNumber() ?: "null")
-        .append(", \"running\": ").append(frame.running.toString())
-        .append(", \"completed\": ").append((!frame.running).toString()).append("}")
-}
-
 private fun export(output: File) {
     val scenarios = listOf(
         Scenario("underdamped_60hz", 0.45f, 0.25f, repeated(1f / 60f, 240)),
@@ -301,7 +127,7 @@ private fun export(output: File) {
                     .append(", \"value\": ").append(frame.value.jsonNumber())
                     .append(", \"velocity\": ").append(frame.velocity.jsonNumber())
                     .append(", \"target\": ").append(frame.target.jsonNumber())
-                    .append(", \"driver\": \"spring\", \"timelineProgress\": null, \"blendingWeight\": null")
+                    .append(", \"driver\": \"spring\"")
                     .append(", \"running\": ").append(frame.running.toString())
                     .append(", \"completed\": ").append((!frame.running).toString()).append("}")
                 if (frameIndex != frames.lastIndex) writer.append(',')
@@ -309,20 +135,6 @@ private fun export(output: File) {
             }
             writer.append("    ]}")
             if (scenarioIndex != scenarios.lastIndex) writer.append(',')
-            writer.append('\n')
-        }
-        writer.append("  ],\n")
-        writer.append("  \"motionScenarios\": [\n")
-        val motionScenarios = listOf(holdToTimelineTween(), springToTimelineTween())
-        motionScenarios.forEachIndexed { scenarioIndex, scenario ->
-            writer.append("    {\"name\": \"").append(scenario.name).append("\", \"frames\": [\n")
-            scenario.frames.forEachIndexed { frameIndex, frame ->
-                writeMotionFrame(writer, frame)
-                if (frameIndex != scenario.frames.lastIndex) writer.append(',')
-                writer.append('\n')
-            }
-            writer.append("    ]}")
-            if (scenarioIndex != motionScenarios.lastIndex) writer.append(',')
             writer.append('\n')
         }
         writer.append("  ]\n}\n")

@@ -431,9 +431,15 @@ pub fn run_trace(scene: &SceneDSL, config: &TraceRunConfig) -> Result<TraceRunRe
     let mut current_values =
         build_initial_values(scene, &tracked_keys.iter().cloned().collect::<Vec<_>>());
 
-    // Channel availability is discovered after the first recorded step.
+    // Channel availability is accumulated across the whole run. Explicit
+    // filters are usable immediately so channels introduced by a later State
+    // activation are still captured.
     let mut available_channels: BTreeSet<String> = BTreeSet::new();
-    let mut resolved_channel_keys: Option<BTreeSet<String>> = None;
+    let mut resolved_channel_keys: Option<BTreeSet<String>> = match &config.channel_filter {
+        KeyFilter::Only(keys) => Some(keys.clone()),
+        KeyFilter::None => Some(BTreeSet::new()),
+        KeyFilter::All => None,
+    };
     let resolved_override_keys = config.override_filter.resolved_keys(&tracked_keys)?;
     let resolved_override_set: BTreeSet<String> = resolved_override_keys.iter().cloned().collect();
 
@@ -633,16 +639,10 @@ fn finalize_report(
     routing_forced: bool,
     frames: Vec<TraceReportFrame>,
     available_channels: BTreeSet<String>,
-    resolved_channel_keys: Option<BTreeSet<String>>,
+    _resolved_channel_keys: Option<BTreeSet<String>>,
     resolved_override_keys: Vec<String>,
 ) -> Result<TraceRunResult> {
-    let channel_keys = match &resolved_channel_keys {
-        Some(set) => set.iter().cloned().collect(),
-        None => config
-            .channel_filter
-            .resolved_keys(&available_channels)
-            .unwrap_or_default(),
-    };
+    let channel_keys = config.channel_filter.resolved_keys(&available_channels)?;
 
     let mut report_frames = frames;
     apply_analysis(&mut report_frames, &config.analyze);
@@ -1148,7 +1148,11 @@ pub fn run_schedule_trace(
     let resolved_override_set: BTreeSet<String> = resolved_override_keys.iter().cloned().collect();
 
     let mut available_channels: BTreeSet<String> = BTreeSet::new();
-    let mut resolved_channel_keys: Option<BTreeSet<String>> = None;
+    let mut resolved_channel_keys: Option<BTreeSet<String>> = match &config.channel_filter {
+        KeyFilter::Only(keys) => Some(keys.clone()),
+        KeyFilter::None => Some(BTreeSet::new()),
+        KeyFilter::All => None,
+    };
     let mut frames: Vec<TraceReportFrame> = Vec::with_capacity(schedule.frame_count());
     let current_label: Option<String> = None;
     // Schedule owns absolute times; cumulative is only for record_step API.
@@ -1665,9 +1669,13 @@ mod tests {
                     transition_error: vec![0.5],
                     transition_error_velocity: vec![0.0],
                     mutation_driver: "spring".into(),
+                    mutation_plan_path: None,
+                    mutation_repeat_iteration: None,
+                    mutation_repeat_count: None,
+                    mutation_delay_remaining: None,
+                    mutation_plan_completed: None,
                     transition_driver: "spring".into(),
                     timeline_progress: None,
-                    blending_progress: None,
                     current_timing_node_id: None,
                     pending_timing_node_ids: vec![],
                     canceled_timing_node_ids: vec![],
@@ -1698,9 +1706,13 @@ mod tests {
                     transition_error: vec![0.1],
                     transition_error_velocity: vec![0.0],
                     mutation_driver: "spring".into(),
+                    mutation_plan_path: None,
+                    mutation_repeat_iteration: None,
+                    mutation_repeat_count: None,
+                    mutation_delay_remaining: None,
+                    mutation_plan_completed: None,
                     transition_driver: "spring".into(),
                     timeline_progress: None,
-                    blending_progress: None,
                     current_timing_node_id: None,
                     pending_timing_node_ids: vec![],
                     canceled_timing_node_ids: vec![],

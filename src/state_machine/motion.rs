@@ -5,20 +5,162 @@
 
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::f64::consts::PI;
 
 use serde::{Deserialize, Serialize};
 
-use super::easing::ease;
+use super::easing::timeline_curve;
 #[cfg(test)]
 use super::types::StateValueSource;
-use super::types::{
-    EasingKind, StateParamKey, TimelineBlending, TimelinePreset, TransitionMotionGraph,
-    TransitionMotionNode,
-};
+use super::types::{StateParamKey, TimelinePreset, TransitionMotionGraph, TransitionMotionNode};
 
 const ANY_CHANNEL: &str = "*";
 const NANOS_PER_SECOND: f64 = 1_000_000_000.0;
+const MAX_MUTATION_PLAN_DEPTH: usize = 64;
+const MAX_MUTATION_PLAN_NODES: usize = 4096;
+const MAX_MUTATION_PLAN_OPS_PER_STEP: usize = 1_000_000;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum MutationTiming {
+    Linear {
+        duration: f64,
+        delay: f64,
+    },
+    Spring {
+        duration: f64,
+        bounce: f64,
+        delay: f64,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum MutationPlan {
+    SetTo {
+        target: serde_json::Value,
+        velocity: Option<serde_json::Value>,
+    },
+    To {
+        target: serde_json::Value,
+        timing: MutationTiming,
+    },
+    Sequence(Vec<MutationPlan>),
+    Repeat {
+        child: Box<MutationPlan>,
+        count: i64,
+    },
+    Delay {
+        child: Box<MutationPlan>,
+        delay: f64,
+    },
+}
+
+impl MutationPlan {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        let mut nodes = 0;
+        self.validate_inner(0, &mut nodes)?;
+        Ok(())
+    }
+
+    fn validate_inner(&self, depth: usize, nodes: &mut usize) -> anyhow::Result<()> {
+        if depth > MAX_MUTATION_PLAN_DEPTH {
+            anyhow::bail!("Mutation plan exceeds maximum nesting depth");
+        }
+        *nodes += 1;
+        if *nodes > MAX_MUTATION_PLAN_NODES {
+            anyhow::bail!("Mutation plan exceeds maximum node count");
+        }
+        match self {
+            Self::SetTo { target, velocity } => {
+                let target = finite_numeric_value(target, "setTo target")?;
+                if let Some(velocity) = velocity {
+                    let velocity = finite_numeric_value(velocity, "setTo velocity")?;
+                    if !target.has_same_shape(&velocity) {
+                        anyhow::bail!("setTo velocity shape changed");
+                    }
+                }
+            }
+            Self::To { target, timing } => {
+                finite_numeric_value(target, "to target")?;
+                match timing {
+                    MutationTiming::Linear { duration, delay } => {
+                        validate_non_negative_finite(*duration, "linear duration")?;
+                        validate_non_negative_finite(*delay, "linear delay")?;
+                    }
+                    MutationTiming::Spring {
+                        duration,
+                        bounce,
+                        delay,
+                    } => {
+                        if !duration.is_finite() || *duration <= 0.0 {
+                            anyhow::bail!("spring duration must be > 0");
+                        }
+                        if !bounce.is_finite() || *bounce <= -1.0 || *bounce >= 1.0 {
+                            anyhow::bail!("spring bounce must be in (-1, 1)");
+                        }
+                        validate_non_negative_finite(*delay, "spring delay")?;
+                    }
+                }
+            }
+            Self::Sequence(children) => {
+                if children.is_empty() {
+                    anyhow::bail!("sequence(...) requires at least one child");
+                }
+                for child in children {
+                    child.validate_inner(depth + 1, nodes)?;
+                }
+            }
+            Self::Repeat { child, count } => {
+                if *count != -1 && *count < 1 {
+                    anyhow::bail!("repeat count must be -1 or an integer >= 1");
+                }
+                child.validate_inner(depth + 1, nodes)?;
+                if *count == -1 && child.minimum_duration() <= 0.0 {
+                    anyhow::bail!("infinite repeat requires a child that consumes time");
+                }
+            }
+            Self::Delay { child, delay } => {
+                validate_non_negative_finite(*delay, "plan delay")?;
+                child.validate_inner(depth + 1, nodes)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn minimum_duration(&self) -> f64 {
+        match self {
+            Self::SetTo { .. } => 0.0,
+            Self::To { timing, .. } => match timing {
+                MutationTiming::Linear { duration, delay }
+                | MutationTiming::Spring {
+                    duration, delay, ..
+                } => duration + delay,
+            },
+            Self::Sequence(children) => children.iter().map(Self::minimum_duration).sum(),
+            Self::Repeat { child, count } => {
+                if *count == -1 {
+                    f64::INFINITY
+                } else {
+                    child.minimum_duration() * *count as f64
+                }
+            }
+            Self::Delay { child, delay } => delay + child.minimum_duration(),
+        }
+    }
+
+    fn first_target(&self) -> Option<&serde_json::Value> {
+        match self {
+            Self::SetTo { target, .. } | Self::To { target, .. } => Some(target),
+            Self::Sequence(children) => children.iter().find_map(Self::first_target),
+            Self::Repeat { child, .. } | Self::Delay { child, .. } => child.first_target(),
+        }
+    }
+}
+
+fn validate_non_negative_finite(value: f64, label: &str) -> anyhow::Result<()> {
+    if !value.is_finite() || value < 0.0 {
+        anyhow::bail!("{label} must be finite and >= 0");
+    }
+    Ok(())
+}
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -33,9 +175,18 @@ pub struct MotionChannelDebug {
     pub transition_error: Vec<f64>,
     pub transition_error_velocity: Vec<f64>,
     pub mutation_driver: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mutation_plan_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mutation_repeat_iteration: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mutation_repeat_count: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mutation_delay_remaining: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mutation_plan_completed: Option<bool>,
     pub transition_driver: String,
     pub timeline_progress: Option<f64>,
-    pub blending_progress: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_timing_node_id: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -326,6 +477,45 @@ impl MotionEngine {
         ))
     }
 
+    /// Apply one immutable Mutation plan descriptor. Bare `setTo` and an
+    /// undelayed bare spring retain their frame-driven retargeting behavior;
+    /// composed plans own a persistent cursor and advance exactly once here.
+    pub fn apply_mutation_plan(
+        &mut self,
+        key: &StateParamKey,
+        plan: MutationPlan,
+        dt: f64,
+    ) -> anyhow::Result<serde_json::Value> {
+        if !self.mutation_frame_calls.insert(key.clone()) {
+            anyhow::bail!(
+                "Motion output '{}' was applied more than once this frame",
+                key_string(key)
+            );
+        }
+        plan.validate()?;
+        let fallback = self
+            .current_values
+            .get(key)
+            .cloned()
+            .or_else(|| plan.first_target().cloned())
+            .ok_or_else(|| anyhow::anyhow!("Mutation plan has no target value"))?;
+        let channel = self
+            .channels
+            .entry(key.clone())
+            .or_insert_with(|| Channel::hold(fallback));
+        channel.apply_mutation_plan(plan, kotlin_frame_seconds(dt))?;
+        let sample = channel.sample();
+        let published = publish_numeric_value(
+            self.publication_types.get(key).map(String::as_str),
+            &sample.value,
+        );
+        self.current_values.insert(key.clone(), published);
+        Ok(publish_numeric_value(
+            self.publication_types.get(key).map(String::as_str),
+            &channel.target_sample().value,
+        ))
+    }
+
     /// Update global uniform values from outside the state machine. An active
     /// animation transaction retains priority until its channel completes.
     pub fn update_external_values(&mut self, updates: &[(StateParamKey, serde_json::Value)]) {
@@ -400,6 +590,7 @@ impl MotionEngine {
             let sample = channel.sample();
             let target = channel.target_sample();
             let error = channel.error_sample();
+            let mutation_debug = channel.mutation_debug();
             let state_value = self
                 .state_values
                 .get(key)
@@ -423,9 +614,13 @@ impl MotionEngine {
                 transition_error: error.value.components().to_vec(),
                 transition_error_velocity: error.velocity.components().to_vec(),
                 mutation_driver: target.driver.to_string(),
+                mutation_plan_path: mutation_debug.path,
+                mutation_repeat_iteration: mutation_debug.repeat_iteration,
+                mutation_repeat_count: mutation_debug.repeat_count,
+                mutation_delay_remaining: mutation_debug.delay_remaining,
+                mutation_plan_completed: mutation_debug.completed,
                 transition_driver: error.driver.to_string(),
                 timeline_progress: sample.timeline_progress,
-                blending_progress: sample.blending_progress,
                 current_timing_node_id: channel.current_timing_node_id(),
                 pending_timing_node_ids: channel.pending_timing_node_ids(),
                 canceled_timing_node_ids: channel.canceled_timing_node_ids(),
@@ -843,7 +1038,6 @@ enum MotionPlan {
         duration: f64,
         delay: f64,
         curve: TimelinePreset,
-        blending: Option<TimelineBlending>,
     },
     Instant,
 }
@@ -855,7 +1049,6 @@ impl MotionPlan {
                 duration: timeline.duration,
                 delay: timeline.delay,
                 curve,
-                blending: timeline.blending.clone(),
             });
         }
         Some(match node {
@@ -891,15 +1084,11 @@ impl MotionPlan {
                 delay: 0.0,
             },
             Self::Timeline {
-                duration,
-                curve,
-                blending,
-                ..
+                duration, curve, ..
             } => Self::Timeline {
                 duration: *duration,
                 delay: 0.0,
                 curve: *curve,
-                blending: blending.clone(),
             },
             Self::Instant => Self::Instant,
         }
@@ -1337,7 +1526,7 @@ impl PlanExecutor {
     fn physical_sample(&self, target: &DriverSample) -> DriverSample {
         let completed = self.nodes[self.root].status == PlanStatus::Completed;
         let Some(active) = &self.active else {
-            return DriverSample::numeric(self.physical.clone(), "hold", completed, None, None);
+            return DriverSample::numeric(self.physical.clone(), "hold", completed, None);
         };
         let sample = active.driver.sample();
         match active.mode {
@@ -1352,7 +1541,6 @@ impl PlanExecutor {
                 completed,
                 persistent: false,
                 timeline_progress: sample.timeline_progress,
-                blending_progress: sample.blending_progress,
             },
         }
     }
@@ -1366,7 +1554,6 @@ impl PlanExecutor {
             completed: physical.completed,
             persistent: false,
             timeline_progress: physical.timeline_progress,
-            blending_progress: physical.blending_progress,
         }
     }
 
@@ -1401,6 +1588,485 @@ impl PlanExecutor {
 }
 
 #[derive(Debug, Clone)]
+struct MutationInstruction {
+    path: String,
+    kind: MutationInstructionKind,
+}
+
+#[derive(Debug, Clone)]
+enum MutationInstructionKind {
+    SetTo {
+        target: NumericValue,
+        velocity: Option<NumericValue>,
+    },
+    Linear {
+        target: NumericValue,
+        duration: f64,
+    },
+    Spring {
+        target: NumericValue,
+        duration: f64,
+        bounce: f64,
+    },
+    Wait {
+        duration: f64,
+    },
+    RepeatStart {
+        count: i64,
+    },
+    RepeatEnd {
+        start: usize,
+    },
+}
+
+#[derive(Debug, Clone)]
+struct RepeatCursor {
+    start: usize,
+    count: i64,
+    iteration: u64,
+}
+
+#[derive(Debug, Clone)]
+enum ActiveMutationSegment {
+    Wait {
+        remaining: f64,
+        path: String,
+    },
+    Linear {
+        driver: TimelineDriver,
+        path: String,
+    },
+    Spring {
+        driver: SpringDriver,
+        path: String,
+    },
+}
+
+#[derive(Debug, Clone, Default)]
+struct MutationPlanDebug {
+    path: Option<String>,
+    repeat_iteration: Option<u64>,
+    repeat_count: Option<i64>,
+    delay_remaining: Option<f64>,
+    completed: Option<bool>,
+}
+
+#[derive(Debug, Clone)]
+struct MutationPlanExecutor {
+    plan: MutationPlan,
+    instructions: Vec<MutationInstruction>,
+    pc: usize,
+    repeats: Vec<RepeatCursor>,
+    active: Option<ActiveMutationSegment>,
+    sample: NumericSample,
+    completed: bool,
+}
+
+impl MutationPlanExecutor {
+    fn new(plan: MutationPlan, initial: DriverSample) -> anyhow::Result<Self> {
+        plan.validate()?;
+        let mut instructions = Vec::new();
+        compile_mutation_plan(&plan, "root", &initial.value, &mut instructions)?;
+        let mut executor = Self {
+            plan,
+            instructions,
+            pc: 0,
+            repeats: Vec::new(),
+            active: None,
+            sample: NumericSample {
+                value: initial.value,
+                velocity: initial.velocity,
+            },
+            completed: false,
+        };
+        executor.advance(0.0)?;
+        Ok(executor)
+    }
+
+    fn matches(&self, plan: &MutationPlan) -> bool {
+        &self.plan == plan
+    }
+
+    fn advance(&mut self, dt: f64) -> anyhow::Result<()> {
+        if self.completed {
+            return Ok(());
+        }
+        let mut remaining = dt.max(0.0);
+        let mut operations = 0usize;
+        loop {
+            operations += 1;
+            if operations > MAX_MUTATION_PLAN_OPS_PER_STEP {
+                anyhow::bail!("Mutation plan exceeded the per-frame operation budget");
+            }
+
+            if let Some(active) = &mut self.active {
+                match active {
+                    ActiveMutationSegment::Wait {
+                        remaining: wait, ..
+                    } => {
+                        if remaining <= 0.0 {
+                            break;
+                        }
+                        let consumed = remaining.min(*wait);
+                        *wait -= consumed;
+                        remaining -= consumed;
+                        if *wait <= f64::EPSILON {
+                            self.active = None;
+                            self.pc += 1;
+                            continue;
+                        }
+                        break;
+                    }
+                    ActiveMutationSegment::Linear { driver, .. } => {
+                        if remaining <= 0.0 {
+                            break;
+                        }
+                        let consumed =
+                            remaining.min((driver.duration.max(0.0) - driver.elapsed).max(0.0));
+                        driver.step(consumed);
+                        let sample = driver.sample();
+                        self.sample = NumericSample {
+                            value: sample.value,
+                            velocity: sample.velocity,
+                        };
+                        remaining -= consumed;
+                        if sample.completed {
+                            self.active = None;
+                            self.pc += 1;
+                            continue;
+                        }
+                        break;
+                    }
+                    ActiveMutationSegment::Spring { driver, .. } => {
+                        if remaining <= 0.0 {
+                            break;
+                        }
+                        let consumed = advance_spring_exact(driver, remaining);
+                        let sample = driver.sample();
+                        self.sample = NumericSample {
+                            value: sample.value,
+                            velocity: sample.velocity,
+                        };
+                        remaining = (remaining - consumed).max(0.0);
+                        if sample.completed {
+                            self.active = None;
+                            self.pc += 1;
+                            continue;
+                        }
+                        break;
+                    }
+                }
+            }
+
+            let Some(instruction) = self.instructions.get(self.pc).cloned() else {
+                self.completed = true;
+                self.sample.velocity = self
+                    .sample
+                    .value
+                    .same_shape(vec![0.0; self.sample.value.len()]);
+                break;
+            };
+            match instruction.kind {
+                MutationInstructionKind::SetTo { target, velocity } => {
+                    self.sample = NumericSample {
+                        velocity: velocity
+                            .unwrap_or_else(|| target.same_shape(vec![0.0; target.len()])),
+                        value: target,
+                    };
+                    self.pc += 1;
+                }
+                MutationInstructionKind::Wait { duration } => {
+                    if duration <= 0.0 {
+                        self.pc += 1;
+                        continue;
+                    }
+                    self.sample.velocity =
+                        self.sample
+                            .value
+                            .same_shape(vec![0.0; self.sample.value.len()]);
+                    self.active = Some(ActiveMutationSegment::Wait {
+                        remaining: duration,
+                        path: instruction.path,
+                    });
+                }
+                MutationInstructionKind::Linear { target, duration } => {
+                    if duration <= 0.0 {
+                        self.sample = NumericSample {
+                            velocity: target.same_shape(vec![0.0; target.len()]),
+                            value: target,
+                        };
+                        self.pc += 1;
+                        continue;
+                    }
+                    self.active = Some(ActiveMutationSegment::Linear {
+                        driver: TimelineDriver::new(
+                            self.sample.value.clone(),
+                            target,
+                            duration,
+                            TimelinePreset::Linear,
+                        ),
+                        path: instruction.path,
+                    });
+                }
+                MutationInstructionKind::Spring {
+                    target,
+                    duration,
+                    bounce,
+                } => {
+                    if same_components(&self.sample.value, &target)
+                        && self
+                            .sample
+                            .velocity
+                            .components()
+                            .iter()
+                            .all(|velocity| *velocity == 0.0)
+                    {
+                        self.sample.value = target;
+                        self.pc += 1;
+                        continue;
+                    }
+                    self.active = Some(ActiveMutationSegment::Spring {
+                        driver: SpringDriver::new(
+                            self.sample.value.clone(),
+                            self.sample.velocity.clone(),
+                            target,
+                            duration,
+                            bounce,
+                        ),
+                        path: instruction.path,
+                    });
+                }
+                MutationInstructionKind::RepeatStart { count } => {
+                    self.repeats.push(RepeatCursor {
+                        start: self.pc,
+                        count,
+                        iteration: 0,
+                    });
+                    self.pc += 1;
+                }
+                MutationInstructionKind::RepeatEnd { start } => {
+                    let cursor = self.repeats.last_mut().ok_or_else(|| {
+                        anyhow::anyhow!("Mutation repeat cursor stack is unbalanced")
+                    })?;
+                    if cursor.start != start {
+                        anyhow::bail!("Mutation repeat cursor does not match its plan");
+                    }
+                    cursor.iteration = cursor.iteration.saturating_add(1);
+                    if cursor.count == -1 || cursor.iteration < cursor.count as u64 {
+                        self.pc = start + 1;
+                    } else {
+                        self.repeats.pop();
+                        self.pc += 1;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn sample(&self) -> DriverSample {
+        let (driver, timeline_progress) = match &self.active {
+            Some(ActiveMutationSegment::Wait { .. }) => ("mutation-delay", None),
+            Some(ActiveMutationSegment::Linear { driver, .. }) => {
+                ("mutation-linear", driver.sample().timeline_progress)
+            }
+            Some(ActiveMutationSegment::Spring { .. }) => ("mutation-spring", None),
+            None => ("mutation-plan", None),
+        };
+        DriverSample {
+            value: self.sample.value.clone(),
+            velocity: self.sample.velocity.clone(),
+            driver,
+            completed: self.completed,
+            persistent: !self.completed,
+            timeline_progress,
+        }
+    }
+
+    fn debug(&self) -> MutationPlanDebug {
+        let path = self.active.as_ref().map(|active| match active {
+            ActiveMutationSegment::Wait { path, .. }
+            | ActiveMutationSegment::Linear { path, .. }
+            | ActiveMutationSegment::Spring { path, .. } => path.clone(),
+        });
+        let delay_remaining = match &self.active {
+            Some(ActiveMutationSegment::Wait { remaining, .. }) => Some(*remaining),
+            _ => None,
+        };
+        let repeat = self.repeats.last();
+        MutationPlanDebug {
+            path,
+            repeat_iteration: repeat.map(|cursor| cursor.iteration + 1),
+            repeat_count: repeat.map(|cursor| cursor.count),
+            delay_remaining,
+            completed: Some(self.completed),
+        }
+    }
+}
+
+fn compile_mutation_plan(
+    plan: &MutationPlan,
+    path: &str,
+    expected_shape: &NumericValue,
+    instructions: &mut Vec<MutationInstruction>,
+) -> anyhow::Result<()> {
+    match plan {
+        MutationPlan::SetTo { target, velocity } => {
+            let target = finite_numeric_value(target, "setTo target")?;
+            ensure_mutation_shape(expected_shape, &target)?;
+            let velocity = velocity
+                .as_ref()
+                .map(|value| finite_numeric_value(value, "setTo velocity"))
+                .transpose()?;
+            if velocity
+                .as_ref()
+                .is_some_and(|velocity| !target.has_same_shape(velocity))
+            {
+                anyhow::bail!("setTo velocity shape changed");
+            }
+            instructions.push(MutationInstruction {
+                path: path.to_string(),
+                kind: MutationInstructionKind::SetTo { target, velocity },
+            });
+        }
+        MutationPlan::To { target, timing } => {
+            let target = finite_numeric_value(target, "to target")?;
+            ensure_mutation_shape(expected_shape, &target)?;
+            let (delay, kind) = match timing {
+                MutationTiming::Linear { duration, delay } => (
+                    *delay,
+                    MutationInstructionKind::Linear {
+                        target,
+                        duration: *duration,
+                    },
+                ),
+                MutationTiming::Spring {
+                    duration,
+                    bounce,
+                    delay,
+                } => (
+                    *delay,
+                    MutationInstructionKind::Spring {
+                        target,
+                        duration: *duration,
+                        bounce: *bounce,
+                    },
+                ),
+            };
+            if delay > 0.0 {
+                instructions.push(MutationInstruction {
+                    path: format!("{path}/timing-delay"),
+                    kind: MutationInstructionKind::Wait { duration: delay },
+                });
+            }
+            instructions.push(MutationInstruction {
+                path: path.to_string(),
+                kind,
+            });
+        }
+        MutationPlan::Sequence(children) => {
+            for (index, child) in children.iter().enumerate() {
+                compile_mutation_plan(
+                    child,
+                    &format!("{path}/sequence[{index}]"),
+                    expected_shape,
+                    instructions,
+                )?;
+            }
+        }
+        MutationPlan::Repeat { child, count } => {
+            let start = instructions.len();
+            instructions.push(MutationInstruction {
+                path: format!("{path}/repeat"),
+                kind: MutationInstructionKind::RepeatStart { count: *count },
+            });
+            compile_mutation_plan(
+                child,
+                &format!("{path}/repeat-child"),
+                expected_shape,
+                instructions,
+            )?;
+            instructions.push(MutationInstruction {
+                path: format!("{path}/repeat-end"),
+                kind: MutationInstructionKind::RepeatEnd { start },
+            });
+        }
+        MutationPlan::Delay { child, delay } => {
+            if *delay > 0.0 {
+                instructions.push(MutationInstruction {
+                    path: format!("{path}/delay"),
+                    kind: MutationInstructionKind::Wait { duration: *delay },
+                });
+            }
+            compile_mutation_plan(
+                child,
+                &format!("{path}/delayed-child"),
+                expected_shape,
+                instructions,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn ensure_mutation_shape(expected: &NumericValue, actual: &NumericValue) -> anyhow::Result<()> {
+    if !expected.has_same_shape(actual) {
+        anyhow::bail!("Mutation plan target shape changed");
+    }
+    Ok(())
+}
+
+fn advance_spring_exact(driver: &mut SpringDriver, dt: f64) -> f64 {
+    let before = driver.clone();
+    driver.step(dt);
+    if !driver.completed {
+        return dt;
+    }
+    let mut low = 0.0;
+    let mut high = dt;
+    for _ in 0..24 {
+        let middle = (low + high) * 0.5;
+        let mut candidate = before.clone();
+        candidate.step(middle);
+        if candidate.completed {
+            high = middle;
+        } else {
+            low = middle;
+        }
+    }
+    let mut completed = before;
+    completed.step(high);
+    if completed.completed {
+        *driver = completed;
+        high
+    } else {
+        dt
+    }
+}
+
+#[derive(Debug, Clone)]
+enum MutationTarget {
+    Direct(Driver),
+    Plan(MutationPlanExecutor),
+}
+
+impl MutationTarget {
+    fn sample(&self) -> DriverSample {
+        match self {
+            Self::Direct(driver) => driver.sample(),
+            Self::Plan(plan) => plan.sample(),
+        }
+    }
+
+    fn debug(&self) -> MutationPlanDebug {
+        match self {
+            Self::Direct(_) => MutationPlanDebug::default(),
+            Self::Plan(plan) => plan.debug(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 enum TransitionDriver {
     Legacy {
         timing_node_id: Option<String>,
@@ -1411,7 +2077,7 @@ enum TransitionDriver {
 
 #[derive(Debug, Clone)]
 struct Channel {
-    target: Driver,
+    target: MutationTarget,
     transition: TransitionDriver,
 }
 
@@ -1420,7 +2086,7 @@ impl Channel {
         let target = hold_driver(value);
         let zero = zero_driver_like(&target.sample().value);
         Self {
-            target,
+            target: MutationTarget::Direct(target),
             transition: TransitionDriver::Legacy {
                 timing_node_id: None,
                 driver: zero,
@@ -1429,7 +2095,7 @@ impl Channel {
     }
 
     fn set_static_target(&mut self, value: serde_json::Value) {
-        self.target = hold_driver(value);
+        self.target = MutationTarget::Direct(hold_driver(value));
         if !self.transition_active() {
             self.transition = TransitionDriver::Legacy {
                 timing_node_id: None,
@@ -1494,10 +2160,10 @@ impl Channel {
             ),
             None => target.same_shape(vec![0.0; target.len()]),
         };
-        self.target = Driver::Hold(NumericSample {
+        self.target = MutationTarget::Direct(Driver::Hold(NumericSample {
             value: target,
             velocity,
-        });
+        }));
         Ok(())
     }
 
@@ -1511,7 +2177,11 @@ impl Channel {
         let target = NumericValue::from_json(&target_json)
             .ok_or_else(|| anyhow::anyhow!("to target must be numeric"))?;
         match &mut self.target {
-            Driver::Spring(spring) if spring.value.has_same_shape(&target) => {
+            MutationTarget::Direct(Driver::Spring(spring))
+                if spring.value.has_same_shape(&target)
+                    && spring.duration == f64::from(duration as f32)
+                    && spring.bounce == f64::from(bounce as f32) =>
+            {
                 spring.retarget(target);
                 spring.step(dt);
             }
@@ -1523,10 +2193,37 @@ impl Channel {
                 let mut spring =
                     SpringDriver::new(current.value, current.velocity, target, duration, bounce);
                 spring.step(dt);
-                self.target = Driver::Spring(spring);
+                self.target = MutationTarget::Direct(Driver::Spring(spring));
             }
         }
         Ok(())
+    }
+
+    fn apply_mutation_plan(&mut self, plan: MutationPlan, dt: f64) -> anyhow::Result<()> {
+        match plan {
+            MutationPlan::SetTo { target, velocity } => self.set_to(target, velocity, dt),
+            MutationPlan::To {
+                target,
+                timing:
+                    MutationTiming::Spring {
+                        duration,
+                        bounce,
+                        delay,
+                    },
+            } if delay == 0.0 => self.to(target, duration, bounce, dt),
+            plan => {
+                if let MutationTarget::Plan(active) = &mut self.target
+                    && active.matches(&plan)
+                {
+                    return active.advance(dt);
+                }
+                let initial = self.target.sample();
+                let mut executor = MutationPlanExecutor::new(plan, initial)?;
+                executor.advance(dt)?;
+                self.target = MutationTarget::Plan(executor);
+                Ok(())
+            }
+        }
     }
 
     fn step(&mut self, dt: f64) {
@@ -1561,7 +2258,6 @@ impl Channel {
                     completed: error.completed,
                     persistent: false,
                     timeline_progress: error.timeline_progress,
-                    blending_progress: error.blending_progress,
                 }
             }
             TransitionDriver::Plan(plan) => plan.physical_sample(&target),
@@ -1602,6 +2298,10 @@ impl Channel {
             TransitionDriver::Legacy { .. } => vec![],
             TransitionDriver::Plan(plan) => plan.canceled_timing_node_ids.clone(),
         }
+    }
+
+    fn mutation_debug(&self) -> MutationPlanDebug {
+        self.target.debug()
     }
 }
 
@@ -1751,6 +2451,19 @@ impl NumericValue {
     }
 }
 
+fn finite_numeric_value(value: &serde_json::Value, label: &str) -> anyhow::Result<NumericValue> {
+    let value =
+        NumericValue::from_json(value).ok_or_else(|| anyhow::anyhow!("{label} must be numeric"))?;
+    if value
+        .components()
+        .iter()
+        .any(|component| !component.is_finite())
+    {
+        anyhow::bail!("{label} must contain only finite numbers");
+    }
+    Ok(value)
+}
+
 #[derive(Debug, Clone)]
 struct NumericSample {
     value: NumericValue,
@@ -1762,7 +2475,6 @@ enum Driver {
     Hold(NumericSample),
     Spring(SpringDriver),
     Timeline(TimelineDriver),
-    Blend(BlendDriver),
     Delayed(DelayedDriver),
     Discrete(DiscreteDriver),
 }
@@ -1816,19 +2528,13 @@ impl Driver {
                 duration,
                 delay,
                 curve,
-                blending,
             } => {
                 let timeline =
                     Driver::Timeline(TimelineDriver::new(source, target, duration, curve));
-                let incoming = if let Some(blending) = blending {
-                    Driver::Blend(BlendDriver::new(outgoing.clone(), timeline, blending))
+                if delay > 0.0 {
+                    Driver::Delayed(DelayedDriver::new(outgoing, timeline, delay, false))
                 } else {
                     timeline
-                };
-                if delay > 0.0 {
-                    Driver::Delayed(DelayedDriver::new(outgoing, incoming, delay, false))
-                } else {
-                    incoming
                 }
             }
             MotionPlan::Instant => Driver::Hold(NumericSample {
@@ -1843,7 +2549,6 @@ impl Driver {
             Self::Hold(_) => {}
             Self::Spring(driver) => driver.step(dt),
             Self::Timeline(driver) => driver.step(dt),
-            Self::Blend(driver) => driver.step(dt),
             Self::Delayed(driver) => driver.step(dt),
             Self::Discrete(driver) => driver.step(dt),
         }
@@ -1851,10 +2556,9 @@ impl Driver {
 
     fn sample(&self) -> DriverSample {
         match self {
-            Self::Hold(sample) => DriverSample::numeric(sample.clone(), "hold", true, None, None),
+            Self::Hold(sample) => DriverSample::numeric(sample.clone(), "hold", true, None),
             Self::Spring(driver) => driver.sample(),
             Self::Timeline(driver) => driver.sample(),
-            Self::Blend(driver) => driver.sample(),
             Self::Delayed(driver) => driver.sample(),
             Self::Discrete(driver) => driver.sample(),
         }
@@ -1865,13 +2569,6 @@ impl Driver {
             Self::Hold(_) => Some(0.0),
             Self::Spring(_) => None,
             Self::Timeline(driver) => Some((driver.duration - driver.elapsed).max(0.0)),
-            Self::Blend(driver) => {
-                let blend = (driver.duration - driver.elapsed).max(0.0);
-                driver
-                    .incoming
-                    .remaining_duration()
-                    .map(|incoming| incoming.max(blend))
-            }
             Self::Delayed(driver) => {
                 let delay = (driver.delay - driver.elapsed).max(0.0);
                 driver
@@ -1907,7 +2604,6 @@ struct DriverSample {
     completed: bool,
     persistent: bool,
     timeline_progress: Option<f64>,
-    blending_progress: Option<f64>,
 }
 
 impl DriverSample {
@@ -1916,7 +2612,6 @@ impl DriverSample {
         driver: &'static str,
         completed: bool,
         timeline_progress: Option<f64>,
-        blending_progress: Option<f64>,
     ) -> Self {
         Self {
             value: sample.value,
@@ -1925,7 +2620,6 @@ impl DriverSample {
             completed,
             persistent: false,
             timeline_progress,
-            blending_progress,
         }
     }
 }
@@ -2046,7 +2740,6 @@ impl SpringDriver {
             },
             "spring",
             self.completed,
-            None,
             None,
         )
     }
@@ -2206,118 +2899,7 @@ impl TimelineDriver {
             "timeline",
             completed,
             Some(raw),
-            None,
         )
-    }
-}
-
-fn timeline_curve(curve: TimelinePreset, t: f64) -> (f64, f64) {
-    match curve {
-        TimelinePreset::Linear => (t, 1.0),
-        TimelinePreset::EaseIn => (t * t, 2.0 * t),
-        TimelinePreset::EaseOut => (t * (2.0 - t), 2.0 - 2.0 * t),
-        TimelinePreset::EaseInOut => {
-            if t < 0.5 {
-                (2.0 * t * t, 4.0 * t)
-            } else {
-                (-1.0 + (4.0 - 2.0 * t) * t, 4.0 - 4.0 * t)
-            }
-        }
-        TimelinePreset::SineIn | TimelinePreset::CosineOut => {
-            (1.0 - (PI * t / 2.0).cos(), PI * (PI * t / 2.0).sin() / 2.0)
-        }
-        TimelinePreset::SineOut | TimelinePreset::CosineIn => {
-            ((PI * t / 2.0).sin(), PI * (PI * t / 2.0).cos() / 2.0)
-        }
-        TimelinePreset::SineInOut | TimelinePreset::CosineInOut => {
-            ((1.0 - (PI * t).cos()) / 2.0, PI * (PI * t).sin() / 2.0)
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct BlendDriver {
-    outgoing: Box<Driver>,
-    incoming: Box<Driver>,
-    duration: f64,
-    easing: EasingKind,
-    elapsed: f64,
-}
-
-impl BlendDriver {
-    fn new(outgoing: Driver, incoming: Driver, blending: TimelineBlending) -> Self {
-        Self {
-            outgoing: Box::new(outgoing),
-            incoming: Box::new(incoming),
-            duration: blending.duration,
-            easing: blending.easing,
-            elapsed: 0.0,
-        }
-    }
-
-    fn step(&mut self, dt: f64) {
-        self.outgoing.step(dt);
-        self.incoming.step(dt);
-        self.elapsed = (self.elapsed + dt).min(self.duration.max(0.0));
-    }
-
-    fn sample(&self) -> DriverSample {
-        let outgoing = self.outgoing.sample();
-        let incoming = self.incoming.sample();
-        let raw = if self.duration <= 0.0 {
-            1.0
-        } else {
-            (self.elapsed / self.duration).clamp(0.0, 1.0)
-        };
-        let weight = ease(self.easing, raw);
-        let weight_velocity = if self.duration <= 0.0 || raw >= 1.0 {
-            0.0
-        } else {
-            easing_derivative(self.easing, raw) / self.duration
-        };
-        let values = outgoing
-            .value
-            .components()
-            .iter()
-            .zip(incoming.value.components())
-            .map(|(old, new)| old + (new - old) * weight)
-            .collect();
-        let velocities = outgoing
-            .velocity
-            .components()
-            .iter()
-            .zip(incoming.velocity.components())
-            .zip(outgoing.value.components())
-            .zip(incoming.value.components())
-            .map(|(((old_v, new_v), old), new)| {
-                (1.0 - weight) * old_v + weight * new_v + weight_velocity * (new - old)
-            })
-            .collect();
-        let completed = raw >= 1.0 && incoming.completed;
-        DriverSample::numeric(
-            NumericSample {
-                value: incoming.value.same_shape(values),
-                velocity: if completed {
-                    NumericValue::zeros(incoming.value.len())
-                } else {
-                    incoming.velocity.same_shape(velocities)
-                },
-            },
-            "timeline+tween",
-            completed,
-            incoming.timeline_progress,
-            Some(raw),
-        )
-    }
-}
-
-fn easing_derivative(easing: EasingKind, t: f64) -> f64 {
-    match easing {
-        EasingKind::Linear => 1.0,
-        EasingKind::EaseIn => 2.0 * t,
-        EasingKind::EaseOut => 2.0 - 2.0 * t,
-        EasingKind::EaseInOut if t < 0.5 => 4.0 * t,
-        EasingKind::EaseInOut => 4.0 - 4.0 * t,
     }
 }
 
@@ -2356,14 +2938,6 @@ impl DelayedDriver {
                     spring.velocity = sample.velocity;
                     spring.elapsed = 0.0;
                 }
-            }
-            if self.elapsed >= self.delay
-                && let Driver::Blend(blend) = self.incoming.as_mut()
-            {
-                // Blending begins after delay. Carry the already-advanced
-                // outgoing driver into the composite instead of restarting
-                // the stale clone captured when the transition was triggered.
-                blend.outgoing = Box::new((*self.outgoing).clone());
             }
             let rest = dt - outgoing_dt;
             if rest > 0.0 {
@@ -2404,7 +2978,7 @@ impl DiscreteDriver {
         // Discrete values cannot be interpolated, but they still obey the
         // selected path's real completion semantics. Drive a numeric 0 -> 1
         // proxy through the same plan so springs wait for their analytic stop
-        // condition and Timeline+Tween waits for both sides of the composite.
+        // condition and Timelines wait for their authored duration.
         let timing = Driver::start_numeric(
             None,
             NumericValue::Scalar(vec![0.0]),
@@ -2452,7 +3026,6 @@ impl DiscreteDriver {
             completed,
             persistent: timing.persistent,
             timeline_progress: timing.timeline_progress,
-            blending_progress: timing.blending_progress,
         }
     }
 }
@@ -2514,8 +3087,6 @@ mod tests {
     struct GroundTruth {
         source: GroundTruthSource,
         scenarios: Vec<GroundTruthScenario>,
-        #[serde(rename = "motionScenarios")]
-        motion_scenarios: Vec<GroundTruthMotionScenario>,
     }
 
     #[derive(Deserialize)]
@@ -2544,27 +3115,6 @@ mod tests {
         completed: bool,
     }
 
-    #[derive(Deserialize)]
-    struct GroundTruthMotionScenario {
-        name: String,
-        frames: Vec<GroundTruthMotionFrame>,
-    }
-
-    #[derive(Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct GroundTruthMotionFrame {
-        frame: usize,
-        dt: f64,
-        value: f64,
-        velocity: f64,
-        target: f64,
-        driver: String,
-        timeline_progress: Option<f64>,
-        blending_weight: Option<f64>,
-        running: bool,
-        completed: bool,
-    }
-
     #[test]
     fn timeline_interpolates_nested_numeric_arrays_and_preserves_shape() {
         let previous = Channel::hold(serde_json::json!([[0.0, 2.0], [4.0, 6.0]])).sample();
@@ -2575,7 +3125,6 @@ mod tests {
                 duration: 1.0,
                 delay: 0.0,
                 curve: TimelinePreset::Linear,
-                blending: None,
             },
         );
 
@@ -2627,7 +3176,6 @@ mod tests {
                 duration: 1.0,
                 delay: 0.0,
                 curve: TimelinePreset::Linear,
-                blending: None,
             },
         );
         channel.step(0.35);
@@ -2672,7 +3220,6 @@ mod tests {
                 duration: 1.0,
                 delay: 0.0,
                 curve: TimelinePreset::Linear,
-                blending: None,
             },
         );
 
@@ -2751,110 +3298,6 @@ mod tests {
     }
 
     #[test]
-    fn timeline_tween_matches_frozen_kotlin_motion_ground_truth() {
-        let fixture: GroundTruth = serde_json::from_str(include_str!(
-            "../../tests/fixtures/omotion_spring_ground_truth.json"
-        ))
-        .expect("parse frozen Kotlin motion ground truth");
-
-        for scenario in fixture.motion_scenarios {
-            let mut driver = match scenario.name.as_str() {
-                "stopped_hold_to_timeline_tween" => Driver::start_numeric(
-                    Some(Driver::Hold(NumericSample {
-                        value: NumericValue::Scalar(vec![1.0]),
-                        velocity: NumericValue::Scalar(vec![0.0]),
-                    })),
-                    NumericValue::Scalar(vec![1.0]),
-                    NumericValue::Scalar(vec![2.0]),
-                    MotionPlan::Timeline {
-                        duration: 0.3,
-                        delay: 0.0,
-                        curve: TimelinePreset::Linear,
-                        blending: Some(TimelineBlending {
-                            blend_type: super::super::types::TimelineBlendingType::Tween,
-                            duration: 0.1,
-                            easing: EasingKind::EaseInOut,
-                        }),
-                    },
-                ),
-                "running_spring_to_timeline_tween" => {
-                    let mut outgoing = Driver::Spring(SpringDriver::new(
-                        NumericValue::Scalar(vec![0.0]),
-                        NumericValue::Scalar(vec![0.0]),
-                        NumericValue::Scalar(vec![1.0]),
-                        0.45,
-                        0.1,
-                    ));
-                    for _ in 0..6 {
-                        outgoing.step(kotlin_frame_seconds(1.0 / 60.0));
-                    }
-                    Driver::start_numeric(
-                        Some(outgoing),
-                        NumericValue::Scalar(vec![1.0]),
-                        NumericValue::Scalar(vec![2.0]),
-                        MotionPlan::Timeline {
-                            duration: 0.3,
-                            delay: 0.0,
-                            curve: TimelinePreset::Linear,
-                            blending: Some(TimelineBlending {
-                                blend_type: super::super::types::TimelineBlendingType::Tween,
-                                duration: 0.12,
-                                easing: EasingKind::EaseInOut,
-                            }),
-                        },
-                    )
-                }
-                name => panic!("unknown Kotlin motion scenario: {name}"),
-            };
-
-            for frame in scenario.frames {
-                if frame.frame > 0 {
-                    driver.step(kotlin_frame_seconds(frame.dt));
-                }
-                let sample = driver.sample();
-                assert_eq!(frame.target, 2.0);
-                assert_eq!(
-                    sample.driver, frame.driver,
-                    "{} frame {}",
-                    scenario.name, frame.frame
-                );
-                assert!(
-                    (sample.value.components()[0] - frame.value).abs() <= 1e-6,
-                    "{} frame {} value: actual={} expected={}",
-                    scenario.name,
-                    frame.frame,
-                    sample.value.components()[0],
-                    frame.value
-                );
-                assert!(
-                    (sample.velocity.components()[0] - frame.velocity).abs() <= 1e-6,
-                    "{} frame {} velocity: actual={} expected={}",
-                    scenario.name,
-                    frame.frame,
-                    sample.velocity.components()[0],
-                    frame.velocity
-                );
-                assert_eq!(sample.timeline_progress, frame.timeline_progress);
-                let actual_weight = sample
-                    .blending_progress
-                    .map(|progress| ease(EasingKind::EaseInOut, progress));
-                if let (Some(actual), Some(expected)) = (actual_weight, frame.blending_weight) {
-                    assert!(
-                        (actual - expected).abs() <= 1e-9,
-                        "{} frame {} blending weight",
-                        scenario.name,
-                        frame.frame
-                    );
-                } else {
-                    assert_eq!(actual_weight, frame.blending_weight);
-                }
-                assert_eq!(!sample.completed, frame.running);
-                assert_eq!(sample.completed, frame.completed);
-            }
-        }
-    }
-
-    #[test]
     fn analytic_spring_advances_with_full_frame_delta() {
         let mut spring = SpringDriver::new(
             NumericValue::Scalar(vec![0.0]),
@@ -2877,133 +3320,6 @@ mod tests {
         split.step(kotlin_frame_seconds(1.0 / 60.0));
         let twice = split.sample().value.components()[0];
         assert!((once - twice).abs() < 2e-6, "once={once} twice={twice}");
-    }
-
-    #[test]
-    fn tween_blend_uses_product_rule_velocity() {
-        let outgoing = Driver::Hold(NumericSample {
-            value: NumericValue::Scalar(vec![0.25]),
-            velocity: NumericValue::Scalar(vec![1.0]),
-        });
-        let incoming = Driver::Timeline(TimelineDriver::new(
-            NumericValue::Scalar(vec![0.0]),
-            NumericValue::Scalar(vec![1.0]),
-            1.0,
-            TimelinePreset::Linear,
-        ));
-        let mut blend = BlendDriver::new(
-            outgoing,
-            incoming,
-            TimelineBlending {
-                blend_type: super::super::types::TimelineBlendingType::Tween,
-                duration: 0.5,
-                easing: EasingKind::Linear,
-            },
-        );
-        blend.step(0.25);
-        let sample = blend.sample();
-        assert!(sample.velocity.components()[0].is_finite());
-        assert_eq!(sample.blending_progress, Some(0.5));
-    }
-
-    #[test]
-    fn completed_tween_weight_is_held_while_timeline_continues() {
-        let outgoing = Driver::Hold(NumericSample {
-            value: NumericValue::Scalar(vec![0.0]),
-            velocity: NumericValue::Scalar(vec![0.0]),
-        });
-        let incoming = Driver::Timeline(TimelineDriver::new(
-            NumericValue::Scalar(vec![0.0]),
-            NumericValue::Scalar(vec![1.0]),
-            1.0,
-            TimelinePreset::Linear,
-        ));
-        let mut blend = BlendDriver::new(
-            outgoing,
-            incoming,
-            TimelineBlending {
-                blend_type: super::super::types::TimelineBlendingType::Tween,
-                duration: 0.1,
-                easing: EasingKind::Linear,
-            },
-        );
-
-        blend.step(0.2);
-        let sample = blend.sample();
-        assert_eq!(sample.blending_progress, Some(1.0));
-        assert_eq!(sample.timeline_progress, Some(0.2));
-        assert!(!sample.completed);
-        assert!((sample.value.components()[0] - 0.2).abs() < 1e-9);
-        assert!((sample.velocity.components()[0] - 1.0).abs() < 1e-9);
-    }
-
-    #[test]
-    fn delay_advances_outgoing_before_tween_blending_starts() {
-        let outgoing = Driver::Timeline(TimelineDriver::new(
-            NumericValue::Scalar(vec![0.0]),
-            NumericValue::Scalar(vec![1.0]),
-            1.0,
-            TimelinePreset::Linear,
-        ));
-        let incoming = Driver::Blend(BlendDriver::new(
-            outgoing.clone(),
-            Driver::Timeline(TimelineDriver::new(
-                NumericValue::Scalar(vec![1.0]),
-                NumericValue::Scalar(vec![2.0]),
-                1.0,
-                TimelinePreset::Linear,
-            )),
-            TimelineBlending {
-                blend_type: super::super::types::TimelineBlendingType::Tween,
-                duration: 0.1,
-                easing: EasingKind::Linear,
-            },
-        ));
-        let mut delayed = DelayedDriver::new(outgoing, incoming, 0.2, false);
-        delayed.step(0.2);
-        let at_blend_start = delayed.sample();
-        assert!((at_blend_start.value.components()[0] - 0.2).abs() < 1e-9);
-        assert_eq!(at_blend_start.blending_progress, Some(0.0));
-
-        delayed.step(0.05);
-        let midway = delayed.sample();
-        assert_eq!(midway.blending_progress, Some(0.5));
-        assert!(midway.value.components()[0] > 0.25);
-    }
-
-    #[test]
-    fn timeline_to_timeline_tween_advances_both_drivers() {
-        let mut outgoing = Driver::Timeline(TimelineDriver::new(
-            NumericValue::Scalar(vec![0.0]),
-            NumericValue::Scalar(vec![1.0]),
-            1.0,
-            TimelinePreset::Linear,
-        ));
-        outgoing.step(0.2);
-        let mut composite = Driver::start_numeric(
-            Some(outgoing),
-            NumericValue::Scalar(vec![1.0]),
-            NumericValue::Scalar(vec![2.0]),
-            MotionPlan::Timeline {
-                duration: 0.5,
-                delay: 0.0,
-                curve: TimelinePreset::Linear,
-                blending: Some(TimelineBlending {
-                    blend_type: super::super::types::TimelineBlendingType::Tween,
-                    duration: 0.1,
-                    easing: EasingKind::Linear,
-                }),
-            },
-        );
-
-        let start = composite.sample();
-        assert!((start.value.components()[0] - 0.2).abs() < 1e-9);
-        composite.step(0.05);
-        let midway = composite.sample();
-        assert_eq!(midway.timeline_progress, Some(0.1));
-        assert_eq!(midway.blending_progress, Some(0.5));
-        assert!(midway.value.components()[0] > 0.25);
-        assert!(midway.value.components()[0] < 1.1);
     }
 
     #[test]
@@ -3072,50 +3388,6 @@ mod tests {
     }
 
     #[test]
-    fn interrupting_a_tween_keeps_the_composite_as_outgoing() {
-        let outgoing = Driver::Spring(SpringDriver::new(
-            NumericValue::Scalar(vec![0.0]),
-            NumericValue::Scalar(vec![0.0]),
-            NumericValue::Scalar(vec![1.0]),
-            0.45,
-            0.1,
-        ));
-        let first = Driver::Blend(BlendDriver::new(
-            outgoing,
-            Driver::Timeline(TimelineDriver::new(
-                NumericValue::Scalar(vec![0.0]),
-                NumericValue::Scalar(vec![2.0]),
-                0.5,
-                TimelinePreset::EaseInOut,
-            )),
-            TimelineBlending {
-                blend_type: super::super::types::TimelineBlendingType::Tween,
-                duration: 0.2,
-                easing: EasingKind::EaseInOut,
-            },
-        ));
-        let second = Driver::start_numeric(
-            Some(first),
-            NumericValue::Scalar(vec![2.0]),
-            NumericValue::Scalar(vec![3.0]),
-            MotionPlan::Timeline {
-                duration: 0.4,
-                delay: 0.0,
-                curve: TimelinePreset::Linear,
-                blending: Some(TimelineBlending {
-                    blend_type: super::super::types::TimelineBlendingType::Tween,
-                    duration: 0.1,
-                    easing: EasingKind::Linear,
-                }),
-            },
-        );
-        let Driver::Blend(second_blend) = second else {
-            panic!("expected outer blend");
-        };
-        assert!(matches!(second_blend.outgoing.as_ref(), Driver::Blend(_)));
-    }
-
-    #[test]
     fn discrete_spring_switches_only_when_the_spring_path_completes() {
         let mut driver = DiscreteDriver::new(
             None,
@@ -3169,7 +3441,6 @@ mod tests {
                         label: None,
                         duration: 0.3,
                         delay: 0.0,
-                        blending: None,
                     },
                 },
                 TransitionMotionNode::Spring {
@@ -3187,11 +3458,6 @@ mod tests {
                         label: None,
                         duration: 0.4,
                         delay: 0.0,
-                        blending: Some(TimelineBlending {
-                            blend_type: super::super::types::TimelineBlendingType::Tween,
-                            duration: 0.1,
-                            easing: EasingKind::EaseInOut,
-                        }),
                     },
                 },
             ],
@@ -3250,10 +3516,7 @@ mod tests {
             .map(|channel| (channel.key, channel.driver))
             .collect::<HashMap<_, _>>();
         assert_eq!(drivers.get("Node:x").map(String::as_str), Some("spring"));
-        assert_eq!(
-            drivers.get("Node:y").map(String::as_str),
-            Some("timeline+tween")
-        );
+        assert_eq!(drivers.get("Node:y").map(String::as_str), Some("timeline"));
         assert_eq!(drivers.get("Node:z").map(String::as_str), Some("timeline"));
     }
 
@@ -3396,7 +3659,6 @@ mod tests {
                 label: None,
                 duration,
                 delay,
-                blending: None,
             },
         }
     }
@@ -3617,7 +3879,6 @@ mod tests {
                 duration,
                 delay,
                 curve: TimelinePreset::Linear,
-                blending: None,
             },
             target,
         })
@@ -3837,61 +4098,320 @@ mod tests {
         }
     }
 
-    #[test]
-    fn replacing_a_plan_during_tween_preserves_the_full_composite_derivative() {
-        let tween = TimelineBlending {
-            blend_type: super::super::types::TimelineBlendingType::Tween,
-            duration: 0.2,
-            easing: EasingKind::EaseInOut,
-        };
-        let old_plan = PlanTemplate::Sequence(vec![
-            PlanTemplate::Segment(SegmentTemplate {
-                timing_node_id: "old_tween".into(),
-                motion: MotionPlan::Timeline {
-                    duration: 0.4,
-                    delay: 0.0,
-                    curve: TimelinePreset::EaseInOut,
-                    blending: Some(tween.clone()),
-                },
-                target: PlanTarget::Waypoint(
-                    NumericValue::from_json(&serde_json::json!(64.0)).unwrap(),
-                ),
-            }),
-            spring_segment("old_final", PlanTarget::StateOut),
-        ]);
-        let new_plan = PlanTemplate::Sequence(vec![
-            PlanTemplate::Segment(SegmentTemplate {
-                timing_node_id: "new_first".into(),
-                motion: MotionPlan::Timeline {
-                    duration: 0.2,
-                    delay: 0.0,
-                    curve: TimelinePreset::Linear,
-                    blending: Some(tween),
-                },
-                target: PlanTarget::Waypoint(
-                    NumericValue::from_json(&serde_json::json!(32.0)).unwrap(),
-                ),
-            }),
-            spring_segment("new_final", PlanTarget::StateOut),
-        ]);
-        let previous = Channel::hold(serde_json::json!(0.0)).sample();
-        let mut channel = Channel::hold(serde_json::json!(0.0));
-        channel.start_error(previous, old_plan);
-        channel.step(0.1);
-        let outgoing = channel.sample();
-        assert_eq!(outgoing.blending_progress, Some(0.5));
-        assert!(outgoing.velocity.components()[0].abs() > 1.0e-6);
+    fn set_plan(value: f64) -> MutationPlan {
+        MutationPlan::SetTo {
+            target: serde_json::json!(value),
+            velocity: None,
+        }
+    }
 
-        channel.set_static_target(serde_json::json!(10.0));
-        channel.start_error(outgoing.clone(), new_plan);
-        let incoming = channel.sample();
-        assert!((incoming.value.components()[0] - outgoing.value.components()[0]).abs() <= 1.0e-9);
-        assert!(
-            (incoming.velocity.components()[0] - outgoing.velocity.components()[0]).abs() <= 1.0e-9
-        );
+    fn linear_plan(value: f64, duration: f64, delay: f64) -> MutationPlan {
+        MutationPlan::To {
+            target: serde_json::json!(value),
+            timing: MutationTiming::Linear { duration, delay },
+        }
+    }
+
+    fn phase_cycle_plan(start_delay: f64) -> MutationPlan {
+        let cycle = MutationPlan::Repeat {
+            child: Box::new(MutationPlan::Sequence(vec![
+                set_plan(0.0),
+                linear_plan(1.0, 2.5, 0.0),
+            ])),
+            count: -1,
+        };
+        MutationPlan::Sequence(vec![
+            set_plan(0.0),
+            MutationPlan::Delay {
+                child: Box::new(cycle),
+                delay: start_delay,
+            },
+        ])
+    }
+
+    #[test]
+    fn mutation_sequence_holds_then_repeats_with_exact_leftover_time() {
+        let initial = hold_driver(serde_json::json!(0.0)).sample();
+        let mut plan = MutationPlanExecutor::new(phase_cycle_plan(1.0), initial).unwrap();
+
+        plan.advance(0.75).unwrap();
+        assert_eq!(plan.sample().value.components(), &[0.0]);
+        assert_eq!(plan.debug().delay_remaining, Some(0.25));
+
+        plan.advance(0.25).unwrap();
+        assert_eq!(plan.sample().value.components(), &[0.0]);
+        assert!(matches!(
+            plan.active,
+            Some(ActiveMutationSegment::Linear { .. })
+        ));
+
+        plan.advance(0.625).unwrap();
+        assert!((plan.sample().value.components()[0] - 0.25).abs() <= 1.0e-6);
+
+        // The large step finishes the current cycle, executes the zero-time
+        // reset, and consumes the exact remainder in the next iteration.
+        plan.advance(2.5).unwrap();
+        assert!((plan.sample().value.components()[0] - 0.25).abs() <= 1.0e-6);
+        assert_eq!(plan.debug().repeat_iteration, Some(2));
+        assert_eq!(plan.debug().repeat_count, Some(-1));
+    }
+
+    #[test]
+    fn finite_repeat_count_is_total_plays_and_completes() {
+        let plan = MutationPlan::Sequence(vec![
+            set_plan(0.0),
+            MutationPlan::Repeat {
+                child: Box::new(MutationPlan::Sequence(vec![
+                    linear_plan(1.0, 0.2, 0.2),
+                    linear_plan(0.0, 0.2, 0.0),
+                ])),
+                count: 3,
+            },
+        ]);
+        let initial = hold_driver(serde_json::json!(0.0)).sample();
+        let mut executor = MutationPlanExecutor::new(plan, initial).unwrap();
+        executor.advance(1.8).unwrap();
+        let sample = executor.sample();
+        assert!(sample.completed, "{sample:?}");
+        assert!(sample.value.components()[0].abs() <= 1.0e-6);
+    }
+
+    #[test]
+    fn delay_wrapper_order_distinguishes_once_from_every_repeat() {
+        let cycle = MutationPlan::Sequence(vec![set_plan(0.0), linear_plan(1.0, 1.0, 0.0)]);
+        let delay_once = MutationPlan::Delay {
+            child: Box::new(MutationPlan::Repeat {
+                child: Box::new(cycle.clone()),
+                count: 2,
+            }),
+            delay: 0.5,
+        };
+        let delay_each_time = MutationPlan::Repeat {
+            child: Box::new(MutationPlan::Delay {
+                child: Box::new(cycle),
+                delay: 0.5,
+            }),
+            count: 2,
+        };
+        let initial = hold_driver(serde_json::json!(0.0)).sample();
+        let mut once = MutationPlanExecutor::new(delay_once, initial.clone()).unwrap();
+        let mut each = MutationPlanExecutor::new(delay_each_time, initial).unwrap();
+
+        once.advance(1.75).unwrap();
+        each.advance(1.75).unwrap();
+
+        assert!((once.sample().value.components()[0] - 0.25).abs() <= 1.0e-6);
+        assert!((each.sample().value.components()[0] - 1.0).abs() <= 1.0e-6);
+        assert!((each.debug().delay_remaining.unwrap() - 0.25).abs() <= 1.0e-6);
+        assert_eq!(each.debug().repeat_iteration, Some(2));
+    }
+
+    #[test]
+    fn segment_delay_and_coarse_frames_consume_all_exact_boundaries() {
+        let initial = hold_driver(serde_json::json!(0.0)).sample();
+        let mut delayed_segment =
+            MutationPlanExecutor::new(linear_plan(1.0, 0.5, 0.25), initial.clone()).unwrap();
+        delayed_segment.advance(0.375).unwrap();
+        assert!((delayed_segment.sample().value.components()[0] - 0.25).abs() <= 1.0e-6);
+        assert_eq!(delayed_segment.debug().path.as_deref(), Some("root"));
+
+        let mut repeated = MutationPlanExecutor::new(phase_cycle_plan(1.0), initial).unwrap();
+        repeated.advance(9.75).unwrap();
+        assert!((repeated.sample().value.components()[0] - 0.5).abs() <= 1.0e-6);
+        assert_eq!(repeated.debug().repeat_iteration, Some(4));
+    }
+
+    #[test]
+    fn spring_segment_inherits_the_current_plan_velocity() {
+        let plan = MutationPlan::Sequence(vec![
+            MutationPlan::SetTo {
+                target: serde_json::json!(0.0),
+                velocity: Some(serde_json::json!(2.0)),
+            },
+            MutationPlan::To {
+                target: serde_json::json!(1.0),
+                timing: MutationTiming::Spring {
+                    duration: 0.8,
+                    bounce: 0.1,
+                    delay: 0.0,
+                },
+            },
+        ]);
+        let initial = hold_driver(serde_json::json!(0.0)).sample();
+        let executor = MutationPlanExecutor::new(plan, initial).unwrap();
+
+        assert_eq!(executor.sample().driver, "mutation-spring");
+        assert!((executor.sample().velocity.components()[0] - 2.0).abs() <= 1.0e-6);
+    }
+
+    #[test]
+    fn same_mutation_plan_descriptor_continues_instead_of_restarting() {
+        let key = StateParamKey::new("phase");
+        let mut engine = MotionEngine::with_initial_values(HashMap::from([(
+            key.clone(),
+            serde_json::json!(0.0),
+        )]));
+        let plan = phase_cycle_plan(1.0);
+
+        engine.begin_mutation_frame();
+        engine.apply_mutation_plan(&key, plan.clone(), 0.0).unwrap();
+        engine.begin_mutation_frame();
+        engine.apply_mutation_plan(&key, plan.clone(), 1.5).unwrap();
+        let first = engine.target_value(&key).unwrap().as_f64().unwrap();
+        assert!((first - 0.2).abs() <= 1.0e-6, "{first}");
+
+        engine.begin_mutation_frame();
+        engine.apply_mutation_plan(&key, plan, 0.5).unwrap();
+        let second = engine.target_value(&key).unwrap().as_f64().unwrap();
+        assert!((second - 0.4).abs() <= 1.0e-6, "{second}");
+    }
+
+    #[test]
+    fn changed_descriptor_and_state_reentry_restart_the_plan() {
+        let key = StateParamKey::new("phase");
+        let mut engine = MotionEngine::with_initial_values(HashMap::from([(
+            key.clone(),
+            serde_json::json!(0.0),
+        )]));
+
+        engine.begin_mutation_frame();
+        engine
+            .apply_mutation_plan(&key, phase_cycle_plan(1.0), 1.5)
+            .unwrap();
+        assert!((engine.target_value(&key).unwrap().as_f64().unwrap() - 0.2).abs() <= 1.0e-6);
+
+        engine.begin_mutation_frame();
+        engine
+            .apply_mutation_plan(&key, phase_cycle_plan(0.5), 0.0)
+            .unwrap();
+        assert_eq!(engine.target_value(&key).unwrap(), serde_json::json!(0.0));
         assert_eq!(
-            channel.current_timing_node_id().as_deref(),
-            Some("new_first")
+            engine
+                .channels
+                .get(&key)
+                .unwrap()
+                .mutation_debug()
+                .delay_remaining,
+            Some(0.5)
+        );
+
+        engine.begin_mutation_frame();
+        engine
+            .apply_mutation_plan(&key, phase_cycle_plan(0.5), 0.75)
+            .unwrap();
+        assert!((engine.target_value(&key).unwrap().as_f64().unwrap() - 0.1).abs() <= 1.0e-6);
+
+        engine.seed_targets_from_state([&key]);
+        engine.begin_mutation_frame();
+        engine
+            .apply_mutation_plan(&key, phase_cycle_plan(0.5), 0.0)
+            .unwrap();
+        assert_eq!(engine.target_value(&key).unwrap(), serde_json::json!(0.0));
+        assert_eq!(
+            engine
+                .channels
+                .get(&key)
+                .unwrap()
+                .mutation_debug()
+                .delay_remaining,
+            Some(0.5)
+        );
+    }
+
+    #[test]
+    fn infinite_mutation_repeat_does_not_block_transition_completion() {
+        let key = StateParamKey::new("phase");
+        let mut engine = MotionEngine::with_initial_values(HashMap::from([(
+            key.clone(),
+            serde_json::json!(0.0),
+        )]));
+        engine.begin_mutation_frame();
+        engine
+            .apply_mutation_plan(&key, phase_cycle_plan(1.0), 0.0)
+            .unwrap();
+        let previous = engine.clone();
+        engine.begin_transition_from(
+            "visual-transition",
+            &wildcard_spring_graph(0.4, 0.0),
+            &previous,
+            &HashSet::new(),
+        );
+
+        let step = engine.step(0.0);
+        assert!(!step.active);
+        assert_eq!(engine.active_transition_id(), None);
+        assert_eq!(
+            step.channels[0].mutation_plan_completed,
+            Some(false),
+            "infinite target plan must remain active independently"
+        );
+    }
+
+    #[test]
+    fn mutation_plan_rejects_invalid_repeat_and_timing_values() {
+        assert!(
+            MutationPlan::Repeat {
+                child: Box::new(set_plan(0.0)),
+                count: -1,
+            }
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("consumes time")
+        );
+        assert!(
+            linear_plan(1.0, f64::NAN, 0.0)
+                .validate()
+                .unwrap_err()
+                .to_string()
+                .contains("linear duration")
+        );
+        for count in [0, -2] {
+            assert!(
+                MutationPlan::Repeat {
+                    child: Box::new(linear_plan(1.0, 1.0, 0.0)),
+                    count,
+                }
+                .validate()
+                .is_err()
+            );
+        }
+        assert!(MutationPlan::Sequence(vec![]).validate().is_err());
+        assert!(linear_plan(1.0, -0.1, 0.0).validate().is_err());
+        assert!(linear_plan(1.0, 0.1, -0.1).validate().is_err());
+        assert!(
+            MutationPlan::Delay {
+                child: Box::new(linear_plan(1.0, 0.1, 0.0)),
+                delay: f64::INFINITY,
+            }
+            .validate()
+            .is_err()
+        );
+        for bounce in [-1.0, 1.0] {
+            assert!(
+                MutationPlan::To {
+                    target: serde_json::json!(1.0),
+                    timing: MutationTiming::Spring {
+                        duration: 0.8,
+                        bounce,
+                        delay: 0.0,
+                    },
+                }
+                .validate()
+                .is_err()
+            );
+        }
+        assert!(
+            MutationPlan::To {
+                target: serde_json::json!(1.0),
+                timing: MutationTiming::Spring {
+                    duration: 0.0,
+                    bounce: 0.0,
+                    delay: 0.0,
+                },
+            }
+            .validate()
+            .is_err()
         );
     }
 }

@@ -178,6 +178,11 @@ Shipped examples live under `scenarios/`:
           "value": [0.30],
           "velocity": [0.0],
           "mutationDriver": "spring",
+          "mutationPlanPath": "root/sequence[1]/repeat-child/sequence[1]",
+          "mutationRepeatIteration": 2,
+          "mutationRepeatCount": -1,
+          "mutationDelayRemaining": null,
+          "mutationPlanCompleted": false,
           "transitionDriver": "spring",
           "currentTimingNodeId": "spring_to_waypoint",
           "pendingTimingNodeIds": ["spring_to_target"],
@@ -195,13 +200,16 @@ Field names on `motionChannels` use camelCase (`stateValue` = S, `targetValue` =
 `transitionError` = E, `value` = P). Plan-tree traces additionally expose the active Timing node,
 delay-pending Timing nodes in activation order, and Timing nodes canceled by parallel takeover.
 The table format includes the same data in its `timing`, `pending`, and `canceled` columns.
+Mutation plan channels also report the active recursive plan path, repeat iteration/count, delay
+remaining, and completion state. Infinite repeat reports `mutationRepeatCount = -1` and never
+participates in Transition completion.
 
 ## Interpreting results
 
 | Observation | Likely cause |
 |---|---|
 | Handoff `channelContinuity.ok == false` | Activation / residual bug (`activate_transition`, `P=Q−E`) |
-| Handoff ok, channel jumps mid-state | Mutation `to(spring)` retarget / `localElapsedTime` |
+| Handoff ok, channel jumps mid-state | Mutation plan retarget, repeat seam, or invalid source input |
 | Channels smooth, override jumps | Derivation (`sceneElapsedTime` step quantization, layout inputs) |
 | CLI clean, UI only jumps | Variable wall-clock `dt`, interaction bridge, scene delta |
 

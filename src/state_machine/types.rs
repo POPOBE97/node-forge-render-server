@@ -215,48 +215,24 @@ pub struct DerivationStateBinding {
 
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[serde(rename_all = "kebab-case")]
-pub enum EasingKind {
-    Linear,
-    EaseIn,
-    EaseOut,
-    #[default]
-    EaseInOut,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Hash, Default)]
-#[serde(rename_all = "kebab-case")]
 pub enum TimelinePreset {
     #[default]
     Linear,
     EaseIn,
     EaseOut,
     EaseInOut,
+    EaseInCubic,
+    EaseOutCubic,
+    EaseInOutCubic,
+    EaseInQuartic,
+    EaseOutQuartic,
+    EaseInOutQuartic,
     SineIn,
     SineOut,
     SineInOut,
     CosineIn,
     CosineOut,
     CosineInOut,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct TimelineBlending {
-    #[serde(rename = "type")]
-    pub blend_type: TimelineBlendingType,
-    #[serde(default = "default_blend_duration")]
-    pub duration: f64,
-    #[serde(default)]
-    pub easing: EasingKind,
-}
-
-fn default_blend_duration() -> f64 {
-    0.1
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum TimelineBlendingType {
-    Tween,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -270,8 +246,6 @@ pub struct TimelineMotionNode {
     pub duration: f64,
     #[serde(default)]
     pub delay: f64,
-    #[serde(default)]
-    pub blending: Option<TimelineBlending>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -306,6 +280,36 @@ pub enum TransitionMotionNode {
     },
     #[serde(rename = "ease-in-out")]
     EaseInOut {
+        #[serde(flatten)]
+        timeline: TimelineMotionNode,
+    },
+    #[serde(rename = "ease-in-cubic")]
+    EaseInCubic {
+        #[serde(flatten)]
+        timeline: TimelineMotionNode,
+    },
+    #[serde(rename = "ease-out-cubic")]
+    EaseOutCubic {
+        #[serde(flatten)]
+        timeline: TimelineMotionNode,
+    },
+    #[serde(rename = "ease-in-out-cubic")]
+    EaseInOutCubic {
+        #[serde(flatten)]
+        timeline: TimelineMotionNode,
+    },
+    #[serde(rename = "ease-in-quartic")]
+    EaseInQuartic {
+        #[serde(flatten)]
+        timeline: TimelineMotionNode,
+    },
+    #[serde(rename = "ease-out-quartic")]
+    EaseOutQuartic {
+        #[serde(flatten)]
+        timeline: TimelineMotionNode,
+    },
+    #[serde(rename = "ease-in-out-quartic")]
+    EaseInOutQuartic {
         #[serde(flatten)]
         timeline: TimelineMotionNode,
     },
@@ -520,6 +524,12 @@ impl TransitionMotionNode {
             | Self::EaseIn { timeline }
             | Self::EaseOut { timeline }
             | Self::EaseInOut { timeline }
+            | Self::EaseInCubic { timeline }
+            | Self::EaseOutCubic { timeline }
+            | Self::EaseInOutCubic { timeline }
+            | Self::EaseInQuartic { timeline }
+            | Self::EaseOutQuartic { timeline }
+            | Self::EaseInOutQuartic { timeline }
             | Self::SineIn { timeline }
             | Self::SineOut { timeline }
             | Self::SineInOut { timeline }
@@ -535,6 +545,12 @@ impl TransitionMotionNode {
             Self::EaseIn { timeline } => (TimelinePreset::EaseIn, timeline),
             Self::EaseOut { timeline } => (TimelinePreset::EaseOut, timeline),
             Self::EaseInOut { timeline } => (TimelinePreset::EaseInOut, timeline),
+            Self::EaseInCubic { timeline } => (TimelinePreset::EaseInCubic, timeline),
+            Self::EaseOutCubic { timeline } => (TimelinePreset::EaseOutCubic, timeline),
+            Self::EaseInOutCubic { timeline } => (TimelinePreset::EaseInOutCubic, timeline),
+            Self::EaseInQuartic { timeline } => (TimelinePreset::EaseInQuartic, timeline),
+            Self::EaseOutQuartic { timeline } => (TimelinePreset::EaseOutQuartic, timeline),
+            Self::EaseInOutQuartic { timeline } => (TimelinePreset::EaseInOutQuartic, timeline),
             Self::SineIn { timeline } => (TimelinePreset::SineIn, timeline),
             Self::SineOut { timeline } => (TimelinePreset::SineOut, timeline),
             Self::SineInOut { timeline } => (TimelinePreset::SineInOut, timeline),
@@ -564,6 +580,12 @@ impl TransitionMotionNode {
                 | Self::EaseIn { .. }
                 | Self::EaseOut { .. }
                 | Self::EaseInOut { .. }
+                | Self::EaseInCubic { .. }
+                | Self::EaseOutCubic { .. }
+                | Self::EaseInOutCubic { .. }
+                | Self::EaseInQuartic { .. }
+                | Self::EaseOutQuartic { .. }
+                | Self::EaseInOutQuartic { .. }
                 | Self::SineIn { .. }
                 | Self::SineOut { .. }
                 | Self::SineInOut { .. }
@@ -1113,6 +1135,12 @@ mod tests {
             ("ease-in", TimelinePreset::EaseIn),
             ("ease-out", TimelinePreset::EaseOut),
             ("ease-in-out", TimelinePreset::EaseInOut),
+            ("ease-in-cubic", TimelinePreset::EaseInCubic),
+            ("ease-out-cubic", TimelinePreset::EaseOutCubic),
+            ("ease-in-out-cubic", TimelinePreset::EaseInOutCubic),
+            ("ease-in-quartic", TimelinePreset::EaseInQuartic),
+            ("ease-out-quartic", TimelinePreset::EaseOutQuartic),
+            ("ease-in-out-quartic", TimelinePreset::EaseInOutQuartic),
             ("sine-in", TimelinePreset::SineIn),
             ("sine-out", TimelinePreset::SineOut),
             ("sine-in-out", TimelinePreset::SineInOut),
@@ -1127,12 +1155,7 @@ mod tests {
                 "type": node_type,
                 "position": { "x": 10.0, "y": 20.0 },
                 "duration": 0.4,
-                "delay": 0.1,
-                "blending": {
-                    "type": "tween",
-                    "duration": 0.12,
-                    "easing": "ease-in-out"
-                }
+                "delay": 0.1
             }))
             .unwrap_or_else(|error| panic!("failed to deserialize {node_type}: {error}"));
             let (curve, timeline) = node.timeline().expect("expected timeline-based node");

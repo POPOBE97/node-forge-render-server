@@ -16,11 +16,12 @@ use sha2::{Digest, Sha256};
 
 use super::{
     graph::GraphValue,
+    motion::{MutationPlan, MutationTiming},
     types::{GraphInnerNode, GraphInnerNodeType, GraphPort, StateMachine},
 };
 use crate::dsl::SceneDSL;
 
-const GRAPH_FUNCTION_ABI_VERSION: u32 = 9;
+const GRAPH_FUNCTION_ABI_VERSION: u32 = 10;
 const WATCHDOG_IDLE: u8 = 0;
 const WATCHDOG_ARMED: u8 = 1;
 const WATCHDOG_FIRING: u8 = 2;
@@ -452,15 +453,7 @@ struct PreparedFunction {
 #[derive(Debug, Clone, PartialEq)]
 pub enum FunctionOutput {
     Value(GraphValue),
-    SetTo {
-        target: GraphValue,
-        velocity: Option<GraphValue>,
-    },
-    To {
-        target: GraphValue,
-        duration: f64,
-        bounce: f64,
-    },
+    Motion(MutationPlan),
 }
 
 struct GraphJsRuntime {
@@ -531,19 +524,19 @@ impl GraphJsRuntime {
                 .ok_or_else(|| javascript_error!(scope, "installation failed"))?;
             let installed = installed
                 .to_object(scope)
-                .ok_or_else(|| anyhow!("Graph Function ABI v9 installer returned no object"))?;
+                .ok_or_else(|| anyhow!("Graph Function ABI v10 installer returned no object"))?;
             let entry_key = v8::String::new(scope, "entry").unwrap();
             let bindings_key = v8::String::new(scope, "bindings").unwrap();
             let motion_kind_key = v8::String::new(scope, "motionKind").unwrap();
             let entry = installed
                 .get(scope, entry_key.into())
                 .and_then(|value| v8::Local::<v8::Function>::try_from(value).ok())
-                .ok_or_else(|| anyhow!("Graph Function ABI v9 installer returned no entry"))?;
+                .ok_or_else(|| anyhow!("Graph Function ABI v10 installer returned no entry"))?;
             let bindings = installed
                 .get(scope, bindings_key.into())
                 .and_then(|value| v8::Local::<v8::Array>::try_from(value).ok())
                 .ok_or_else(|| {
-                    anyhow!("Graph Function ABI v9 installer returned no bindings array")
+                    anyhow!("Graph Function ABI v10 installer returned no bindings array")
                 })?;
             let motion_kind = installed
                 .get(scope, motion_kind_key.into())
@@ -555,7 +548,7 @@ impl GraphJsRuntime {
                 .any(|output| output.motion == Some(true))
                 && motion_kind.is_none()
             {
-                bail!("Graph Function ABI v9 installer returned no motion symbol");
+                bail!("Graph Function ABI v10 installer returned no motion symbol");
             }
             for index in 0..bindings.length() {
                 let binding = bindings
@@ -677,7 +670,7 @@ impl GraphJsRuntime {
                             )
                             .with_context(|| {
                                 format!(
-                                    "Graph Function '{node_id}.{}' must return setTo(...) or to(...)",
+                                    "Graph Function '{node_id}.{}' must return a Motion plan",
                                     port.id
                                 )
                             });
@@ -709,47 +702,177 @@ fn motion_output_from_v8(
     port: &ReflectedPort,
     motion_kind: v8::Local<'_, v8::Symbol>,
 ) -> Result<FunctionOutput> {
+    let mut nodes = 0usize;
+    let plan = motion_plan_from_v8(scope, value, port, motion_kind, 0, &mut nodes)?;
+    plan.validate()?;
+    Ok(FunctionOutput::Motion(plan))
+}
+
+fn motion_plan_from_v8(
+    scope: &mut v8::PinScope<'_, '_>,
+    value: v8::Local<'_, v8::Value>,
+    port: &ReflectedPort,
+    motion_kind: v8::Local<'_, v8::Symbol>,
+    depth: usize,
+    nodes: &mut usize,
+) -> Result<MutationPlan> {
+    if depth > 64 {
+        bail!("Motion plan exceeds maximum nesting depth");
+    }
+    *nodes += 1;
+    if *nodes > 4096 {
+        bail!("Motion plan exceeds maximum node count");
+    }
     let object = value
         .to_object(scope)
         .ok_or_else(|| anyhow!("Motion output is not an object"))?;
     let kind = object
         .get(scope, motion_kind.into())
         .map(|value| value.to_rust_string_lossy(scope))
-        .ok_or_else(|| anyhow!("Motion output was not created by setTo(...) or to(...)"))?;
-    let target_key = v8::String::new(scope, "target").unwrap();
-    let target = object
-        .get(scope, target_key.into())
-        .ok_or_else(|| anyhow!("Motion output omitted target"))
-        .and_then(|value| graph_value_from_v8(scope, value, port))?;
+        .ok_or_else(|| anyhow!("Motion output was not created by a Motion helper"))?;
     match kind.as_str() {
         "setTo" => {
+            let target = motion_target_from_object(scope, object, port)?;
             let velocity_key = v8::String::new(scope, "velocity").unwrap();
             let velocity = object
                 .get(scope, velocity_key.into())
                 .filter(|value| !value.is_undefined())
                 .map(|value| graph_value_from_v8(scope, value, port))
-                .transpose()?;
-            Ok(FunctionOutput::SetTo { target, velocity })
+                .transpose()?
+                .map(|value| value.to_json());
+            Ok(MutationPlan::SetTo {
+                target: target.to_json(),
+                velocity,
+            })
         }
         "to" => {
+            let target = motion_target_from_object(scope, object, port)?;
+            let timing_key = v8::String::new(scope, "timing").unwrap();
             let duration_key = v8::String::new(scope, "duration").unwrap();
             let bounce_key = v8::String::new(scope, "bounce").unwrap();
+            let delay_key = v8::String::new(scope, "timingDelay").unwrap();
+            let timing = object
+                .get(scope, timing_key.into())
+                .filter(|value| !value.is_undefined())
+                .map(|value| value.to_rust_string_lossy(scope))
+                .ok_or_else(|| {
+                    anyhow!("to(...) timing must come from linear(...) or spring(...)")
+                })?;
             let duration = object
                 .get(scope, duration_key.into())
                 .and_then(|value| value.number_value(scope))
                 .ok_or_else(|| anyhow!("to(...) duration must be numeric"))?;
-            let bounce = object
-                .get(scope, bounce_key.into())
+            let delay = object
+                .get(scope, delay_key.into())
                 .and_then(|value| value.number_value(scope))
-                .ok_or_else(|| anyhow!("to(...) bounce must be numeric"))?;
-            Ok(FunctionOutput::To {
-                target,
-                duration,
-                bounce,
+                .ok_or_else(|| anyhow!("to(...) delay must be numeric"))?;
+            let timing = match timing.as_str() {
+                "linear" => MutationTiming::Linear { duration, delay },
+                "spring" => MutationTiming::Spring {
+                    duration,
+                    bounce: object
+                        .get(scope, bounce_key.into())
+                        .and_then(|value| value.number_value(scope))
+                        .ok_or_else(|| anyhow!("spring(...) bounce must be numeric"))?,
+                    delay,
+                },
+                _ => bail!("unknown Motion timing kind '{timing}'"),
+            };
+            Ok(MutationPlan::To {
+                target: target.to_json(),
+                timing,
+            })
+        }
+        "sequence" => {
+            let children_key = v8::String::new(scope, "children").unwrap();
+            let children = object
+                .get(scope, children_key.into())
+                .and_then(|value| v8::Local::<v8::Array>::try_from(value).ok())
+                .ok_or_else(|| anyhow!("sequence(...) children must be an array"))?;
+            if children.length() == 0 {
+                bail!("sequence(...) requires at least one child");
+            }
+            let mut plans = Vec::with_capacity(children.length() as usize);
+            for index in 0..children.length() {
+                let child = children
+                    .get_index(scope, index)
+                    .ok_or_else(|| anyhow!("sequence(...) omitted child {index}"))?;
+                plans.push(motion_plan_from_v8(
+                    scope,
+                    child,
+                    port,
+                    motion_kind,
+                    depth + 1,
+                    nodes,
+                )?);
+            }
+            Ok(MutationPlan::Sequence(plans))
+        }
+        "repeat" => {
+            let child_key = v8::String::new(scope, "child").unwrap();
+            let count_key = v8::String::new(scope, "count").unwrap();
+            let child = object
+                .get(scope, child_key.into())
+                .ok_or_else(|| anyhow!("repeat(...) omitted child"))?;
+            let count = object
+                .get(scope, count_key.into())
+                .and_then(|value| value.number_value(scope))
+                .ok_or_else(|| anyhow!("repeat(...) count must be numeric"))?;
+            if !count.is_finite()
+                || count.fract() != 0.0
+                || count < i64::MIN as f64
+                || count > i64::MAX as f64
+            {
+                bail!("repeat(...) count must be an integer");
+            }
+            Ok(MutationPlan::Repeat {
+                child: Box::new(motion_plan_from_v8(
+                    scope,
+                    child,
+                    port,
+                    motion_kind,
+                    depth + 1,
+                    nodes,
+                )?),
+                count: count as i64,
+            })
+        }
+        "delay" => {
+            let child_key = v8::String::new(scope, "child").unwrap();
+            let delay_key = v8::String::new(scope, "seconds").unwrap();
+            let child = object
+                .get(scope, child_key.into())
+                .ok_or_else(|| anyhow!("delay(...) omitted child"))?;
+            let delay = object
+                .get(scope, delay_key.into())
+                .and_then(|value| value.number_value(scope))
+                .ok_or_else(|| anyhow!("delay(...) duration must be numeric"))?;
+            Ok(MutationPlan::Delay {
+                child: Box::new(motion_plan_from_v8(
+                    scope,
+                    child,
+                    port,
+                    motion_kind,
+                    depth + 1,
+                    nodes,
+                )?),
+                delay,
             })
         }
         _ => bail!("unknown Motion output kind '{kind}'"),
     }
+}
+
+fn motion_target_from_object(
+    scope: &mut v8::PinScope<'_, '_>,
+    object: v8::Local<'_, v8::Object>,
+    port: &ReflectedPort,
+) -> Result<GraphValue> {
+    let target_key = v8::String::new(scope, "target").unwrap();
+    object
+        .get(scope, target_key.into())
+        .ok_or_else(|| anyhow!("Motion output omitted target"))
+        .and_then(|value| graph_value_from_v8(scope, value, port))
 }
 
 fn artifact_fingerprint(resource: &FunctionResource) -> [u8; 32] {
@@ -1231,7 +1354,7 @@ mod tests {
             "state:hdr",
             "mutate",
             "mutation",
-            "(() => { const motionKind = Symbol('motion'); return { motionKind, bindings: [], entry(input) { return { setColor: { [motionKind]: 'setTo', target: input.color }, springColor: { [motionKind]: 'to', target: input.color, duration: 0.4, bounce: 0.1 } }; } }; })()",
+            "(() => { const motionKind = Symbol('motion'); return { motionKind, bindings: [], entry(input) { return { setColor: { [motionKind]: 'setTo', target: input.color }, springColor: { [motionKind]: 'to', target: input.color, timing: 'spring', duration: 0.4, bounce: 0.1, timingDelay: 0 } }; } }; })()",
             vec![
                 color_port("setColor", Some(true)),
                 color_port("springColor", Some(true)),
@@ -1264,16 +1387,98 @@ mod tests {
                 )
                 .unwrap(),
             vec![
-                FunctionOutput::SetTo {
-                    target: hdr.clone(),
+                FunctionOutput::Motion(MutationPlan::SetTo {
+                    target: hdr.to_json(),
+                    velocity: None,
+                }),
+                FunctionOutput::Motion(MutationPlan::To {
+                    target: hdr.to_json(),
+                    timing: MutationTiming::Spring {
+                        duration: 0.4,
+                        bounce: 0.1,
+                        delay: 0.0,
+                    },
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn nested_sequence_repeat_and_delay_decode_to_mutation_plan() {
+        let source = "export default function phase() {}".to_string();
+        let resource = FunctionResource {
+            scope: "state:phase".into(),
+            node_id: "phase".into(),
+            kind: "mutation".into(),
+            language: "typescript".into(),
+            source_hash: format!("{:x}", Sha256::digest(source.as_bytes())),
+            source,
+            compiled_java_script: r#"(() => {
+              const motionKind = Symbol('motion');
+              const motion = (kind, fields) => ({ [motionKind]: kind, ...fields });
+              const cycle = motion('repeat', {
+                count: -1,
+                child: motion('sequence', { children: [
+                  motion('setTo', { target: 0 }),
+                  motion('to', { target: 1, timing: 'linear', duration: 2.5, timingDelay: 0 })
+                ] })
+              });
+              return {
+                motionKind,
+                bindings: [],
+                entry() {
+                  return { phase: motion('sequence', { children: [
+                    motion('setTo', { target: 0 }),
+                    motion('delay', { child: cycle, seconds: 1 })
+                  ] }) };
+                }
+              };
+            })()"#
+                .into(),
+            abi_version: GRAPH_FUNCTION_ABI_VERSION,
+            inputs: vec![],
+            outputs: vec![ReflectedPort {
+                id: "phase".into(),
+                name: "phase".into(),
+                port_type: "float".into(),
+                array_length: None,
+                motion: Some(true),
+            }],
+        };
+        let expected_cycle = MutationPlan::Repeat {
+            child: Box::new(MutationPlan::Sequence(vec![
+                MutationPlan::SetTo {
+                    target: serde_json::json!(0.0),
                     velocity: None,
                 },
-                FunctionOutput::To {
-                    target: hdr,
-                    duration: 0.4,
-                    bounce: 0.1,
+                MutationPlan::To {
+                    target: serde_json::json!(1.0),
+                    timing: MutationTiming::Linear {
+                        duration: 2.5,
+                        delay: 0.0,
+                    },
                 },
-            ]
+            ])),
+            count: -1,
+        };
+        let expected = MutationPlan::Sequence(vec![
+            MutationPlan::SetTo {
+                target: serde_json::json!(0.0),
+                velocity: None,
+            },
+            MutationPlan::Delay {
+                child: Box::new(expected_cycle),
+                delay: 1.0,
+            },
+        ]);
+
+        let mut runtime = GraphJsRuntime::new(0);
+        runtime.prepare(&resource).unwrap();
+        assert_eq!(
+            runtime
+                .evaluate("state:phase", "phase", &[], Duration::from_millis(100),)
+                .unwrap(),
+            vec![FunctionOutput::Motion(expected)]
         );
     }
 }
