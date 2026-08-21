@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 1,
+  "name": "doubao-lalaland-all-transitions",
+  "fps": 60,
+  "track": {
+    "channels": ["*"],
+    "overrides": []
+  },
+  "analyze": {
+    "jumpThresholdChannel": 128,
+    "jumpThresholdOverride": 128,
+    "checkPhysicIdentity": true,
+    "failOnJump": false
+  },
+  "actions": [
+    { "type": "forceState", "stateId": "any" },
+
+    { "type": "label", "name": "tr_msx1vbpw_s" },
+    { "type": "forceState", "stateId": "collapsed" },
+    { "type": "assertTransition", "id": "tr_msx1vbpw_s" },
+    { "type": "settle", "maxFrames": 360 },
+
+    { "type": "label", "name": "tr_mszxk0y7_k" },
+    { "type": "forceState", "stateId": "supercharge" },
+    { "type": "assertTransition", "id": "tr_mszxk0y7_k" },
+    { "type": "settle", "maxFrames": 360 },
+
+    { "type": "label", "name": "tr_mt1aax6i_25" },
+    { "type": "forceState", "stateId": "island" },
+    { "type": "assertTransition", "id": "tr_mt1aax6i_25" },
+    { "type": "settle", "maxFrames": 360 },
+
+    { "type": "label", "name": "tr_mt1abe43_28" },
+    { "type": "forceState", "stateId": "st_msybtf2o_m" },
+    { "type": "assertTransition", "id": "tr_mt1abe43_28" },
+    { "type": "settle", "maxFrames": 360 },
+
+    { "type": "label", "name": "tr_mt1abynw_2h" },
+    { "type": "forceState", "stateId": "supercharge" },
+    { "type": "assertTransition", "id": "tr_mt1abynw_2h" },
+    { "type": "settle", "maxFrames": 360 },
+
+    { "type": "label", "name": "tr_mt1abkhf_2b" },
+    { "type": "forceState", "stateId": "st_msybtf2o_m" },
+    { "type": "assertTransition", "id": "tr_mt1abkhf_2b" },
+    { "type": "settle", "maxFrames": 360 },
+
+    { "type": "label", "name": "tr_mt1aavwx_22" },
+    { "type": "forceState", "stateId": "island" },
+    { "type": "assertTransition", "id": "tr_mt1aavwx_22" },
+    { "type": "settle", "maxFrames": 360 },
+
+    { "type": "label", "name": "tr_mt1abve2_2e" },
+    { "type": "forceState", "stateId": "supercharge" },
+    { "type": "assertTransition", "id": "tr_mt1abve2_2e" },
+    { "type": "settle", "maxFrames": 360 },
+
+    { "type": "label", "name": "setup-v1-collapsed-for-fastcharge" },
+    { "type": "forceState", "stateId": "collapsed" },
+    { "type": "settle", "maxFrames": 360 },
+    { "type": "label", "name": "tr_mszxk2bk_n" },
+    { "type": "forceState", "stateId": "st_msybtf2o_m" },
+    { "type": "assertTransition", "id": "tr_mszxk2bk_n" },
+    { "type": "settle", "maxFrames": 360 },
+
+    { "type": "label", "name": "setup-v1-collapsed-for-charging" },
+    { "type": "forceState", "stateId": "collapsed" },
+    { "type": "settle", "maxFrames": 360 },
+    { "type": "label", "name": "tr_mszxk3wu_q" },
+    { "type": "forceState", "stateId": "island" },
+    { "type": "assertTransition", "id": "tr_mszxk3wu_q" },
+    { "type": "settle", "maxFrames": 360 },
+
+    { "type": "forceState", "stateId": "any" },
+    { "type": "label", "name": "tr_mt1ak8yj_1b" },
+    { "type": "forceState", "stateId": "st_mt1ajfjb_q" },
+    { "type": "assertTransition", "id": "tr_mt1ak8yj_1b" },
+    { "type": "settle", "maxFrames": 360 },
+
+    { "type": "label", "name": "tr_mt1ajfjb_t" },
+    { "type": "forceState", "stateId": "st_mt1ajfjb_r" },
+    { "type": "assertTransition", "id": "tr_mt1ajfjb_t" },
+    { "type": "settle", "maxFrames": 360 },
+
+    { "type": "label", "name": "tr_mt1ajfjb_x" },
+    { "type": "forceState", "stateId": "st_mt1ajfjb_p" },
+    { "type": "assertTransition", "id": "tr_mt1ajfjb_x" },
+    { "type": "settle", "maxFrames": 360 },
+
+    { "type": "label", "name": "tr_mt1ajfjb_y" },
+    { "type": "forceState", "stateId": "st_mt1ajfjb_s" },
+    { "type": "assertTransition", "id": "tr_mt1ajfjb_y" },
+    { "type": "settle", "maxFrames": 360 },
+
+    { "type": "label", "name": "tr_mt1ajfjb_11" },
+    { "type": "forceState", "stateId": "st_mt1ajfjb_r" },
+    { "type": "assertTransition", "id": "tr_mt1ajfjb_11" },
+    { "type": "settle", "maxFrames": 360 },
+
+    { "type": "label", "name": "tr_mt1ajfjb_z" },
+    { "type": "forceState", "stateId": "st_mt1ajfjb_s" },
+    { "type": "assertTransition", "id": "tr_mt1ajfjb_z" },
+    { "type": "settle", "maxFrames": 360 },
+
+    { "type": "label", "name": "tr_mt1ajfjb_w" },
+    { "type": "forceState", "stateId": "st_mt1ajfjb_p" },
+    { "type": "assertTransition", "id": "tr_mt1ajfjb_w" },
+    { "type": "settle", "maxFrames": 360 },
+
+    { "type": "label", "name": "tr_mt1ajfjb_10" },
+    { "type": "forceState", "stateId": "st_mt1ajfjb_r" },
+    { "type": "assertTransition", "id": "tr_mt1ajfjb_10" },
+    { "type": "settle", "maxFrames": 360 },
+
+    { "type": "label", "name": "setup-v2-collapsed-for-fastcharge" },
+    { "type": "forceState", "stateId": "st_mt1ajfjb_q" },
+    { "type": "settle", "maxFrames": 360 },
+    { "type": "label", "name": "tr_mt1ajfjb_u" },
+    { "type": "forceState", "stateId": "st_mt1ajfjb_s" },
+    { "type": "assertTransition", "id": "tr_mt1ajfjb_u" },
+    { "type": "settle", "maxFrames": 360 },
+
+    { "type": "label", "name": "setup-v2-collapsed-for-charging" },
+    { "type": "forceState", "stateId": "st_mt1ajfjb_q" },
+    { "type": "settle", "maxFrames": 360 },
+    { "type": "label", "name": "tr_mt1ajfjb_v" },
+    { "type": "forceState", "stateId": "st_mt1ajfjb_p" },
+    { "type": "assertTransition", "id": "tr_mt1ajfjb_v" },
+    { "type": "settle", "maxFrames": 360 }
+  ]
+}

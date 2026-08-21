@@ -4,9 +4,14 @@
 //! state-machine control is active. This keeps the timeline independent from
 //! State-local scene time resets and from wall-clock time spent paused.
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::{
+    collections::{BTreeMap, HashMap, VecDeque},
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use crate::state_machine::{MotionChannelDebug, OverrideKey};
+
+static NEXT_TIMELINE_BUFFER_ID: AtomicU64 = AtomicU64::new(1);
 
 /// Stable identity for one frame while it remains in a timeline buffer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -65,6 +70,7 @@ pub struct TimelineFrameRecord {
 /// Rolling-window buffer of recorded timeline frames.
 #[derive(Debug, Clone)]
 pub struct TimelineBuffer {
+    recording_id: u64,
     frames: VecDeque<TimelineFrame>,
     presentation_time_secs: f64,
     max_duration_secs: f64,
@@ -76,12 +82,19 @@ pub struct TimelineBuffer {
 impl TimelineBuffer {
     pub fn new(max_duration_secs: f64, tracked_keys: Vec<String>) -> Self {
         Self {
+            recording_id: NEXT_TIMELINE_BUFFER_ID.fetch_add(1, Ordering::Relaxed),
             frames: VecDeque::new(),
             presentation_time_secs: 0.0,
             max_duration_secs,
             next_frame_id: 0,
             tracked_keys,
         }
+    }
+
+    /// Identity of this recording lifecycle. A fresh scene creates a fresh id;
+    /// clearing for replay keeps the id while frame ids continue monotonically.
+    pub(crate) fn recording_id(&self) -> u64 {
+        self.recording_id
     }
 
     /// Advance the logical recording clock by accepted animation time.

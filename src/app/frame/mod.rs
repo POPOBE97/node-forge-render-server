@@ -80,7 +80,17 @@ pub(super) fn run(app: &mut App, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
     let analysis_ms = t2.elapsed().as_secs_f64() * 1000.0;
 
     let t3 = Instant::now();
-    let present = present::run(app, ui, &ctx, render_state, &mut renderer_guard, &ingest);
+    let animation_curve_repaint_active =
+        advance.animation_session_active && app.runtime.time_updates_enabled;
+    let present = present::run(
+        app,
+        ui,
+        &ctx,
+        render_state,
+        &mut renderer_guard,
+        &ingest,
+        animation_curve_repaint_active,
+    );
     let present_ms = t3.elapsed().as_secs_f64() * 1000.0;
 
     let t4 = Instant::now();

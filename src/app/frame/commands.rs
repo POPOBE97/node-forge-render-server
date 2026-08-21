@@ -22,6 +22,7 @@ pub enum AppCommand {
     PlayStateMachine,
     ForceState(String),
     ClearStateControl,
+    OpenAnimationCurves,
     Canvas(CanvasAction),
     PickReferenceImage,
     ClearReference,
@@ -55,6 +56,7 @@ pub fn from_sidebar_action(action: ui::debug_sidebar::SidebarAction) -> AppComma
         ui::debug_sidebar::SidebarAction::PlayStateMachine => AppCommand::PlayStateMachine,
         ui::debug_sidebar::SidebarAction::ForceState(state_id) => AppCommand::ForceState(state_id),
         ui::debug_sidebar::SidebarAction::ClearStateControl => AppCommand::ClearStateControl,
+        ui::debug_sidebar::SidebarAction::OpenAnimationCurves => AppCommand::OpenAnimationCurves,
         ui::debug_sidebar::SidebarAction::PreviewTexture(name) => AppCommand::Canvas(
             CanvasAction::SetPreviewTexture(ResourceName::from(name.as_str())),
         ),
@@ -190,6 +192,12 @@ pub fn dispatch(
         }
         AppCommand::ClearStateControl => {
             scene_runtime::clear_state_control(app);
+            ctx.request_repaint();
+        }
+        AppCommand::OpenAnimationCurves => {
+            ui::animation_curve_window::open_animation_curve_window(
+                &mut app.shell.animation_curve_window,
+            );
             ctx.request_repaint();
         }
         AppCommand::Canvas(action) => {
@@ -531,6 +539,12 @@ mod tests {
             command,
             AppCommand::SetPlaybackRate(PlaybackRate::Rate05)
         ));
+    }
+
+    #[test]
+    fn sidebar_animation_curves_maps_to_app_command() {
+        let command = from_sidebar_action(SidebarAction::OpenAnimationCurves);
+        assert!(matches!(command, AppCommand::OpenAnimationCurves));
     }
 
     #[test]

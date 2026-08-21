@@ -1,3 +1,5 @@
+pub mod animation_curve_window;
+pub(crate) mod animation_curves;
 pub mod animation_manager;
 pub mod button;
 pub mod clipping_map;

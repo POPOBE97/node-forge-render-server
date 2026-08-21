@@ -279,6 +279,8 @@ pub enum SidebarAction {
     ClearStateControl,
     /// Set local animation playback speed (0.1x … 2x).
     SetPlaybackRate(PlaybackRate),
+    /// Open or focus the standalone animation curve window.
+    OpenAnimationCurves,
     /// User clicked a readable texture — preview it in the canvas.
     PreviewTexture(String),
     /// Capture and preview one render pass independently of later target writers.
@@ -388,6 +390,7 @@ pub struct StateSidebarState<'a> {
     pub playback_enabled: bool,
     pub playback_rate: PlaybackRate,
     pub timeline_review_paused: bool,
+    pub animation_curves_open: bool,
 }
 
 pub fn show_in_rect(
@@ -599,6 +602,32 @@ fn show_state_section(
             &playback_rate_options(),
         ) {
             *sidebar_action = Some(SidebarAction::SetPlaybackRate(rate));
+        }
+
+        ui.add_space(SIDEBAR_GRID_ROW_GAP);
+        let curves_response = button::button_with_width(
+            ui,
+            ButtonOptions {
+                label: "Curves",
+                tooltip: Some("Open the sampled MotionEngine curve window"),
+                variant: if state.animation_curves_open {
+                    ButtonVariant::Default
+                } else {
+                    ButtonVariant::Secondary
+                },
+                size: ButtonSize::Small,
+                enabled: state.playback_enabled,
+                icon: None,
+                icon_kind: None,
+                visual_override: state
+                    .animation_curves_open
+                    .then_some(active_state_button_visual()),
+                group_position: ButtonGroupPosition::Single,
+            },
+            full_width,
+        );
+        if curves_response.clicked() {
+            *sidebar_action = Some(SidebarAction::OpenAnimationCurves);
         }
 
         ui.add_space(SIDEBAR_GRID_ROW_GAP);

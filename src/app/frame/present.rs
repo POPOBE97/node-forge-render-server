@@ -148,6 +148,7 @@ pub(super) fn run(
     render_state: &egui_wgpu::RenderState,
     renderer: &mut egui_wgpu::Renderer,
     ingest: &IngestPhase,
+    animation_session_active: bool,
 ) -> PresentPhase {
     let now = ingest.frame_time;
     let frame_state = window_mode::update_window_mode_frame(app, now);
@@ -252,7 +253,9 @@ pub(super) fn run(
         && let Some(ref buf) = app.runtime.timeline_buffer
     {
         let anchor_frame_id = app.runtime.timeline_review.anchor_frame_id;
-        let natural_height = (18.0 + buf.tracked_keys.len().max(1) as f32 * 20.0 + 16.0)
+        let timeline_panel_state = &mut app.shell.timeline_panel_state;
+        timeline_panel_state.sync_recording(buf);
+        let natural_height = ui::timeline_panel::natural_height(buf, timeline_panel_state)
             .clamp(TIMELINE_PANEL_MIN_HEIGHT, TIMELINE_PANEL_INITIAL_MAX_HEIGHT);
         let maximum_height =
             (ui.available_height() * TIMELINE_PANEL_WINDOW_FRACTION).max(TIMELINE_PANEL_MIN_HEIGHT);
@@ -271,8 +274,12 @@ pub(super) fn run(
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        timeline_interaction =
-                            ui::timeline_panel::show_timeline(ui, buf, anchor_frame_id);
+                        timeline_interaction = ui::timeline_panel::show_timeline(
+                            ui,
+                            buf,
+                            anchor_frame_id,
+                            timeline_panel_state,
+                        );
                     });
             });
     }
@@ -317,6 +324,10 @@ pub(super) fn run(
                             .anchor_frame_id
                             .is_some()
                             || app.runtime.timeline_review.held_frame_id.is_some(),
+                        animation_curves_open:
+                            ui::animation_curve_window::is_animation_curve_window_open(
+                                &app.shell.animation_curve_window,
+                            ),
                     },
                     ui::debug_sidebar::TestModeSidebarState {
                         mode: app.shell.test_mode,
@@ -355,6 +366,13 @@ pub(super) fn run(
             eprintln!("[app] command failed: {err:#}");
         }
     }
+
+    ui::animation_curve_window::show_animation_curve_window(
+        ctx,
+        &mut app.shell.animation_curve_window,
+        app.runtime.timeline_buffer.as_ref(),
+        animation_session_active,
+    );
 
     for action in ui::pass_debug_window::show_pass_debug_windows(
         ctx,

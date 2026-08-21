@@ -507,6 +507,7 @@ pub(super) struct AppShell {
     pub prev_window_mode: UiWindowMode,
     pub ui_sidebar_factor: f32,
     pub timeline_visible: bool,
+    pub timeline_panel_state: crate::ui::timeline_panel::TimelinePanelState,
     pub did_startup_sidebar_size: bool,
     pub animations: AnimationManager,
     pub file_tree_state: FileTreeState,
@@ -517,6 +518,8 @@ pub(super) struct AppShell {
     pub pass_debug_sources: std::collections::HashMap<String, renderer::PassDebugSource>,
     pub pass_debug_sources_revision: u64,
     pub pass_debug_windows: crate::ui::pass_debug_window::PassDebugWindowMap,
+    pub animation_curve_window:
+        Option<crate::ui::animation_curve_window::AnimationCurveWindowState>,
     pub pass_shader_overrides: std::collections::HashMap<String, String>,
     pub pending_shortwire_diff_capture:
         Option<crate::ui::pass_debug_window::ShortwireDiffCaptureRequest>,
@@ -788,6 +791,7 @@ impl App {
                 prev_window_mode: UiWindowMode::Sidebar,
                 ui_sidebar_factor: 1.0,
                 timeline_visible: true,
+                timeline_panel_state: crate::ui::timeline_panel::TimelinePanelState::default(),
                 did_startup_sidebar_size: false,
                 animations: AnimationManager::default(),
                 file_tree_state: FileTreeState::default(),
@@ -798,6 +802,7 @@ impl App {
                 pass_debug_sources: init.pass_debug_sources,
                 pass_debug_sources_revision: 0,
                 pass_debug_windows: crate::ui::pass_debug_window::PassDebugWindowMap::default(),
+                animation_curve_window: None,
                 pass_shader_overrides: std::collections::HashMap::new(),
                 pending_shortwire_diff_capture: None,
                 debug_artifacts,
