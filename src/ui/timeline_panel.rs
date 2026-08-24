@@ -16,13 +16,24 @@ use super::{
         self, CurveSeries, CurveSignal, MAX_PIXELS_PER_SECOND, MIN_PIXELS_PER_SECOND,
         StateFrameRef, TimeAxisViewState, XAxisGesture,
     },
-    button::{self, ButtonGroupPosition, ButtonOptions, ButtonSize, ButtonVariant},
+    button,
+    components::radio_button_group::{self, RadioButtonOption},
     design_tokens::{self, TextRole},
 };
 
-const HEADER_ROW_H: f32 = 28.0;
+const HEADER_ROW_H: f32 = design_tokens::CONTROL_ROW_HEIGHT;
 const VALUE_ROW_H: f32 = 24.0;
-const LABEL_COL_W: f32 = 220.0;
+const PANEL_CONTENT_PAD_Y: f32 = 8.0;
+const HEADER_BODY_GAP: f32 = 8.0;
+const HEADER_CONTROL_GAP: f32 = 4.0;
+const FILTER_HORIZONTAL_PAD: f32 = 8.0;
+const LABEL_COL_DEFAULT_W: f32 = 220.0;
+const LABEL_COL_MIN_W: f32 = 160.0;
+const GRID_MIN_W: f32 = 240.0;
+const SPLIT_HANDLE_W: f32 = 8.0;
+const SPLIT_CONTENT_GUTTER_W: f32 = SPLIT_HANDLE_W + SPLIT_LINE_W;
+const SPLIT_LINE_W: f32 = 1.0;
+const SPLIT_DIVIDER_COLOR: egui::Color32 = egui::Color32::from_gray(32);
 pub(crate) const CONTENT_EDGE_PAD: f32 = 8.0;
 const DIAMOND_HALF: f32 = 3.5;
 const ANCHOR_HIT_RADIUS: f32 = 6.0;
@@ -41,6 +52,8 @@ pub(crate) struct TimelinePanelState {
     mode: TimelineDisplayMode,
     filter: String,
     hidden_channels: HashSet<String>,
+    label_column_width: Option<f32>,
+    vertical_scroll_y: f32,
     time_view: TimeAxisViewState,
     source_recording_id: Option<u64>,
 }
@@ -50,8 +63,10 @@ impl TimelinePanelState {
         if self.source_recording_id == Some(buffer.recording_id()) {
             return;
         }
+        let label_column_width = self.label_column_width;
         *self = Self {
             source_recording_id: Some(buffer.recording_id()),
+            label_column_width,
             ..Self::default()
         };
     }
@@ -82,24 +97,34 @@ pub(crate) fn show_timeline(
 ) -> TimelineInteraction {
     let mut interaction = TimelineInteraction::default();
     state.sync_recording(buffer);
+    let panel_rect = ui.available_rect_before_wrap();
+    let content_rect = panel_rect.shrink2(egui::vec2(0.0, PANEL_CONTENT_PAD_Y));
 
     if buffer.is_empty() {
-        ui.label(design_tokens::rich_text(
+        let mut content_ui = ui.new_child(
+            egui::UiBuilder::new()
+                .id_salt("timeline-empty-state")
+                .max_rect(content_rect),
+        );
+        content_ui.label(design_tokens::rich_text(
             "Press Play or select a State to record",
             TextRole::InactiveItemTitle,
         ));
+        ui.advance_cursor_after_rect(panel_rect);
         return interaction;
     }
 
-    let available_w = ui.available_width();
-    let label_w = LABEL_COL_W.min((available_w - 1.0).max(0.0));
+    let available_w = content_rect.width();
+    let label_w = resolved_label_column_width(available_w, state.label_column_width);
+    let label_content_w = (label_w - SPLIT_CONTENT_GUTTER_W).max(0.0);
     let grid_viewport_w = (available_w - label_w).max(1.0);
-    let (header_rect, header_response) = ui.allocate_exact_size(
-        egui::vec2(available_w, HEADER_ROW_H),
-        egui::Sense::click_and_drag(),
+    let header_rect = egui::Rect::from_min_size(
+        content_rect.min,
+        egui::vec2(available_w, HEADER_ROW_H.min(content_rect.height())),
     );
+    let header_response = ui.allocate_rect(header_rect, egui::Sense::click_and_drag());
     let label_header_rect =
-        egui::Rect::from_min_size(header_rect.min, egui::vec2(label_w, HEADER_ROW_H));
+        egui::Rect::from_min_size(header_rect.min, egui::vec2(label_content_w, HEADER_ROW_H));
     show_header_controls(ui, label_header_rect, state);
 
     let physical_series = (state.mode == TimelineDisplayMode::Curve)
@@ -108,16 +133,20 @@ pub(crate) fn show_timeline(
     let normalized_filter = state.filter.trim().to_lowercase();
     let display_keys =
         filtered_channel_keys(buffer, &physical_series, state.mode, &normalized_filter);
-    let row_count = match state.mode {
+    let content_row_count = match state.mode {
         TimelineDisplayMode::Keyframes => display_keys.len().max(1),
-        TimelineDisplayMode::Curve => display_keys.len().max(CURVE_MIN_ROWS),
+        TimelineDisplayMode::Curve => display_keys.len().max(1),
     };
-    let body_h = row_count as f32 * VALUE_ROW_H;
-    let (body_rect, body_response) = ui.allocate_exact_size(
-        egui::vec2(available_w, body_h),
-        egui::Sense::click_and_drag(),
+    let content_body_h = content_row_count as f32 * VALUE_ROW_H;
+    let body_top = (header_rect.bottom() + HEADER_BODY_GAP).min(content_rect.bottom());
+    let body_rect = egui::Rect::from_min_max(
+        egui::pos2(content_rect.left(), body_top),
+        content_rect.right_bottom(),
     );
-    let label_body_rect = egui::Rect::from_min_size(body_rect.min, egui::vec2(label_w, body_h));
+    let body_h = body_rect.height();
+    ui.allocate_rect(body_rect, egui::Sense::hover());
+    let label_body_rect =
+        egui::Rect::from_min_size(body_rect.min, egui::vec2(label_content_w, body_h));
     let grid_header_rect = egui::Rect::from_min_size(
         egui::pos2(header_rect.min.x + label_w, header_rect.min.y),
         egui::vec2(grid_viewport_w, HEADER_ROW_H),
@@ -127,7 +156,41 @@ pub(crate) fn show_timeline(
         egui::vec2(grid_viewport_w, body_h),
     );
     let grid_clip_rect = grid_header_rect.union(grid_body_rect);
-    let response = header_response.union(body_response);
+
+    show_column_splitter(ui, panel_rect, header_rect, label_w, available_w, state);
+
+    ui.painter().rect_filled(
+        label_body_rect,
+        egui::CornerRadius::ZERO,
+        crate::color::lab(7.78201, -0.000_014_901_2, 0.0),
+    );
+    let pointer_over_grid_body = ui
+        .ctx()
+        .input(|input| input.pointer.hover_pos())
+        .is_some_and(|pointer| grid_body_rect.contains(pointer));
+    if state.mode == TimelineDisplayMode::Keyframes && pointer_over_grid_body {
+        state.vertical_scroll_y =
+            show_keyframe_grid_scroll(ui, grid_body_rect, content_body_h, state.vertical_scroll_y);
+        state.vertical_scroll_y =
+            show_channel_list_scroll(ui, label_body_rect, content_body_h, &display_keys, state);
+    } else {
+        state.vertical_scroll_y =
+            show_channel_list_scroll(ui, label_body_rect, content_body_h, &display_keys, state);
+        if state.mode == TimelineDisplayMode::Keyframes {
+            state.vertical_scroll_y = show_keyframe_grid_scroll(
+                ui,
+                grid_body_rect,
+                content_body_h,
+                state.vertical_scroll_y,
+            );
+        }
+    }
+    let grid_body_response = ui.interact(
+        grid_body_rect,
+        ui.id().with("timeline-grid-interaction"),
+        egui::Sense::click_and_drag(),
+    );
+    let response = header_response.union(grid_body_response);
 
     let (start_time, end_time) = buffer.time_range().unwrap_or((0.0, 0.0));
     let pointer_in_grid = ui
@@ -187,8 +250,8 @@ pub(crate) fn show_timeline(
         ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
     }
 
-    show_channel_buttons(ui, label_body_rect, &display_keys, state);
     let grid_painter = ui.painter_at(grid_clip_rect);
+    let grid_body_painter = ui.painter_at(grid_body_rect);
     paint_time_grid(
         &grid_painter,
         grid_clip_rect,
@@ -199,17 +262,18 @@ pub(crate) fn show_timeline(
     );
     match state.mode {
         TimelineDisplayMode::Keyframes => paint_value_rows(
-            &grid_painter,
+            &grid_body_painter,
             buffer,
             &display_keys,
             &state.hidden_channels,
-            grid_clip_rect,
+            grid_body_rect,
+            state.vertical_scroll_y,
             grid_origin_x,
             start_time,
             pixels_per_second,
         ),
         TimelineDisplayMode::Curve => paint_curve_view(
-            &grid_painter,
+            &grid_body_painter,
             buffer,
             &physical_series,
             &display_keys,
@@ -257,115 +321,218 @@ fn show_header_controls(
         egui::CornerRadius::ZERO,
         crate::color::lab(7.78201, -0.000_014_901_2, 0.0),
     );
-    let inner = header_rect.shrink2(egui::vec2(4.0, 3.0));
+    let inner = header_rect.shrink2(egui::vec2(4.0, 0.0));
     let mut header_ui = ui.new_child(
         egui::UiBuilder::new()
             .id_salt("timeline-header-controls")
             .max_rect(inner)
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
-    header_ui.spacing_mut().item_spacing.x = 2.0;
-    let keyframes_response = button::button_with_width(
-        &mut header_ui,
-        ButtonOptions {
-            label: "K",
-            tooltip: Some("Show keyframes"),
-            variant: if state.mode == TimelineDisplayMode::Keyframes {
-                ButtonVariant::Default
-            } else {
-                ButtonVariant::Secondary
-            },
-            size: ButtonSize::ExtraSmall,
-            enabled: true,
-            icon: None,
-            icon_kind: None,
-            visual_override: None,
-            group_position: ButtonGroupPosition::First,
+    header_ui.spacing_mut().item_spacing.x = HEADER_CONTROL_GAP;
+    header_ui.allocate_ui_with_layout(
+        egui::vec2(64.0, design_tokens::CONTROL_ROW_HEIGHT),
+        egui::Layout::top_down(egui::Align::Min),
+        |ui| {
+            let mut mode = state.mode;
+            if radio_button_group::radio_button_group(
+                ui,
+                "timeline-display-mode",
+                &mut mode,
+                &[
+                    RadioButtonOption {
+                        value: TimelineDisplayMode::Keyframes,
+                        label: "K",
+                    },
+                    RadioButtonOption {
+                        value: TimelineDisplayMode::Curve,
+                        label: "C",
+                    },
+                ],
+            ) {
+                state.mode = mode;
+            }
         },
-        26.0,
     );
-    let curve_response = button::button_with_width(
-        &mut header_ui,
-        ButtonOptions {
-            label: "C",
-            tooltip: Some("Show normalized physical curves"),
-            variant: if state.mode == TimelineDisplayMode::Curve {
-                ButtonVariant::Default
-            } else {
-                ButtonVariant::Secondary
-            },
-            size: ButtonSize::ExtraSmall,
-            enabled: true,
-            icon: None,
-            icon_kind: None,
-            visual_override: None,
-            group_position: ButtonGroupPosition::Last,
-        },
-        26.0,
-    );
-    if keyframes_response.clicked() {
-        state.mode = TimelineDisplayMode::Keyframes;
-    }
-    if curve_response.clicked() {
-        state.mode = TimelineDisplayMode::Curve;
-    }
 
-    let filter_width = header_ui.available_width().max(1.0);
-    header_ui.add_sized(
-        egui::vec2(filter_width, 22.0),
-        egui::TextEdit::singleline(&mut state.filter).hint_text("Filter"),
-    );
+    show_filter_input(&mut header_ui, &mut state.filter);
 }
 
-fn show_channel_buttons(
-    ui: &mut egui::Ui,
-    label_rect: egui::Rect,
-    display_keys: &[String],
-    state: &mut TimelinePanelState,
-) {
-    ui.painter().rect_filled(
-        label_rect,
-        egui::CornerRadius::ZERO,
-        crate::color::lab(7.78201, -0.000_014_901_2, 0.0),
+fn show_filter_input(ui: &mut egui::Ui, filter: &mut String) {
+    let filter_width = ui.available_width().max(1.0);
+    let (filter_rect, _) = ui.allocate_exact_size(
+        egui::vec2(filter_width, design_tokens::CONTROL_ROW_HEIGHT),
+        egui::Sense::hover(),
     );
-    for (row_index, key) in display_keys.iter().enumerate() {
-        let row_rect = egui::Rect::from_min_size(
-            egui::pos2(
-                label_rect.left() + 4.0,
-                label_rect.top() + row_index as f32 * VALUE_ROW_H + 1.0,
-            ),
-            egui::vec2((label_rect.width() - 8.0).max(1.0), VALUE_ROW_H - 2.0),
+    ui.painter().rect_filled(
+        filter_rect,
+        design_tokens::radius(design_tokens::BORDER_RADIUS_SMALL as u8),
+        design_tokens::RESOURCE_ACTIVE_BG,
+    );
+
+    let text_rect = filter_rect.shrink2(egui::vec2(FILTER_HORIZONTAL_PAD, 0.0));
+    let filter_style = design_tokens::text_style(TextRole::ValueLabel);
+    let mut input_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .id_salt("timeline-filter-input")
+            .max_rect(text_rect),
+    );
+    let response = input_ui.add_sized(
+        text_rect.size(),
+        egui::TextEdit::singleline(filter)
+            .id(ui.id().with("timeline-filter-text"))
+            .hint_text("Filter")
+            .font(design_tokens::font_id(
+                filter_style.size,
+                filter_style.weight,
+            ))
+            .text_color(filter_style.color)
+            .desired_width(text_rect.width())
+            .vertical_align(egui::Align::Center)
+            .margin(egui::Margin::same(0))
+            .frame(egui::Frame::NONE),
+    );
+    if response.has_focus() {
+        ui.painter().rect_stroke(
+            filter_rect,
+            design_tokens::radius(design_tokens::BORDER_RADIUS_SMALL as u8),
+            egui::Stroke::new(design_tokens::LINE_THICKNESS_1, design_tokens::white(30)),
+            egui::StrokeKind::Inside,
         );
-        let mut row_ui = ui.new_child(
-            egui::UiBuilder::new()
-                .id_salt(("timeline-channel", key))
-                .max_rect(row_rect)
-                .layout(egui::Layout::top_down(egui::Align::Min)),
+    }
+}
+
+fn show_channel_labels(ui: &mut egui::Ui, display_keys: &[String], state: &mut TimelinePanelState) {
+    for key in display_keys {
+        let (row_rect, response) = ui.allocate_exact_size(
+            egui::vec2(ui.available_width(), VALUE_ROW_H),
+            egui::Sense::click(),
         );
+        let response = button::apply_response_affordance(response, Some(key), true);
         let visible = state.channel_visible(key);
-        let response = button::button_with_width(
-            &mut row_ui,
-            ButtonOptions {
-                label: key,
-                tooltip: Some(key),
-                variant: if visible {
-                    ButtonVariant::Default
-                } else {
-                    ButtonVariant::Ghost
-                },
-                size: ButtonSize::ExtraSmall,
-                enabled: true,
-                icon: None,
-                icon_kind: None,
-                visual_override: None,
-                group_position: ButtonGroupPosition::Single,
-            },
-            row_rect.width(),
+        let text_role = if visible {
+            TextRole::ActiveItemTitle
+        } else {
+            TextRole::InactiveItemTitle
+        };
+        let text_style = design_tokens::text_style(text_role);
+        ui.painter().text(
+            egui::pos2(row_rect.left() + 8.0, row_rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            key,
+            design_tokens::font_id(text_style.size, text_style.weight),
+            text_style.color,
         );
         if response.clicked() {
             state.toggle_channel(key);
         }
     }
+}
+
+fn resolved_label_column_width(available_width: f32, requested_width: Option<f32>) -> f32 {
+    let maximum_width = (available_width - GRID_MIN_W).max(0.0);
+    let minimum_width = LABEL_COL_MIN_W.min(maximum_width);
+    requested_width
+        .unwrap_or(LABEL_COL_DEFAULT_W)
+        .clamp(minimum_width, maximum_width)
+}
+
+fn show_column_splitter(
+    ui: &mut egui::Ui,
+    panel_rect: egui::Rect,
+    header_rect: egui::Rect,
+    label_width: f32,
+    available_width: f32,
+    state: &mut TimelinePanelState,
+) {
+    let handle_rect = egui::Rect::from_min_max(
+        egui::pos2(
+            header_rect.left() + label_width - SPLIT_HANDLE_W,
+            panel_rect.top(),
+        ),
+        egui::pos2(header_rect.left() + label_width, panel_rect.bottom()),
+    );
+    let response = ui
+        .interact(
+            handle_rect,
+            ui.id().with("timeline-column-splitter"),
+            egui::Sense::click_and_drag(),
+        )
+        .on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+    if response.dragged() {
+        state.label_column_width = Some(resolved_label_column_width(
+            available_width,
+            Some(label_width + response.drag_delta().x),
+        ));
+        ui.ctx().request_repaint();
+    }
+
+    let line_color = if response.hovered() || response.dragged() {
+        ui.visuals().widgets.hovered.bg_fill
+    } else {
+        SPLIT_DIVIDER_COLOR
+    };
+    ui.painter().rect_filled(
+        egui::Rect::from_center_size(
+            egui::pos2(
+                handle_rect.right() - SPLIT_LINE_W * 0.5,
+                handle_rect.center().y,
+            ),
+            egui::vec2(SPLIT_LINE_W, handle_rect.height()),
+        ),
+        egui::CornerRadius::ZERO,
+        line_color,
+    );
+}
+
+fn show_channel_list_scroll(
+    ui: &mut egui::Ui,
+    label_rect: egui::Rect,
+    content_height: f32,
+    display_keys: &[String],
+    state: &mut TimelinePanelState,
+) -> f32 {
+    let scroll_y = state.vertical_scroll_y;
+    let mut label_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .id_salt("timeline-channel-list")
+            .max_rect(label_rect),
+    );
+    egui::ScrollArea::vertical()
+        .id_salt("timeline-channel-scroll")
+        .auto_shrink([false, false])
+        .vertical_scroll_offset(scroll_y)
+        .show(&mut label_ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            ui.set_min_height(content_height);
+            show_channel_labels(ui, display_keys, state);
+        })
+        .state
+        .offset
+        .y
+}
+
+fn show_keyframe_grid_scroll(
+    ui: &mut egui::Ui,
+    grid_rect: egui::Rect,
+    content_height: f32,
+    scroll_y: f32,
+) -> f32 {
+    let mut grid_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .id_salt("timeline-keyframe-grid")
+            .max_rect(grid_rect),
+    );
+    egui::ScrollArea::vertical()
+        .id_salt("timeline-grid-scroll")
+        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+        .auto_shrink([false, false])
+        .vertical_scroll_offset(scroll_y)
+        .show(&mut grid_ui, |ui| {
+            ui.allocate_space(egui::vec2(ui.available_width(), content_height));
+        })
+        .state
+        .offset
+        .y
 }
 
 fn build_physical_series(buffer: &TimelineBuffer) -> Vec<CurveSeries> {
@@ -425,7 +592,7 @@ pub(crate) fn natural_height(buffer: &TimelineBuffer, state: &TimelinePanelState
             .len()
             .max(CURVE_MIN_ROWS),
     };
-    HEADER_ROW_H + row_count as f32 * VALUE_ROW_H + 16.0
+    HEADER_ROW_H + HEADER_BODY_GAP + row_count as f32 * VALUE_ROW_H + PANEL_CONTENT_PAD_Y * 2.0
 }
 
 fn update_time_axis_view(
@@ -437,9 +604,10 @@ fn update_time_axis_view(
     end_time: f64,
     view: &mut TimeAxisViewState,
 ) {
-    view.pixels_per_second = view
-        .pixels_per_second
-        .clamp(MIN_PIXELS_PER_SECOND, MAX_PIXELS_PER_SECOND);
+    let (minimum_scale, maximum_scale) =
+        timeline_scale_bounds(start_time, end_time, grid_viewport_w);
+    view.pixels_per_second = view.pixels_per_second.clamp(minimum_scale, maximum_scale);
+    view.track_buffer_start(start_time);
     let initial_content_w = timeline_content_width(
         start_time,
         end_time,
@@ -465,8 +633,7 @@ fn update_time_axis_view(
         match animation_curves::x_axis_gesture(scroll_delta, zoom_factor, shift_pressed) {
             XAxisGesture::ZoomFactor(factor) => {
                 let old_scale = view.pixels_per_second;
-                view.pixels_per_second =
-                    (old_scale * factor).clamp(MIN_PIXELS_PER_SECOND, MAX_PIXELS_PER_SECOND);
+                view.pixels_per_second = (old_scale * factor).clamp(minimum_scale, maximum_scale);
                 let pointer_x = pointer.x - grid_min_x;
                 view.scroll_x = zoom_scroll_around_pointer(
                     view.scroll_x,
@@ -497,6 +664,17 @@ fn update_time_axis_view(
         view.auto_follow,
         user_changed_view,
     );
+}
+
+fn timeline_scale_bounds(start_time: f64, end_time: f64, viewport_width: f32) -> (f32, f32) {
+    let duration = (end_time - start_time).max(0.0) as f32;
+    let fit_scale = if duration > f32::EPSILON {
+        ((viewport_width - CONTENT_EDGE_PAD * 2.0).max(1.0) / duration).max(0.0)
+    } else {
+        MIN_PIXELS_PER_SECOND
+    };
+    let minimum_scale = MIN_PIXELS_PER_SECOND.max(fit_scale);
+    (minimum_scale, MAX_PIXELS_PER_SECOND.max(minimum_scale))
 }
 
 pub(crate) fn timeline_content_width(
@@ -638,7 +816,8 @@ fn paint_value_rows(
     buffer: &TimelineBuffer,
     tracked_keys: &[String],
     hidden_channels: &HashSet<String>,
-    clip_rect: egui::Rect,
+    plot_rect: egui::Rect,
+    vertical_scroll_y: f32,
     grid_origin_x: f32,
     start_time: f64,
     pixels_per_second: f32,
@@ -648,10 +827,10 @@ fn paint_value_rows(
         .map(|key| OverrideKey::parse(key))
         .collect();
     for (row_index, parsed_key) in parsed_keys.iter().enumerate() {
-        let row_y = clip_rect.min.y + HEADER_ROW_H + row_index as f32 * VALUE_ROW_H;
+        let row_y = plot_rect.min.y - vertical_scroll_y + row_index as f32 * VALUE_ROW_H;
         let row_rect = egui::Rect::from_min_size(
-            egui::pos2(clip_rect.min.x, row_y),
-            egui::vec2(clip_rect.width(), VALUE_ROW_H),
+            egui::pos2(plot_rect.min.x, row_y),
+            egui::vec2(plot_rect.width(), VALUE_ROW_H),
         );
         if row_index % 2 == 0 {
             painter.rect_filled(row_rect, egui::CornerRadius::ZERO, design_tokens::white(10));
@@ -675,7 +854,7 @@ fn paint_value_rows(
                 continue;
             }
             let x = frame_x(frame, grid_origin_x, start_time, pixels_per_second);
-            if x >= clip_rect.min.x - DIAMOND_HALF && x <= clip_rect.max.x + DIAMOND_HALF {
+            if x >= plot_rect.min.x - DIAMOND_HALF && x <= plot_rect.max.x + DIAMOND_HALF {
                 draw_diamond(
                     painter,
                     egui::pos2(x, row_y + VALUE_ROW_H * 0.5),
@@ -713,12 +892,18 @@ fn paint_curve_view(
             ),
         );
         if step % 2 == 0 {
+            let (label_y, alignment) = match step {
+                0 => (plot_rect.bottom() - 2.0, egui::Align2::LEFT_BOTTOM),
+                4 => (plot_rect.top() + 2.0, egui::Align2::LEFT_TOP),
+                _ => (y, egui::Align2::LEFT_CENTER),
+            };
+            let label_style = design_tokens::text_style(TextRole::AttributeTitle);
             painter.text(
-                egui::pos2(plot_rect.left() + 4.0, y),
-                egui::Align2::LEFT_CENTER,
+                egui::pos2(plot_rect.left() + 4.0, label_y),
+                alignment,
                 format!("{normalized:.1}"),
-                egui::FontId::monospace(8.0),
-                design_tokens::white(50),
+                design_tokens::font_id(label_style.size, label_style.weight),
+                label_style.color,
             );
         }
     }
@@ -882,6 +1067,35 @@ mod tests {
     }
 
     #[test]
+    fn zoom_out_floor_fits_the_recorded_range_to_the_viewport() {
+        let viewport_width = 2_300.0;
+        let (minimum_scale, maximum_scale) = timeline_scale_bounds(35.0, 45.0, viewport_width);
+
+        assert!((minimum_scale - 228.4).abs() < 0.001);
+        assert_eq!(maximum_scale, MAX_PIXELS_PER_SECOND);
+        assert!(
+            (timeline_content_width(35.0, 45.0, minimum_scale, viewport_width) - viewport_width)
+                .abs()
+                < 0.001
+        );
+    }
+
+    #[test]
+    fn zoom_out_floor_keeps_the_default_minimum_for_long_recordings() {
+        let (minimum_scale, maximum_scale) = timeline_scale_bounds(0.0, 60.0, 1_000.0);
+
+        assert_eq!(minimum_scale, MIN_PIXELS_PER_SECOND);
+        assert_eq!(maximum_scale, MAX_PIXELS_PER_SECOND);
+    }
+
+    #[test]
+    fn label_column_width_respects_both_panes_minimum_widths() {
+        assert_eq!(resolved_label_column_width(1_000.0, None), 220.0);
+        assert_eq!(resolved_label_column_width(1_000.0, Some(80.0)), 160.0);
+        assert_eq!(resolved_label_column_width(1_000.0, Some(900.0)), 760.0);
+    }
+
+    #[test]
     fn panel_defaults_to_keyframes_with_channels_visible() {
         let state = TimelinePanelState::default();
         assert_eq!(state.mode, TimelineDisplayMode::Keyframes);
@@ -946,6 +1160,8 @@ mod tests {
         state.mode = TimelineDisplayMode::Curve;
         state.filter = "position".into();
         state.toggle_channel("node:position");
+        state.label_column_width = Some(280.0);
+        state.vertical_scroll_y = 48.0;
         state.time_view.scroll_x = 100.0;
         state.time_view.initialized = true;
 
@@ -953,6 +1169,8 @@ mod tests {
         assert_eq!(state.mode, TimelineDisplayMode::Keyframes);
         assert!(state.filter.is_empty());
         assert!(state.hidden_channels.is_empty());
+        assert_eq!(state.label_column_width, Some(280.0));
+        assert_eq!(state.vertical_scroll_y, 0.0);
         assert_eq!(state.time_view.scroll_x, 0.0);
         assert!(!state.time_view.initialized);
         assert!(state.time_view.auto_follow);

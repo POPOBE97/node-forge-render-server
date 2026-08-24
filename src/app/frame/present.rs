@@ -267,20 +267,16 @@ pub(super) fn run(
             .frame(
                 egui::Frame::NONE
                     .fill(crate::color::lab(7.78201, -0.000_014_901_2, 0.0))
-                    .inner_margin(egui::Margin::symmetric(12, 8))
+                    .inner_margin(egui::Margin::symmetric(12, 0))
                     .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_gray(32))),
             )
             .show_inside(ui, |ui| {
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        timeline_interaction = ui::timeline_panel::show_timeline(
-                            ui,
-                            buf,
-                            anchor_frame_id,
-                            timeline_panel_state,
-                        );
-                    });
+                timeline_interaction = ui::timeline_panel::show_timeline(
+                    ui,
+                    buf,
+                    anchor_frame_id,
+                    timeline_panel_state,
+                );
             });
     }
 

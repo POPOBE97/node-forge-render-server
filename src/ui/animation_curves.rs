@@ -217,6 +217,8 @@ pub(crate) struct TimeAxisViewState {
     pub scroll_x: f32,
     pub initialized: bool,
     pub auto_follow: bool,
+    /// Last rolling-buffer origin used to keep a detached view at an absolute time.
+    buffer_start_time_secs: Option<f64>,
 }
 
 impl Default for TimeAxisViewState {
@@ -226,6 +228,36 @@ impl Default for TimeAxisViewState {
             scroll_x: 0.0,
             initialized: false,
             auto_follow: true,
+            buffer_start_time_secs: None,
+        }
+    }
+}
+
+impl TimeAxisViewState {
+    /// Rebase a detached scroll offset before clamping it to the current buffer bounds.
+    pub(crate) fn track_buffer_start(&mut self, start_time_secs: f64) {
+        if !start_time_secs.is_finite() {
+            return;
+        }
+        let Some(previous_start_time_secs) = self.buffer_start_time_secs.replace(start_time_secs)
+        else {
+            return;
+        };
+
+        if start_time_secs < previous_start_time_secs {
+            self.scroll_x = 0.0;
+            self.initialized = false;
+            self.auto_follow = true;
+            return;
+        }
+        if self.auto_follow {
+            return;
+        }
+
+        let buffer_shift_px = ((start_time_secs - previous_start_time_secs)
+            * f64::from(self.pixels_per_second)) as f32;
+        if buffer_shift_px.is_finite() {
+            self.scroll_x = (self.scroll_x - buffer_shift_px).max(0.0);
         }
     }
 }
@@ -370,5 +402,67 @@ pub(crate) fn paint_state_markers(
             egui::Color32::from_rgba_unmultiplied(58, 34, 13, 230),
         );
         painter.galley(label_pos, galley, egui::Color32::PLACEHOLDER);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detached_view_stays_at_the_same_time_until_the_buffer_reaches_it() {
+        let mut view = TimeAxisViewState {
+            pixels_per_second: 100.0,
+            scroll_x: 300.0,
+            initialized: true,
+            auto_follow: false,
+            ..Default::default()
+        };
+
+        view.track_buffer_start(10.0);
+        view.track_buffer_start(11.0);
+        assert_eq!(view.scroll_x, 200.0);
+        view.track_buffer_start(12.5);
+        assert_eq!(view.scroll_x, 50.0);
+
+        view.track_buffer_start(13.5);
+        assert_eq!(view.scroll_x, 0.0);
+        view.track_buffer_start(14.0);
+        assert_eq!(view.scroll_x, 0.0);
+        assert!(!view.auto_follow);
+    }
+
+    #[test]
+    fn following_view_leaves_buffer_shift_to_auto_follow_resolution() {
+        let mut view = TimeAxisViewState {
+            pixels_per_second: 100.0,
+            scroll_x: 300.0,
+            initialized: true,
+            auto_follow: true,
+            ..Default::default()
+        };
+
+        view.track_buffer_start(10.0);
+        view.track_buffer_start(12.0);
+
+        assert_eq!(view.scroll_x, 300.0);
+        assert!(view.auto_follow);
+    }
+
+    #[test]
+    fn rewound_buffer_resets_the_view_to_auto_follow() {
+        let mut view = TimeAxisViewState {
+            scroll_x: 300.0,
+            initialized: true,
+            auto_follow: false,
+            ..Default::default()
+        };
+
+        view.track_buffer_start(10.0);
+        view.track_buffer_start(0.0);
+
+        assert_eq!(view.scroll_x, 0.0);
+        assert!(!view.initialized);
+        assert!(view.auto_follow);
     }
 }

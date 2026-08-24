@@ -619,6 +619,7 @@ fn paint_curve_plot(
     view.pixels_per_second = view
         .pixels_per_second
         .clamp(MIN_PIXELS_PER_SECOND, MAX_PIXELS_PER_SECOND);
+    view.track_buffer_start(start_time);
     let initial_content_width = timeline_panel::timeline_content_width(
         start_time,
         end_time,
