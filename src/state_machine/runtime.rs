@@ -635,7 +635,7 @@ impl StateMachineRuntime {
             working.commit_logical_values(self.state_parameter_patch(&current_id));
             let writable_keys = self.state_mutation_writable_keys(&current_id);
             working.seed_targets_from_state(writable_keys.iter());
-            match self.evaluate_state_mutation(&current_id, 0.0, &mut working) {
+            match self.evaluate_state_mutation(&current_id, 0.0, 0.0, &mut working) {
                 Ok(_) => {
                     self.motion_engine = working;
                     self.logical_state_initialized = true;
@@ -675,7 +675,17 @@ impl StateMachineRuntime {
             working_motion.begin_mutation_frame();
         }
         if self.logical_state_initialized && !target_initialized_this_tick {
-            match self.evaluate_state_mutation(&target_state_id, dt, &mut working_motion) {
+            let local_elapsed_time = self
+                .state_local_times
+                .get(&target_state_id)
+                .copied()
+                .unwrap_or(0.0);
+            match self.evaluate_state_mutation(
+                &target_state_id,
+                dt,
+                local_elapsed_time,
+                &mut working_motion,
+            ) {
                 Ok(_) => self.motion_engine = working_motion,
                 Err(error) => {
                     diagnostics.push(format!(
@@ -855,7 +865,9 @@ impl StateMachineRuntime {
         let writable_keys = self.state_mutation_writable_keys(&transition.target);
         target_engine.seed_targets_from_state(writable_keys.iter());
 
-        self.evaluate_state_mutation(&transition.target, 0.0, &mut target_engine)?;
+        // Activation is transactional: evaluate against a fresh State-local
+        // clock, but do not commit the reset unless the target Mutation succeeds.
+        self.evaluate_state_mutation(&transition.target, 0.0, 0.0, &mut target_engine)?;
 
         target_engine.begin_transition_from(&transition.id, &graph, &previous, &transition_keys);
         self.motion_engine = target_engine;
@@ -1119,6 +1131,7 @@ impl StateMachineRuntime {
         &self,
         state_id: &str,
         dt: f64,
+        local_elapsed_time: f64,
         motion_engine: &mut MotionEngine,
     ) -> Result<HashMap<String, GraphValue>> {
         if let Some(error) = &self.function_prepare_error {
@@ -1153,7 +1166,7 @@ impl StateMachineRuntime {
         let ctx = GraphInputContext {
             values: input_values,
             scene_elapsed_time: self.scene_time,
-            local_elapsed_time: self.state_local_times.get(state_id).copied().unwrap_or(0.0),
+            local_elapsed_time,
             mouse_position: self.runtime_input.mouse_position,
             scene_size: self.runtime_input.scene_size,
             dt,
