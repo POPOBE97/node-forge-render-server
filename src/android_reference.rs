@@ -1,5 +1,4 @@
 use std::{
-    borrow::Cow,
     collections::VecDeque,
     env, fs,
     io::{self, BufRead, BufReader, Read},
@@ -627,20 +626,11 @@ pub fn copy_screencap_png_to_clipboard() -> anyhow::Result<AndroidScreencapClipb
     }
 
     let png_byte_len = output.stdout.len();
-    let rgba = image::load_from_memory(output.stdout.as_slice())
-        .map_err(|error| anyhow::anyhow!("failed to decode adb screencap PNG: {error}"))?
-        .to_rgba8();
-    let width = rgba.width();
-    let height = rgba.height();
-    arboard::Clipboard::new()
-        .and_then(|mut clipboard| {
-            clipboard.set_image(arboard::ImageData {
-                width: width as usize,
-                height: height as usize,
-                bytes: Cow::Owned(rgba.into_raw()),
-            })
-        })
-        .map_err(|error| anyhow::anyhow!("failed to copy adb screencap to clipboard: {error}"))?;
+    let decoded = image::load_from_memory(output.stdout.as_slice())
+        .map_err(|error| anyhow::anyhow!("failed to decode adb screencap PNG: {error}"))?;
+    let width = decoded.width();
+    let height = decoded.height();
+    copy_screencap_image_to_clipboard(output.stdout.as_slice(), decoded)?;
 
     Ok(AndroidScreencapClipboardResult {
         serial: device.serial,
@@ -648,6 +638,52 @@ pub fn copy_screencap_png_to_clipboard() -> anyhow::Result<AndroidScreencapClipb
         height,
         png_byte_len,
     })
+}
+
+#[cfg(target_os = "macos")]
+fn copy_screencap_image_to_clipboard(
+    png_bytes: &[u8],
+    _decoded: image::DynamicImage,
+) -> anyhow::Result<()> {
+    let pasteboard = objc2_app_kit::NSPasteboard::generalPasteboard();
+    set_png_bytes_on_pasteboard(&pasteboard, png_bytes)
+}
+
+#[cfg(target_os = "macos")]
+fn set_png_bytes_on_pasteboard(
+    pasteboard: &objc2_app_kit::NSPasteboard,
+    png_bytes: &[u8],
+) -> anyhow::Result<()> {
+    use objc2_app_kit::NSPasteboardTypePNG;
+    use objc2_foundation::NSData;
+
+    let png_data = NSData::with_bytes(png_bytes);
+    pasteboard.clearContents();
+    // SAFETY: NSPasteboardTypePNG is a process-lifetime AppKit constant.
+    let png_type = unsafe { NSPasteboardTypePNG };
+    if !pasteboard.setData_forType(Some(&png_data), png_type) {
+        anyhow::bail!("NSPasteboard rejected adb screencap PNG data");
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn copy_screencap_image_to_clipboard(
+    _png_bytes: &[u8],
+    decoded: image::DynamicImage,
+) -> anyhow::Result<()> {
+    let rgba = decoded.to_rgba8();
+    let width = rgba.width();
+    let height = rgba.height();
+    arboard::Clipboard::new()
+        .and_then(|mut clipboard| {
+            clipboard.set_image(arboard::ImageData {
+                width: width as usize,
+                height: height as usize,
+                bytes: std::borrow::Cow::Owned(rgba.into_raw()),
+            })
+        })
+        .map_err(|error| anyhow::anyhow!("failed to copy adb screencap to clipboard: {error}"))
 }
 
 fn spawn_pam_reader(
@@ -860,6 +896,31 @@ mod tests {
         select_single_ready_usb_device,
     };
     use std::{io::BufReader, path::Path};
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_png_pasteboard_preserves_profiled_png_bytes() {
+        use image::{ExtendedColorType, ImageEncoder, codecs::png::PngEncoder};
+        use objc2_app_kit::{NSPasteboard, NSPasteboardTypePNG};
+
+        let mut png = Vec::new();
+        let mut encoder = PngEncoder::new(&mut png);
+        encoder
+            .set_icc_profile(b"test Display P3 profile".to_vec())
+            .unwrap();
+        encoder
+            .write_image(&[255, 37, 15, 255], 1, 1, ExtendedColorType::Rgba8)
+            .unwrap();
+        assert!(png.windows(4).any(|bytes| bytes == b"iCCP"));
+
+        let pasteboard = NSPasteboard::pasteboardWithUniqueName();
+        super::set_png_bytes_on_pasteboard(&pasteboard, &png).unwrap();
+
+        // SAFETY: NSPasteboardTypePNG is a process-lifetime AppKit constant.
+        let png_type = unsafe { NSPasteboardTypePNG };
+        let round_tripped = pasteboard.dataForType(png_type).unwrap().to_vec();
+        assert_eq!(round_tripped, png);
+    }
 
     #[test]
     fn adb_device_selection_prefers_single_ready_usb() {

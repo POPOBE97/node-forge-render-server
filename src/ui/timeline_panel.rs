@@ -27,6 +27,7 @@ const PANEL_CONTENT_PAD_Y: f32 = 8.0;
 const HEADER_BODY_GAP: f32 = 8.0;
 const HEADER_CONTROL_GAP: f32 = 4.0;
 const FILTER_HORIZONTAL_PAD: f32 = 8.0;
+const LABEL_HORIZONTAL_PAD: f32 = 8.0;
 const LABEL_COL_DEFAULT_W: f32 = 220.0;
 const LABEL_COL_MIN_W: f32 = 160.0;
 const GRID_MIN_W: f32 = 240.0;
@@ -171,11 +172,23 @@ pub(crate) fn show_timeline(
     if state.mode == TimelineDisplayMode::Keyframes && pointer_over_grid_body {
         state.vertical_scroll_y =
             show_keyframe_grid_scroll(ui, grid_body_rect, content_body_h, state.vertical_scroll_y);
-        state.vertical_scroll_y =
-            show_channel_list_scroll(ui, label_body_rect, content_body_h, &display_keys, state);
+        state.vertical_scroll_y = show_channel_list_scroll(
+            ui,
+            label_body_rect,
+            content_body_h,
+            &display_keys,
+            buffer,
+            state,
+        );
     } else {
-        state.vertical_scroll_y =
-            show_channel_list_scroll(ui, label_body_rect, content_body_h, &display_keys, state);
+        state.vertical_scroll_y = show_channel_list_scroll(
+            ui,
+            label_body_rect,
+            content_body_h,
+            &display_keys,
+            buffer,
+            state,
+        );
         if state.mode == TimelineDisplayMode::Keyframes {
             state.vertical_scroll_y = show_keyframe_grid_scroll(
                 ui,
@@ -308,6 +321,12 @@ pub(crate) fn show_timeline(
         );
     }
 
+    // The content is inset vertically, so its last allocated widget ends above
+    // the panel's bottom edge. Reserve the full rect explicitly; otherwise the
+    // resizable egui Panel persists the inset content height and loses
+    // PANEL_CONTENT_PAD_Y on every frame after a drag.
+    ui.advance_cursor_after_rect(panel_rect);
+
     interaction
 }
 
@@ -401,13 +420,19 @@ fn show_filter_input(ui: &mut egui::Ui, filter: &mut String) {
     }
 }
 
-fn show_channel_labels(ui: &mut egui::Ui, display_keys: &[String], state: &mut TimelinePanelState) {
+fn show_channel_labels(
+    ui: &mut egui::Ui,
+    display_keys: &[String],
+    buffer: &TimelineBuffer,
+    state: &mut TimelinePanelState,
+) {
     for key in display_keys {
         let (row_rect, response) = ui.allocate_exact_size(
             egui::vec2(ui.available_width(), VALUE_ROW_H),
             egui::Sense::click(),
         );
-        let response = button::apply_response_affordance(response, Some(key), true);
+        let label = buffer.display_label(key);
+        let response = button::apply_response_affordance(response, Some(label), true);
         let visible = state.channel_visible(key);
         let text_role = if visible {
             TextRole::ActiveItemTitle
@@ -415,13 +440,20 @@ fn show_channel_labels(ui: &mut egui::Ui, display_keys: &[String], state: &mut T
             TextRole::InactiveItemTitle
         };
         let text_style = design_tokens::text_style(text_role);
-        ui.painter().text(
-            egui::pos2(row_rect.left() + 8.0, row_rect.center().y),
-            egui::Align2::LEFT_CENTER,
-            key,
+        let mut layout_job = egui::text::LayoutJob::simple_singleline(
+            label.to_string(),
             design_tokens::font_id(text_style.size, text_style.weight),
             text_style.color,
         );
+        layout_job.wrap = egui::text::TextWrapping::truncate_at_width(
+            (row_rect.width() - LABEL_HORIZONTAL_PAD * 2.0).max(0.0),
+        );
+        let galley = ui.painter().layout_job(layout_job);
+        let text_pos = egui::pos2(
+            row_rect.left() + LABEL_HORIZONTAL_PAD,
+            row_rect.center().y - galley.size().y * 0.5,
+        );
+        ui.painter().galley(text_pos, galley, text_style.color);
         if response.clicked() {
             state.toggle_channel(key);
         }
@@ -489,6 +521,7 @@ fn show_channel_list_scroll(
     label_rect: egui::Rect,
     content_height: f32,
     display_keys: &[String],
+    buffer: &TimelineBuffer,
     state: &mut TimelinePanelState,
 ) -> f32 {
     let scroll_y = state.vertical_scroll_y;
@@ -504,7 +537,7 @@ fn show_channel_list_scroll(
         .show(&mut label_ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             ui.set_min_height(content_height);
-            show_channel_labels(ui, display_keys, state);
+            show_channel_labels(ui, display_keys, buffer, state);
         })
         .state
         .offset
@@ -554,18 +587,33 @@ fn filtered_channel_keys(
     normalized_filter: &str,
 ) -> Vec<String> {
     let normalized_filter = normalized_filter.to_lowercase();
-    let keys = match mode {
-        TimelineDisplayMode::Keyframes => buffer.tracked_keys.iter().cloned().collect(),
+    let mut keys = match mode {
+        TimelineDisplayMode::Keyframes => buffer.tracked_keys.clone(),
         TimelineDisplayMode::Curve => physical_series
             .iter()
             .map(|series| series.channel_key.clone())
-            .collect::<BTreeSet<_>>(),
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect(),
     };
-    keys.into_iter()
-        .filter(|key| {
-            normalized_filter.is_empty() || key.to_lowercase().contains(&normalized_filter)
-        })
-        .collect()
+    keys.retain(|key| channel_matches_filter(buffer, key, &normalized_filter));
+    keys.sort_by(|left, right| {
+        buffer
+            .display_label(left)
+            .to_lowercase()
+            .cmp(&buffer.display_label(right).to_lowercase())
+            .then_with(|| left.cmp(right))
+    });
+    keys
+}
+
+fn channel_matches_filter(buffer: &TimelineBuffer, key: &str, normalized_filter: &str) -> bool {
+    normalized_filter.is_empty()
+        || buffer
+            .display_label(key)
+            .to_lowercase()
+            .contains(normalized_filter)
+        || key.to_lowercase().contains(normalized_filter)
 }
 
 pub(crate) fn natural_height(buffer: &TimelineBuffer, state: &TimelinePanelState) -> f32 {
@@ -574,19 +622,14 @@ pub(crate) fn natural_height(buffer: &TimelineBuffer, state: &TimelinePanelState
         TimelineDisplayMode::Keyframes => buffer
             .tracked_keys
             .iter()
-            .filter(|key| {
-                normalized_filter.is_empty() || key.to_lowercase().contains(&normalized_filter)
-            })
+            .filter(|key| channel_matches_filter(buffer, key, &normalized_filter))
             .count()
             .max(1),
         TimelineDisplayMode::Curve => buffer
             .frames()
             .iter()
             .flat_map(|frame| frame.motion_channels.iter())
-            .filter(|channel| {
-                normalized_filter.is_empty()
-                    || channel.key.to_lowercase().contains(&normalized_filter)
-            })
+            .filter(|channel| channel_matches_filter(buffer, &channel.key, &normalized_filter))
             .map(|channel| channel.key.as_str())
             .collect::<BTreeSet<_>>()
             .len()
@@ -1040,6 +1083,38 @@ mod tests {
         }
     }
 
+    #[allow(deprecated)]
+    fn render_panel_height(
+        ctx: &egui::Context,
+        buffer: &TimelineBuffer,
+        state: &mut TimelinePanelState,
+    ) -> f32 {
+        ctx.begin_pass(egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(800.0, 600.0),
+            )),
+            ..Default::default()
+        });
+        let mut panel_height = 0.0;
+        egui::CentralPanel::default().show(ctx, |ui| {
+            panel_height = egui::Panel::bottom("timeline-panel-height-test")
+                .resizable(true)
+                .default_size(300.0)
+                .min_size(72.0)
+                .max_size(400.0)
+                .frame(egui::Frame::NONE)
+                .show_inside(ui, |ui| {
+                    show_timeline(ui, buffer, None, state);
+                })
+                .response
+                .rect
+                .height();
+        });
+        let _ = ctx.end_pass();
+        panel_height
+    }
+
     #[test]
     fn tick_step_uses_one_two_five_progression() {
         assert_eq!(tick_step(640.0), 0.1);
@@ -1103,6 +1178,41 @@ mod tests {
     }
 
     #[test]
+    fn populated_panel_keeps_its_resized_height_across_frames() {
+        let ctx = egui::Context::default();
+        let mut fonts = egui::FontDefinitions::default();
+        let proportional_fallbacks = fonts
+            .families
+            .get(&egui::FontFamily::Proportional)
+            .cloned()
+            .unwrap_or_default();
+        for family in [
+            "MiSans-Light",
+            "MiSans-Regular",
+            "MiSans-Medium",
+            "MiSans-Bold",
+        ] {
+            fonts.families.insert(
+                egui::FontFamily::Name(family.into()),
+                proportional_fallbacks.clone(),
+            );
+        }
+        ctx.set_fonts(fonts);
+        let mut buffer = TimelineBuffer::new(10.0, vec!["node:value".into()]);
+        buffer.push(record(Vec::new()));
+        let mut state = TimelinePanelState::default();
+
+        let initial_height = render_panel_height(&ctx, &buffer, &mut state);
+        for _ in 0..5 {
+            assert_eq!(
+                render_panel_height(&ctx, &buffer, &mut state),
+                initial_height
+            );
+        }
+        assert_eq!(initial_height, 300.0);
+    }
+
+    #[test]
     fn filter_matches_keyframes_case_insensitively_without_changing_visibility() {
         let buffer = TimelineBuffer::new(10.0, vec!["Alpha:value".into(), "beta:value".into()]);
         let mut state = TimelinePanelState::default();
@@ -1115,6 +1225,53 @@ mod tests {
         let all_keys = filtered_channel_keys(&buffer, &[], TimelineDisplayMode::Keyframes, "");
         assert_eq!(all_keys.len(), 2);
         assert!(!state.channel_visible("Alpha:value"));
+    }
+
+    #[test]
+    fn semantic_titles_drive_channel_filtering_and_sorting_without_replacing_ids() {
+        let mut buffer = TimelineBuffer::new(
+            10.0,
+            vec![
+                "FloatInput_beta:value".into(),
+                "FloatInput_alpha:value".into(),
+            ],
+        )
+        .with_display_labels(HashMap::from([
+            ("FloatInput_alpha:value".into(), "Zeta".into()),
+            ("FloatInput_beta:value".into(), "Alpha".into()),
+            ("sp_alpha".into(), "Curve Zeta".into()),
+            ("sp_beta".into(), "Curve Alpha".into()),
+        ]));
+        buffer.push(record(vec![
+            MotionChannelDebug {
+                key: "sp_alpha".into(),
+                value: vec![1.0],
+                ..Default::default()
+            },
+            MotionChannelDebug {
+                key: "sp_beta".into(),
+                value: vec![2.0],
+                ..Default::default()
+            },
+        ]));
+        let series = build_physical_series(&buffer);
+
+        assert_eq!(
+            filtered_channel_keys(&buffer, &series, TimelineDisplayMode::Keyframes, ""),
+            vec!["FloatInput_beta:value", "FloatInput_alpha:value"]
+        );
+        assert_eq!(
+            filtered_channel_keys(&buffer, &series, TimelineDisplayMode::Keyframes, "zeta"),
+            vec!["FloatInput_alpha:value"]
+        );
+        assert_eq!(
+            filtered_channel_keys(&buffer, &series, TimelineDisplayMode::Curve, ""),
+            vec!["sp_beta", "sp_alpha"]
+        );
+        assert_eq!(
+            filtered_channel_keys(&buffer, &series, TimelineDisplayMode::Curve, "curve alpha"),
+            vec!["sp_beta"]
+        );
     }
 
     #[test]

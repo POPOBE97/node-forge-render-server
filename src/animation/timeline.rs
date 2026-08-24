@@ -77,6 +77,8 @@ pub struct TimelineBuffer {
     next_frame_id: u64,
     /// Sorted list of tracked override key strings (discovered at creation).
     pub tracked_keys: Vec<String>,
+    /// User-authored labels keyed by stable runtime identity.
+    display_labels: HashMap<String, String>,
 }
 
 impl TimelineBuffer {
@@ -88,7 +90,17 @@ impl TimelineBuffer {
             max_duration_secs,
             next_frame_id: 0,
             tracked_keys,
+            display_labels: HashMap::new(),
         }
+    }
+
+    pub(crate) fn with_display_labels(mut self, display_labels: HashMap<String, String>) -> Self {
+        self.display_labels = display_labels;
+        self
+    }
+
+    pub(crate) fn display_label<'a>(&'a self, key: &'a str) -> &'a str {
+        self.display_labels.get(key).map_or(key, String::as_str)
     }
 
     /// Identity of this recording lifecycle. A fresh scene creates a fresh id;
@@ -254,6 +266,17 @@ mod tests {
         assert_eq!(buffer.elapsed_secs(), 0.0);
         let second = buffer.push(record(0.0));
         assert!(second > first);
+    }
+
+    #[test]
+    fn display_labels_are_presentation_only_and_fall_back_to_runtime_keys() {
+        let buffer = TimelineBuffer::new(10.0, vec!["node:value".into()]).with_display_labels(
+            HashMap::from([("node:value".into(), "Authored title".into())]),
+        );
+
+        assert_eq!(buffer.display_label("node:value"), "Authored title");
+        assert_eq!(buffer.display_label("sp_internal"), "sp_internal");
+        assert_eq!(buffer.tracked_keys, vec!["node:value"]);
     }
 
     #[test]

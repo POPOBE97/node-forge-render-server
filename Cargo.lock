@@ -3080,6 +3080,8 @@ dependencies = [
  "metal",
  "naga 0.20.0",
  "notify",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
  "proptest",
  "rayon",
  "rfd",

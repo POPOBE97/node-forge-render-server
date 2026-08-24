@@ -1,5 +1,5 @@
 use std::{
-    collections::hash_map::DefaultHasher,
+    collections::{HashMap, hash_map::DefaultHasher},
     hash::{Hash, Hasher},
     sync::Arc,
 };
@@ -907,6 +907,7 @@ pub fn apply_scene_update(
                             app.runtime.animation_session = next_animation_session.clone();
                             app.runtime.timeline_buffer = create_timeline_buffer_for_session(
                                 app.runtime.animation_session.as_ref(),
+                                &scene,
                             );
                             app.runtime.last_live_snapshot = None;
                             app.runtime.timeline_review = Default::default();
@@ -988,8 +989,10 @@ pub fn apply_scene_update(
                         app.runtime.pipeline_rebuild_count.saturating_add(1);
 
                     app.runtime.animation_session = next_animation_session;
-                    app.runtime.timeline_buffer =
-                        create_timeline_buffer_for_session(app.runtime.animation_session.as_ref());
+                    app.runtime.timeline_buffer = create_timeline_buffer_for_session(
+                        app.runtime.animation_session.as_ref(),
+                        &scene,
+                    );
                     app.runtime.last_live_snapshot = None;
                     app.runtime.timeline_review = Default::default();
                     restore_state_control_after_scene_change(app, previous_state_control_selection);
@@ -1124,13 +1127,53 @@ pub fn apply_scene_update(
 /// if there is no session (scene has no state machine).
 fn create_timeline_buffer_for_session(
     session: Option<&crate::animation::AnimationSession>,
+    scene: &crate::dsl::SceneDSL,
 ) -> Option<crate::animation::TimelineBuffer> {
     let session = session?;
     let keys: Vec<String> =
         crate::state_machine::trace::tracked_override_keys(session.runtime().definition())
             .into_iter()
             .collect();
-    Some(crate::animation::TimelineBuffer::new(10.0, keys))
+    let display_labels =
+        timeline_display_labels(scene, &session.runtime().definition().state_params, &keys);
+    Some(crate::animation::TimelineBuffer::new(10.0, keys).with_display_labels(display_labels))
+}
+
+fn timeline_display_labels(
+    scene: &crate::dsl::SceneDSL,
+    state_params: &[crate::state_machine::types::StateParamDeclaration],
+    tracked_keys: &[String],
+) -> HashMap<String, String> {
+    let mut labels = state_params
+        .iter()
+        .filter_map(|declaration| {
+            let name = declaration.name.trim();
+            (!name.is_empty()).then(|| (declaration.id.clone(), name.to_string()))
+        })
+        .collect::<HashMap<_, _>>();
+    let nodes_by_id = scene
+        .nodes
+        .iter()
+        .map(|node| (node.id.as_str(), node))
+        .collect::<HashMap<_, _>>();
+
+    for key in tracked_keys {
+        let Some(override_key) = crate::state_machine::OverrideKey::parse(key) else {
+            continue;
+        };
+        let Some(node) = nodes_by_id.get(override_key.node_id.as_str()) else {
+            continue;
+        };
+        let node_label = crate::dsl::node_display_label(node);
+        let label = if override_key.param_name == "value" {
+            node_label
+        } else {
+            format!("{node_label}.{}", override_key.param_name)
+        };
+        labels.insert(key.clone(), label);
+    }
+
+    labels
 }
 
 fn apply_error_plane(app: &mut App, render_state: &egui_wgpu::RenderState) {
@@ -1256,6 +1299,76 @@ mod tests {
             [1080, 2400],
             [1440, 3200],
         ));
+    }
+
+    #[test]
+    fn timeline_labels_use_authored_state_param_and_render_input_titles() {
+        let scene = crate::dsl::SceneDSL {
+            version: "6.0".into(),
+            metadata: crate::dsl::Metadata {
+                name: "scene".into(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![
+                crate::dsl::Node {
+                    id: "FloatInput_internal".into(),
+                    node_type: "FloatInput".into(),
+                    params: HashMap::from([(
+                        "__node_label".into(),
+                        serde_json::json!("Glow Bloom Sigma"),
+                    )]),
+                    inputs: Vec::new(),
+                    outputs: Vec::new(),
+                    input_bindings: Vec::new(),
+                    wgsl_override: None,
+                },
+                crate::dsl::Node {
+                    id: "Vector2Input_internal".into(),
+                    node_type: "Vector2Input".into(),
+                    params: HashMap::from([(
+                        "__node_label".into(),
+                        serde_json::json!("Canvas Size"),
+                    )]),
+                    inputs: Vec::new(),
+                    outputs: Vec::new(),
+                    input_bindings: Vec::new(),
+                    wgsl_override: None,
+                },
+            ],
+            connections: Vec::new(),
+            outputs: None,
+            groups: Vec::new(),
+            assets: Default::default(),
+            state_machine: None,
+            debug_artifacts: None,
+        };
+        let state_params = vec![crate::state_machine::types::StateParamDeclaration {
+            id: "sp_internal".into(),
+            name: "Semantic Gain".into(),
+            param_type: "float".into(),
+            default_value: serde_json::json!(1.0),
+            array_length: None,
+        }];
+        let tracked_keys = vec![
+            "FloatInput_internal:value".into(),
+            "Vector2Input_internal:x".into(),
+        ];
+
+        let labels = timeline_display_labels(&scene, &state_params, &tracked_keys);
+
+        assert_eq!(
+            labels.get("sp_internal").map(String::as_str),
+            Some("Semantic Gain")
+        );
+        assert_eq!(
+            labels.get("FloatInput_internal:value").map(String::as_str),
+            Some("Glow Bloom Sigma")
+        );
+        assert_eq!(
+            labels.get("Vector2Input_internal:x").map(String::as_str),
+            Some("Canvas Size.x")
+        );
     }
 
     #[test]

@@ -600,7 +600,8 @@ pub fn parse_str<'a>(params: &'a HashMap<String, serde_json::Value>, key: &str) 
 
 pub fn node_display_label(node: &Node) -> String {
     node.params
-        .get("label")
+        .get("__node_label")
+        .or_else(|| node.params.get("label"))
         .and_then(|v| v.as_str())
         .map(str::trim)
         .filter(|s| !s.is_empty())
@@ -1210,6 +1211,7 @@ mod tests {
                 .and_then(|value| value.as_str()),
             Some("Beauty Pass")
         );
+        assert_eq!(node_display_label(&node), "Beauty Pass");
 
         let serialized = serde_json::to_value(&node).expect("node should serialize");
         assert_eq!(serialized.get("label"), Some(&json!("Beauty Pass")));
