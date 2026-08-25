@@ -48,12 +48,38 @@ pub fn begin_clipboard_copy(
 }
 
 pub fn begin_android_screencap_clipboard_copy(async_ops: &mut CanvasAsyncOps, now: f64) {
-    begin_async_clipboard_copy(async_ops, now, ANDROID_SCREENCAP_TIMEOUT_SECS, move || {
-        match crate::android_reference::copy_screencap_png_to_clipboard() {
+    begin_android_screencap_clipboard_copy_with(
+        async_ops,
+        now,
+        "source-profile",
+        crate::android_reference::copy_screencap_png_to_clipboard,
+    );
+}
+
+pub fn begin_android_screencap_srgb_clipboard_copy(async_ops: &mut CanvasAsyncOps, now: f64) {
+    begin_android_screencap_clipboard_copy_with(
+        async_ops,
+        now,
+        "figma-srgb",
+        crate::android_reference::copy_screencap_srgb_png_to_clipboard,
+    );
+}
+
+fn begin_android_screencap_clipboard_copy_with(
+    async_ops: &mut CanvasAsyncOps,
+    now: f64,
+    encoding: &'static str,
+    copy: fn() -> anyhow::Result<crate::android_reference::AndroidScreencapClipboardResult>,
+) {
+    begin_async_clipboard_copy(
+        async_ops,
+        now,
+        ANDROID_SCREENCAP_TIMEOUT_SECS,
+        move || match copy() {
             Ok(result) => {
                 eprintln!(
-                    "[android-screencap] copied {}x{} PNG from {} to clipboard ({} bytes)",
-                    result.width, result.height, result.serial, result.png_byte_len
+                    "[android-screencap] copied {}x{} {encoding} PNG from {} to clipboard ({} bytes)",
+                    result.width, result.height, result.serial, result.png_byte_len,
                 );
                 true
             }
@@ -61,8 +87,8 @@ pub fn begin_android_screencap_clipboard_copy(async_ops: &mut CanvasAsyncOps, no
                 eprintln!("[android-screencap] failed: {error:#}");
                 false
             }
-        }
-    });
+        },
+    );
 }
 
 fn begin_async_clipboard_copy(

@@ -14,6 +14,22 @@ cargo run --release
 
 > 默认会从 `assets/` 读取示例场景作为初始 scene。
 
+## Android 截图到剪贴板
+
+连接一台已授权 USB 调试的 Android 设备后，可直接截图并写入系统剪贴板。默认执行 Display P3 到 sRGB 的像素转换，适合粘贴到 Figma：
+
+```bash
+node-forge-render-server --android-screencap-clipboard
+```
+
+保留 Android `screencap` 返回的原始 PNG 与色彩配置：
+
+```bash
+node-forge-render-server --android-screencap-clipboard source
+```
+
+该命令执行一次后立即退出；设备必须是唯一一台处于 `device` 状态的 USB 设备。
+
 ## 测试
 
 - WGSL 生成测试（如何新增/更新测试用例）：见 [docs/testing-wgsl-generation.md](docs/testing-wgsl-generation.md)

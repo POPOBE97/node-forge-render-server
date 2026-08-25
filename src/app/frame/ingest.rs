@@ -54,25 +54,41 @@ fn log_shortwire_input_ingest(app: &App, ctx: &egui::Context) {
     );
 }
 
-fn android_screencap_clipboard_shortcut_pressed(ctx: &egui::Context) -> bool {
+#[derive(Clone, Copy)]
+enum AndroidScreencapClipboardShortcut {
+    SourceProfile,
+    FigmaSrgb,
+}
+
+fn android_screencap_clipboard_shortcut_pressed(
+    ctx: &egui::Context,
+) -> Option<AndroidScreencapClipboardShortcut> {
     ctx.input(|input| {
-        input.events.iter().any(|event| match event {
+        input.events.iter().find_map(|event| match event {
             egui::Event::Key {
                 key,
                 physical_key,
                 pressed,
                 repeat,
                 modifiers,
-            } => {
-                *pressed
-                    && !*repeat
-                    && modifiers.command
-                    && modifiers.alt
-                    && !modifiers.shift
-                    && !modifiers.ctrl
-                    && (*key == egui::Key::Num3 || *physical_key == Some(egui::Key::Num3))
+            } if *pressed
+                && !*repeat
+                && modifiers.command
+                && modifiers.alt
+                && !modifiers.shift
+                && !modifiers.ctrl =>
+            {
+                match (*key, *physical_key) {
+                    (egui::Key::Num3, _) | (_, Some(egui::Key::Num3)) => {
+                        Some(AndroidScreencapClipboardShortcut::SourceProfile)
+                    }
+                    (egui::Key::Num4, _) | (_, Some(egui::Key::Num4)) => {
+                        Some(AndroidScreencapClipboardShortcut::FigmaSrgb)
+                    }
+                    _ => None,
+                }
             }
-            _ => false,
+            _ => None,
         })
     })
 }
@@ -86,10 +102,24 @@ pub(super) fn run(
 ) -> IngestPhase {
     log_shortwire_input_ingest(app, ctx);
 
-    if input_scope::debug_shortcuts_enabled(app, ctx)
-        && android_screencap_clipboard_shortcut_pressed(ctx)
-    {
-        canvas::ops::begin_android_screencap_clipboard_copy(&mut app.canvas.async_ops, frame_time);
+    let screencap_shortcut = input_scope::debug_shortcuts_enabled(app, ctx)
+        .then(|| android_screencap_clipboard_shortcut_pressed(ctx))
+        .flatten();
+    if let Some(shortcut) = screencap_shortcut {
+        match shortcut {
+            AndroidScreencapClipboardShortcut::SourceProfile => {
+                canvas::ops::begin_android_screencap_clipboard_copy(
+                    &mut app.canvas.async_ops,
+                    frame_time,
+                );
+            }
+            AndroidScreencapClipboardShortcut::FigmaSrgb => {
+                canvas::ops::begin_android_screencap_srgb_clipboard_copy(
+                    &mut app.canvas.async_ops,
+                    frame_time,
+                );
+            }
+        }
         ctx.request_repaint();
     }
 

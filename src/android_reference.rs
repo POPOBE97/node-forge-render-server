@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::VecDeque,
     env, fs,
     io::{self, BufRead, BufReader, Read},
@@ -44,6 +45,18 @@ pub struct AndroidScreencapClipboardResult {
     pub width: u32,
     pub height: u32,
     pub png_byte_len: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ScreencapClipboardEncoding {
+    Source,
+    FigmaSrgb,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PngRgbSpace {
+    DisplayP3,
+    Srgb,
 }
 
 #[derive(Default)]
@@ -606,6 +619,16 @@ pub fn select_single_ready_usb_device(devices: &[AndroidDevice]) -> anyhow::Resu
 }
 
 pub fn copy_screencap_png_to_clipboard() -> anyhow::Result<AndroidScreencapClipboardResult> {
+    copy_screencap_to_clipboard(ScreencapClipboardEncoding::Source)
+}
+
+pub fn copy_screencap_srgb_png_to_clipboard() -> anyhow::Result<AndroidScreencapClipboardResult> {
+    copy_screencap_to_clipboard(ScreencapClipboardEncoding::FigmaSrgb)
+}
+
+fn copy_screencap_to_clipboard(
+    encoding: ScreencapClipboardEncoding,
+) -> anyhow::Result<AndroidScreencapClipboardResult> {
     let adb_path = resolve_command_path("NODE_FORGE_ADB_BIN", "adb");
     let devices = android_devices_with_adb(&adb_path)?;
     let device = select_single_ready_usb_device(&devices)?;
@@ -625,12 +648,24 @@ pub fn copy_screencap_png_to_clipboard() -> anyhow::Result<AndroidScreencapClipb
         anyhow::bail!("adb screencap returned no PNG data");
     }
 
-    let png_byte_len = output.stdout.len();
     let decoded = image::load_from_memory(output.stdout.as_slice())
         .map_err(|error| anyhow::anyhow!("failed to decode adb screencap PNG: {error}"))?;
     let width = decoded.width();
     let height = decoded.height();
-    copy_screencap_image_to_clipboard(output.stdout.as_slice(), decoded)?;
+    let (clipboard_png, clipboard_image) = match encoding {
+        ScreencapClipboardEncoding::Source => (Cow::Borrowed(output.stdout.as_slice()), decoded),
+        ScreencapClipboardEncoding::FigmaSrgb => {
+            let source_space = detect_png_rgb_space(output.stdout.as_slice())?;
+            let mut rgba = decoded.to_rgba8();
+            if source_space == PngRgbSpace::DisplayP3 {
+                display_p3_rgba8_to_srgb(&mut rgba);
+            }
+            let srgb_png = encode_srgb_png(&rgba)?;
+            (Cow::Owned(srgb_png), image::DynamicImage::ImageRgba8(rgba))
+        }
+    };
+    let png_byte_len = clipboard_png.len();
+    copy_screencap_image_to_clipboard(clipboard_png.as_ref(), clipboard_image)?;
 
     Ok(AndroidScreencapClipboardResult {
         serial: device.serial,
@@ -638,6 +673,144 @@ pub fn copy_screencap_png_to_clipboard() -> anyhow::Result<AndroidScreencapClipb
         height,
         png_byte_len,
     })
+}
+
+fn detect_png_rgb_space(png_bytes: &[u8]) -> anyhow::Result<PngRgbSpace> {
+    let reader = png::Decoder::new(std::io::Cursor::new(png_bytes))
+        .read_info()
+        .map_err(|error| anyhow::anyhow!("failed to inspect adb screencap PNG: {error}"))?;
+    let info = reader.info();
+    if info.srgb.is_some() {
+        return Ok(PngRgbSpace::Srgb);
+    }
+    let Some(profile) = info.icc_profile.as_deref() else {
+        anyhow::bail!("adb screencap PNG has no recognized sRGB marker or embedded ICC profile");
+    };
+    detect_icc_rgb_space(profile).ok_or_else(|| {
+        anyhow::anyhow!("adb screencap PNG uses an unsupported embedded RGB color profile")
+    })
+}
+
+fn detect_icc_rgb_space(profile: &[u8]) -> Option<PngRgbSpace> {
+    let red = icc_xyz_tag(profile, b"rXYZ")?;
+    let green = icc_xyz_tag(profile, b"gXYZ")?;
+    let blue = icc_xyz_tag(profile, b"bXYZ")?;
+
+    const DISPLAY_P3: [[f32; 3]; 3] = [
+        [0.5151, 0.2412, -0.0011],
+        [0.2920, 0.6922, 0.0419],
+        [0.1571, 0.0666, 0.7842],
+    ];
+    const SRGB: [[f32; 3]; 3] = [
+        [0.4361, 0.2225, 0.0139],
+        [0.3851, 0.7169, 0.0971],
+        [0.1431, 0.0606, 0.7142],
+    ];
+    let matrix = [red, green, blue];
+    if xyz_matrix_close(matrix, DISPLAY_P3) {
+        Some(PngRgbSpace::DisplayP3)
+    } else if xyz_matrix_close(matrix, SRGB) {
+        Some(PngRgbSpace::Srgb)
+    } else {
+        None
+    }
+}
+
+fn icc_xyz_tag(profile: &[u8], signature: &[u8; 4]) -> Option<[f32; 3]> {
+    let tag_count = usize::try_from(read_be_u32(profile, 128)?).ok()?;
+    let table_byte_len = tag_count.checked_mul(12)?;
+    let table_end = 132usize.checked_add(table_byte_len)?;
+    if table_end > profile.len() {
+        return None;
+    }
+    for index in 0..tag_count {
+        let entry = 132 + index * 12;
+        if &profile[entry..entry + 4] != signature {
+            continue;
+        }
+        let offset = usize::try_from(read_be_u32(profile, entry + 4)?).ok()?;
+        let size = usize::try_from(read_be_u32(profile, entry + 8)?).ok()?;
+        let end = offset.checked_add(size)?;
+        if size < 20 || end > profile.len() || &profile[offset..offset + 4] != b"XYZ " {
+            return None;
+        }
+        return Some([
+            read_s15_fixed16(profile, offset + 8)?,
+            read_s15_fixed16(profile, offset + 12)?,
+            read_s15_fixed16(profile, offset + 16)?,
+        ]);
+    }
+    None
+}
+
+fn read_be_u32(bytes: &[u8], offset: usize) -> Option<u32> {
+    let raw: [u8; 4] = bytes.get(offset..offset + 4)?.try_into().ok()?;
+    Some(u32::from_be_bytes(raw))
+}
+
+fn read_s15_fixed16(bytes: &[u8], offset: usize) -> Option<f32> {
+    let raw: [u8; 4] = bytes.get(offset..offset + 4)?.try_into().ok()?;
+    Some(i32::from_be_bytes(raw) as f32 / 65_536.0)
+}
+
+fn xyz_matrix_close(actual: [[f32; 3]; 3], expected: [[f32; 3]; 3]) -> bool {
+    actual
+        .iter()
+        .flatten()
+        .zip(expected.iter().flatten())
+        .all(|(actual, expected)| (actual - expected).abs() <= 0.02)
+}
+
+fn display_p3_rgba8_to_srgb(rgba: &mut image::RgbaImage) {
+    use rayon::prelude::*;
+
+    let decode_lut: [f32; 256] = std::array::from_fn(|value| {
+        let encoded = value as f32 / 255.0;
+        if encoded <= 0.04045 {
+            encoded / 12.92
+        } else {
+            ((encoded + 0.055) / 1.055).powf(2.4)
+        }
+    });
+
+    rgba.as_mut().par_chunks_exact_mut(4).for_each(|pixel| {
+        let p3_r = decode_lut[pixel[0] as usize];
+        let p3_g = decode_lut[pixel[1] as usize];
+        let p3_b = decode_lut[pixel[2] as usize];
+        let srgb_r = 1.224_940_2 * p3_r - 0.224_940_18 * p3_g;
+        let srgb_g = -0.042_056_955 * p3_r + 1.042_057 * p3_g;
+        let srgb_b = -0.019_637_555 * p3_r - 0.078_636_04 * p3_g + 1.098_273_6 * p3_b;
+        pixel[0] = linear_srgb_to_u8(srgb_r);
+        pixel[1] = linear_srgb_to_u8(srgb_g);
+        pixel[2] = linear_srgb_to_u8(srgb_b);
+    });
+}
+
+fn linear_srgb_to_u8(linear: f32) -> u8 {
+    let linear = linear.clamp(0.0, 1.0);
+    let encoded = if linear <= 0.003_130_8 {
+        12.92 * linear
+    } else {
+        1.055 * linear.powf(1.0 / 2.4) - 0.055
+    };
+    (encoded * 255.0).round() as u8
+}
+
+fn encode_srgb_png(rgba: &image::RgbaImage) -> anyhow::Result<Vec<u8>> {
+    let mut png_bytes = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut png_bytes, rgba.width(), rgba.height());
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        encoder.set_source_srgb(png::SrgbRenderingIntent::Perceptual);
+        let mut writer = encoder
+            .write_header()
+            .map_err(|error| anyhow::anyhow!("failed to encode sRGB screencap PNG: {error}"))?;
+        writer
+            .write_image_data(rgba.as_raw())
+            .map_err(|error| anyhow::anyhow!("failed to write sRGB screencap PNG: {error}"))?;
+    }
+    Ok(png_bytes)
 }
 
 #[cfg(target_os = "macos")]
@@ -895,7 +1068,34 @@ mod tests {
         infer_scrcpy_server_version, parse_adb_devices, parse_number_with_suffix, read_pam_frame,
         select_single_ready_usb_device,
     };
-    use std::{io::BufReader, path::Path};
+    use std::{io::BufReader, io::Cursor, path::Path};
+
+    #[test]
+    fn display_p3_rgba8_conversion_matches_reference_values() {
+        let mut rgba =
+            image::RgbaImage::from_raw(2, 1, vec![128, 128, 128, 255, 255, 106, 68, 17]).unwrap();
+
+        super::display_p3_rgba8_to_srgb(&mut rgba);
+
+        assert_eq!(rgba.as_raw(), &[128, 128, 128, 255, 255, 92, 51, 17]);
+    }
+
+    #[test]
+    fn figma_srgb_png_has_an_srgb_chunk_and_no_icc_profile() {
+        let rgba = image::RgbaImage::from_raw(1, 1, vec![255, 92, 51, 255]).unwrap();
+        let png_bytes = super::encode_srgb_png(&rgba).unwrap();
+        let reader = png::Decoder::new(Cursor::new(&png_bytes))
+            .read_info()
+            .unwrap();
+
+        assert_eq!(
+            reader.info().srgb,
+            Some(png::SrgbRenderingIntent::Perceptual)
+        );
+        assert!(reader.info().icc_profile.is_none());
+        assert!(png_bytes.windows(4).any(|bytes| bytes == b"sRGB"));
+        assert!(!png_bytes.windows(4).any(|bytes| bytes == b"iCCP"));
+    }
 
     #[cfg(target_os = "macos")]
     #[test]

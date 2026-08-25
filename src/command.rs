@@ -12,11 +12,12 @@ use node_forge_render_server::animation::{
 };
 use node_forge_render_server::state_machine::TickSchedule;
 use node_forge_render_server::state_machine::types::AnimationStateType;
-use node_forge_render_server::{app, asset_store, dsl, profile, renderer, ws};
+use node_forge_render_server::{android_reference, app, asset_store, dsl, profile, renderer, ws};
 use rust_wgpu_fiber::eframe::{self, egui, egui_wgpu, wgpu};
 
 #[derive(Debug, Default, Clone)]
 struct Cli {
+    android_screencap_clipboard: Option<AndroidScreencapClipboardMode>,
     headless: bool,
     dsl_json: Option<PathBuf>,
     nforge: Option<PathBuf>,
@@ -54,6 +55,13 @@ struct Cli {
     trace_check_identity: Option<bool>,
     trace_fail_on_jump: bool,
     trace_pretty: Option<bool>,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+enum AndroidScreencapClipboardMode {
+    Source,
+    #[default]
+    FigmaSrgb,
 }
 
 #[derive(Debug, Clone)]
@@ -218,6 +226,20 @@ fn parse_cli(args: &[String]) -> Result<Cli> {
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
+            "--android-screencap-clipboard" => {
+                let (mode, consumed) = match args.get(i + 1).map(String::as_str) {
+                    Some("source") => (AndroidScreencapClipboardMode::Source, 2),
+                    Some("figma-srgb" | "srgb") => (AndroidScreencapClipboardMode::FigmaSrgb, 2),
+                    Some(value) if !value.starts_with('-') => {
+                        return Err(anyhow!(
+                            "unsupported --android-screencap-clipboard mode {value:?}; use source or figma-srgb"
+                        ));
+                    }
+                    _ => (AndroidScreencapClipboardMode::FigmaSrgb, 1),
+                };
+                cli.android_screencap_clipboard = Some(mode);
+                i += consumed;
+            }
             "--headless" => {
                 cli.headless = true;
                 i += 1;
@@ -475,10 +497,16 @@ fn parse_cli(args: &[String]) -> Result<Cli> {
             }
             other => {
                 return Err(anyhow!(
-                    "unknown argument: {other} (supported: --headless, --dsl-json <scene.json>, --nforge <file.nforge>, --headless-state <id|name>, --headless-overrides-output <path>, --export-texture <resource-name>, --capture-pass <pass-id>, --render-to-file, --continuous-redraw, --output <abs/path/to/output>, --outputdir <dir>, --dump-wgsl-dir <dir>, --dump-shader-deps <pass-name>, --dump-shader-deps-output <path>, --profile, --profile-output <path|->, --profile-format ndjson, --profile-frames <n>, --profile-warmup-frames <n>, --trace-animation, --trace-scenario <path>, --trace-seconds <n>, --trace-fps <n>, --trace-output <path|->, --trace-format json,summary,table, ...)"
+                    "unknown argument: {other} (supported: --android-screencap-clipboard [figma-srgb|source], --headless, --dsl-json <scene.json>, --nforge <file.nforge>, --headless-state <id|name>, --headless-overrides-output <path>, --export-texture <resource-name>, --capture-pass <pass-id>, --render-to-file, --continuous-redraw, --output <abs/path/to/output>, --outputdir <dir>, --dump-wgsl-dir <dir>, --dump-shader-deps <pass-name>, --dump-shader-deps-output <path>, --profile, --profile-output <path|->, --profile-format ndjson, --profile-frames <n>, --profile-warmup-frames <n>, --trace-animation, --trace-scenario <path>, --trace-seconds <n>, --trace-fps <n>, --trace-output <path|->, --trace-format json,summary,table, ...)"
                 ));
             }
         }
+    }
+
+    if cli.android_screencap_clipboard.is_some() && cli_has_render_or_trace_options(&cli) {
+        return Err(anyhow!(
+            "--android-screencap-clipboard is a standalone command and cannot be combined with render or trace options"
+        ));
     }
 
     if cli.output.is_some() && cli.output_dir.is_some() {
@@ -618,6 +646,45 @@ fn parse_cli(args: &[String]) -> Result<Cli> {
     }
 
     Ok(cli)
+}
+
+fn cli_has_render_or_trace_options(cli: &Cli) -> bool {
+    cli.headless
+        || cli.dsl_json.is_some()
+        || cli.nforge.is_some()
+        || cli.output_dir.is_some()
+        || cli.output.is_some()
+        || cli.dump_wgsl_dir.is_some()
+        || cli.dump_shader_deps.is_some()
+        || cli.dump_shader_deps_output.is_some()
+        || cli.headless_state.is_some()
+        || cli.headless_overrides_output.is_some()
+        || cli.export_texture.is_some()
+        || cli.capture_pass.is_some()
+        || cli.render_to_file
+        || cli.continuous_redraw
+        || cli.profile
+        || cli.profile_output.is_some()
+        || cli.profile_format.is_some()
+        || cli.profile_frames > 0
+        || cli.profile_warmup_frames > 0
+        || cli.trace_animation
+        || cli.trace_scenario.is_some()
+        || cli.trace_seconds.is_some()
+        || cli.trace_fps.is_some()
+        || cli.trace_include_end.is_some()
+        || cli.trace_initial_state.is_some()
+        || cli.trace_events.is_some()
+        || cli.trace_channels.is_some()
+        || cli.trace_overrides.is_some()
+        || cli.trace_values.is_some()
+        || cli.trace_output.is_some()
+        || cli.trace_format.is_some()
+        || cli.trace_jump_threshold_channel.is_some()
+        || cli.trace_jump_threshold_override.is_some()
+        || cli.trace_check_identity.is_some()
+        || cli.trace_fail_on_jump
+        || cli.trace_pretty.is_some()
 }
 
 fn run_trace_animation(cli: &Cli) -> Result<()> {
@@ -1577,6 +1644,26 @@ pub(crate) fn run() -> Result<()> {
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let cli = parse_cli(&argv)?;
 
+    if let Some(mode) = cli.android_screencap_clipboard {
+        let result = match mode {
+            AndroidScreencapClipboardMode::Source => {
+                android_reference::copy_screencap_png_to_clipboard()?
+            }
+            AndroidScreencapClipboardMode::FigmaSrgb => {
+                android_reference::copy_screencap_srgb_png_to_clipboard()?
+            }
+        };
+        let mode = match mode {
+            AndroidScreencapClipboardMode::Source => "source",
+            AndroidScreencapClipboardMode::FigmaSrgb => "figma-srgb",
+        };
+        println!(
+            "copied Android screencap {}x{} ({mode}) from {} to clipboard ({} PNG bytes)",
+            result.width, result.height, result.serial, result.png_byte_len
+        );
+        return Ok(());
+    }
+
     if cli.trace_animation {
         return run_trace_animation(&cli);
     }
@@ -1965,6 +2052,39 @@ mod tests {
         assert!(cli.headless);
         assert_eq!(cli.dsl_json.as_ref().unwrap(), &PathBuf::from("scene.json"));
         assert_eq!(cli.output_dir.as_ref().unwrap(), &PathBuf::from("out"));
+    }
+
+    #[test]
+    fn parse_cli_android_screencap_clipboard_defaults_to_figma_srgb() {
+        let args = vec!["--android-screencap-clipboard".to_string()];
+        let cli = parse_cli(&args).unwrap();
+        assert_eq!(
+            cli.android_screencap_clipboard,
+            Some(AndroidScreencapClipboardMode::FigmaSrgb)
+        );
+    }
+
+    #[test]
+    fn parse_cli_android_screencap_clipboard_accepts_source_mode() {
+        let args = vec![
+            "--android-screencap-clipboard".to_string(),
+            "source".to_string(),
+        ];
+        let cli = parse_cli(&args).unwrap();
+        assert_eq!(
+            cli.android_screencap_clipboard,
+            Some(AndroidScreencapClipboardMode::Source)
+        );
+    }
+
+    #[test]
+    fn parse_cli_android_screencap_clipboard_rejects_render_options() {
+        let args = vec![
+            "--android-screencap-clipboard".to_string(),
+            "--headless".to_string(),
+        ];
+        let error = parse_cli(&args).unwrap_err().to_string();
+        assert!(error.contains("standalone command"));
     }
 
     #[test]
