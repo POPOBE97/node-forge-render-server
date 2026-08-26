@@ -3679,7 +3679,8 @@ fn fs_main() -> @location(0) f32 {
     fn test_pasted_reference_image() -> ShortwirePastedReferenceImage {
         ShortwirePastedReferenceImage {
             name: "clip.png".to_string(),
-            png_bytes: vec![137, 80, 78, 71, 13, 10, 26, 10],
+            encoded_bytes: vec![137, 80, 78, 71, 13, 10, 26, 10],
+            mime_type: "image/png".to_string(),
             width: 2,
             height: 1,
             alpha_mode: RefImageAlphaMode::Premultiplied,

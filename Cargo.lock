@@ -1582,6 +1582,7 @@ dependencies = [
  "half",
  "lebe",
  "miniz_oxide",
+ "rayon-core",
  "smallvec",
  "zune-inflate",
 ]
@@ -2824,8 +2825,10 @@ dependencies = [
  "base64 0.22.1",
  "bytemuck",
  "core-graphics",
+ "crc32fast",
  "crossbeam-channel",
  "deno_core",
+ "exr",
  "gltf",
  "half",
  "image",

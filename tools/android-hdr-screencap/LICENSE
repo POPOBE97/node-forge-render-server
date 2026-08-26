@@ -1,0 +1,7 @@
+Apache License
+Version 2.0, January 2004
+http://www.apache.org/licenses/
+
+This helper is derived from AOSP `frameworks/base/cmds/screencap` and is
+distributed under the Apache License, Version 2.0. See the AOSP LICENSE file
+for the complete terms.

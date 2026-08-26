@@ -175,20 +175,26 @@ fn handle_clipboard_reference_paste(
         render_state,
         shortwire_active,
     ) {
-        Ok(Some(paste)) => {
-            if let Some(shortwire_reference) = paste.shortwire_reference {
+        Ok(Some(mut paste)) => {
+            if let Some(shortwire_reference) = paste.shortwire_reference.take() {
                 let patch_result = pass_debug_window::request_active_shortwire_diff_capture(
                     &mut app.shell.pass_debug_windows,
                     Some(shortwire_reference),
                 );
-                if let Some(diff_capture) = patch_result.diff_capture {
+                let Some(diff_capture) = patch_result.diff_capture else {
                     eprintln!(
-                        "[shortwire-diff] paste_queue_capture pass={} patch_key={}",
-                        diff_capture.pass_name, diff_capture.patch_key,
+                        "[reference-paste] Shortwire rejected clipboard reference; preserving existing Canvas Ref"
                     );
-                    app.shell.pending_shortwire_diff_capture = Some(diff_capture);
-                    app.canvas.invalidation.mark_diff_dirty();
-                }
+                    return;
+                };
+
+                canvas::reference::commit_clipboard_reference_paste(app, paste);
+                eprintln!(
+                    "[shortwire-diff] paste_queue_capture pass={} patch_key={}",
+                    diff_capture.pass_name, diff_capture.patch_key,
+                );
+                app.shell.pending_shortwire_diff_capture = Some(diff_capture);
+                app.canvas.invalidation.mark_diff_dirty();
 
                 let mut should_persist_debug_artifacts = false;
                 for (item, content_text) in patch_result.artifacts {
@@ -216,6 +222,8 @@ fn handle_clipboard_reference_paste(
                 if should_persist_debug_artifacts {
                     app.persist_debug_artifacts_to_source_nforge();
                 }
+            } else {
+                canvas::reference::commit_clipboard_reference_paste(app, paste);
             }
             ctx.request_repaint();
         }

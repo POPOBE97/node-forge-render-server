@@ -1,0 +1,18 @@
+cc_binary {
+    name: "node-forge-hdr-screencap",
+    srcs: ["src/main.cpp"],
+    cflags: [
+        "-Wall",
+        "-Werror",
+        "-Wno-unused-parameter",
+    ],
+    shared_libs: [
+        "libgui",
+        "libbinder",
+        "libui",
+        "libutils",
+        "libcutils",
+        "liblog",
+        "libsync",
+    ],
+}

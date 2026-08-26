@@ -12,7 +12,7 @@ use node_forge_render_server::animation::{
 };
 use node_forge_render_server::state_machine::TickSchedule;
 use node_forge_render_server::state_machine::types::AnimationStateType;
-use node_forge_render_server::{android_reference, app, asset_store, dsl, profile, renderer, ws};
+use node_forge_render_server::{app, asset_store, dsl, profile, renderer, ws};
 use rust_wgpu_fiber::eframe::{self, egui, egui_wgpu, wgpu};
 
 #[derive(Debug, Default, Clone)]
@@ -1820,22 +1820,20 @@ pub(crate) fn run() -> Result<()> {
     let cli = parse_cli(&argv)?;
 
     if let Some(mode) = cli.android_screencap_clipboard {
-        let result = match mode {
+        let encoding = match mode {
             AndroidScreencapClipboardMode::Source => {
-                android_reference::copy_screencap_png_to_clipboard()?
+                node_forge_render_server::android_screencap::PublicEncoding::Source
             }
             AndroidScreencapClipboardMode::FigmaSrgb => {
-                android_reference::copy_screencap_srgb_png_to_clipboard()?
+                node_forge_render_server::android_screencap::PublicEncoding::FigmaSrgb
             }
         };
-        let mode = match mode {
-            AndroidScreencapClipboardMode::Source => "source",
-            AndroidScreencapClipboardMode::FigmaSrgb => "figma-srgb",
-        };
-        println!(
-            "copied Android screencap {}x{} ({mode}) from {} to clipboard ({} PNG bytes)",
-            result.width, result.height, result.serial, result.png_byte_len
-        );
+        let result = node_forge_render_server::android_screencap::capture_screencap(encoding)?;
+        node_forge_render_server::android_screencap::write_system_clipboard(
+            &result.private_envelope,
+            &result.public_png,
+        )?;
+        println!("copied Android screencap {}", result.log_line());
         return Ok(());
     }
 

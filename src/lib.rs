@@ -1,5 +1,7 @@
 #[cfg(feature = "native")]
 pub mod android_reference;
+#[cfg(feature = "native")]
+pub mod android_screencap;
 pub mod animation;
 #[cfg(feature = "native")]
 pub mod app;
@@ -12,6 +14,8 @@ pub mod dsl;
 pub mod frame_freeze;
 #[cfg(feature = "native")]
 pub mod nforge;
+#[cfg(feature = "native")]
+pub mod reference_image;
 #[cfg(feature = "native")]
 pub mod perf_log;
 pub mod playback;

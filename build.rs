@@ -53,8 +53,19 @@ fn rust_ident_from_case_name(name: &str) -> String {
 
 fn main() {
     println!("cargo:rerun-if-env-changed=UPDATE_GOLDENS");
+    println!("cargo:rustc-check-cfg=cfg(android_hdr_helper_prebuilt)");
 
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
+    let helper_prebuilt = manifest_dir
+        .join("tools")
+        .join("android-hdr-screencap")
+        .join("prebuilt")
+        .join("arm64-v8a")
+        .join("node-forge-hdr-screencap");
+    println!("cargo:rerun-if-changed={}", helper_prebuilt.display());
+    if helper_prebuilt.is_file() {
+        println!("cargo:rustc-cfg=android_hdr_helper_prebuilt");
+    }
     let cases_root = manifest_dir.join("tests").join("fixtures").join("render");
 
     // Re-run build script if the cases root changes, and also on per-case files.

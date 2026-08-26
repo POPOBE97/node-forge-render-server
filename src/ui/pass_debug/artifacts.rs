@@ -287,8 +287,9 @@ pub(crate) fn shortwire_reference_image_artifact(
 ) -> (ShortwireReferenceImage, DebugArtifactItem, Vec<u8>) {
     let artifact_id = shortwire_reference_image_artifact_id(pass_name, patch_key);
     let patch_key_hash = debug_artifact_content_hash(patch_key.as_bytes());
+    let extension = shortwire_reference_extension(&pasted.mime_type);
     let file_name = format!(
-        "{}.shortwire-ref.{}.png",
+        "{}.shortwire-ref.{}.{extension}",
         safe_debug_artifact_segment(pass_name, "pass"),
         patch_key_hash
     );
@@ -299,14 +300,14 @@ pub(crate) fn shortwire_reference_image_artifact(
         },
         role: DebugArtifactRole::Image,
         name: "Shortwire reference image".to_string(),
-        mime_type: "image/png".to_string(),
+        mime_type: pasted.mime_type.clone(),
         path: format!(
             "debug-artifacts/{}/{}",
             safe_debug_artifact_segment(&artifact_id, "artifact"),
-            safe_debug_artifact_segment(&file_name, "shortwire-ref.png"),
+            safe_debug_artifact_segment(&file_name, &format!("shortwire-ref.{extension}")),
         ),
-        size: Some(pasted.png_bytes.len() as u64),
-        content_hash: Some(debug_artifact_content_hash(pasted.png_bytes.as_slice())),
+        size: Some(pasted.encoded_bytes.len() as u64),
+        content_hash: Some(debug_artifact_content_hash(pasted.encoded_bytes.as_slice())),
         slot_key: Some(format!("shortwire-reference:{patch_key_hash}")),
     };
     let image = ShortwireReferenceImage {
@@ -319,7 +320,14 @@ pub(crate) fn shortwire_reference_image_artifact(
         opacity: pasted.opacity,
         offset: pasted.offset,
     };
-    (image, item, pasted.png_bytes)
+    (image, item, pasted.encoded_bytes)
+}
+
+fn shortwire_reference_extension(mime_type: &str) -> &'static str {
+    match mime_type {
+        "image/x-exr" => "exr",
+        _ => "png",
+    }
 }
 
 pub(crate) fn safe_debug_artifact_segment(value: &str, fallback: &str) -> String {

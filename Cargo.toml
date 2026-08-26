@@ -37,6 +37,8 @@ crossbeam-channel = { version = "0.5", optional = true }
 tungstenite = { version = "0.21", optional = true }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "exr"] }
 png = "0.18"
+crc32fast = "1"
+exr = "1.74"
 rusqlite = { version = "0.32.1", features = ["bundled"], optional = true }
 # Used for WGSL validation at runtime and in tests
 naga = { version = "0.20", features = ["wgsl-in", "glsl-in", "wgsl-out"] }

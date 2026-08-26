@@ -9,9 +9,15 @@ use rust_wgpu_fiber::eframe::{egui, egui_wgpu, wgpu};
 
 use crate::{
     android_reference::AndroidReferenceFrame,
+    android_screencap::pasteboard,
     app::types::{
         App, RefImageAlphaMode, RefImageMode, RefImageSource, RefImageState, RefImageTransferMode,
         ShortwirePastedReferenceImage, ShortwireReferenceImage,
+    },
+    reference_image::{
+        self, Alpha, DecodedReferencePixels, EXR_MIME, PNG_MIME, decode_png_bytes,
+        decode_premultiplied_linear_exr, decode_private_envelope, encode_premultiplied_linear_exr,
+        is_exr, is_png, payload_kind_label,
     },
 };
 
@@ -81,6 +87,7 @@ struct AndroidReferenceUploadSample {
 
 pub struct ClipboardReferencePaste {
     pub shortwire_reference: Option<ShortwirePastedReferenceImage>,
+    prepared_reference: RefImageState,
 }
 
 #[derive(Default)]
@@ -452,6 +459,28 @@ fn load_reference_image_from_decoded_reference(
     source: RefImageSource,
     alpha_mode: RefImageAlphaMode,
 ) -> anyhow::Result<()> {
+    let prepared = prepare_reference_image_from_decoded_reference(
+        app,
+        ctx,
+        render_state,
+        decoded,
+        name,
+        source,
+        alpha_mode,
+    )?;
+    commit_prepared_reference_image(app, prepared);
+    Ok(())
+}
+
+fn prepare_reference_image_from_decoded_reference(
+    app: &App,
+    ctx: &egui::Context,
+    render_state: &egui_wgpu::RenderState,
+    decoded: DecodedReferenceImage,
+    name: String,
+    source: RefImageSource,
+    alpha_mode: RefImageAlphaMode,
+) -> anyhow::Result<RefImageState> {
     let texture_format = reference_texture_format(&decoded);
 
     let color_image = egui::ColorImage::from_rgba_unmultiplied(
@@ -491,8 +520,7 @@ fn load_reference_image_from_decoded_reference(
 
     let wgpu_texture_view = wgpu_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-    clear_reference_internal(app, false);
-    app.canvas.reference.ref_image = Some(RefImageState {
+    Ok(RefImageState {
         name,
         source_linear_rgba: decoded.source_linear_rgba,
         linear_premul_rgba: decoded.linear_premul_rgba,
@@ -510,9 +538,15 @@ fn load_reference_image_from_decoded_reference(
         drag_start: None,
         drag_start_offset: egui::Vec2::ZERO,
         source,
-    });
+    })
+}
+
+fn commit_prepared_reference_image(app: &mut App, prepared: RefImageState) {
+    let alpha_mode = prepared.alpha_mode;
+    clear_reference_internal(app, false);
+    app.canvas.reference.alpha_mode = alpha_mode;
+    app.canvas.reference.ref_image = Some(prepared);
     app.canvas.invalidation.reference_mode_changed();
-    Ok(())
 }
 
 pub fn load_or_update_android_reference_frame(
@@ -687,13 +721,114 @@ fn load_reference_image_from_path(
         anyhow::bail!("unsupported reference image extension: {}", path.display());
     }
 
-    let decoded = image::open(path)?;
     let name = path
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("reference")
         .to_string();
-    load_reference_image_from_decoded(app, ctx, render_state, decoded, name, source, alpha_mode)
+    let bytes = std::fs::read(path)?;
+    if is_png(&bytes) {
+        let decoded = decode_png_bytes(&bytes)?;
+        load_reference_image_from_pixels(app, ctx, render_state, decoded, name, source)
+    } else {
+        let decoded = image::load_from_memory(&bytes).or_else(|_| image::open(path))?;
+        load_reference_image_from_decoded(app, ctx, render_state, decoded, name, source, alpha_mode)
+    }
+}
+
+fn alpha_mode_from_payload(alpha: Alpha) -> RefImageAlphaMode {
+    match alpha {
+        Alpha::Premultiplied => RefImageAlphaMode::Premultiplied,
+        Alpha::Straight => RefImageAlphaMode::Straight,
+    }
+}
+
+fn load_reference_image_from_pixels(
+    app: &mut App,
+    ctx: &egui::Context,
+    render_state: &egui_wgpu::RenderState,
+    decoded: DecodedReferencePixels,
+    name: String,
+    source: RefImageSource,
+) -> anyhow::Result<()> {
+    let alpha_mode = alpha_mode_from_payload(decoded.alpha);
+    let image = DecodedReferenceImage {
+        width: decoded.width,
+        height: decoded.height,
+        preview_rgba8: decoded.preview_rgba8.clone(),
+        transfer_mode: if decoded.high_precision {
+            RefImageTransferMode::Linear
+        } else {
+            RefImageTransferMode::Srgb
+        },
+        high_precision_source: decoded.high_precision,
+        source_linear_rgba: decoded.source_linear_rgba.clone(),
+        linear_premul_rgba: decoded.linear_premul_rgba(),
+    };
+    eprintln!(
+        "[reference] loaded {} kind={} size={}x{} alpha={:?} format={} max={:.4}",
+        name,
+        payload_kind_label(decoded.payload_kind),
+        decoded.width,
+        decoded.height,
+        alpha_mode,
+        if decoded.high_precision {
+            "Rgba16Float"
+        } else {
+            "Rgba8Unorm"
+        },
+        decoded.max_rgb(),
+    );
+    load_reference_image_from_decoded_reference(
+        app,
+        ctx,
+        render_state,
+        image,
+        name,
+        source,
+        alpha_mode,
+    )
+}
+
+fn encode_shortwire_artifact(
+    decoded: &DecodedReferencePixels,
+) -> anyhow::Result<(Vec<u8>, String)> {
+    match decoded.payload_kind {
+        reference_image::ReferencePayloadKind::RawFp16 if decoded.high_precision => Ok((
+            encode_premultiplied_linear_exr(
+                decoded.width,
+                decoded.height,
+                &decoded.source_linear_rgba,
+            )?,
+            EXR_MIME.to_string(),
+        )),
+        reference_image::ReferencePayloadKind::GainmapPng => {
+            let bytes = decoded
+                .encoded_source
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("gainmap PNG source bytes missing"))?;
+            Ok((bytes, PNG_MIME.to_string()))
+        }
+        _ => {
+            if let Some(bytes) = decoded
+                .encoded_source
+                .as_ref()
+                .filter(|bytes| is_png(bytes))
+            {
+                Ok((bytes.clone(), PNG_MIME.to_string()))
+            } else {
+                Ok((
+                    crate::reference_image::encode_srgb_png_from_linear(
+                        decoded.width,
+                        decoded.height,
+                        &decoded.source_linear_rgba,
+                        decoded.alpha,
+                    )?,
+                    PNG_MIME.to_string(),
+                ))
+            }
+        }
+    }
 }
 
 fn active_desired_source(app: &App) -> Option<&ReferenceDesiredSource> {
@@ -967,17 +1102,40 @@ pub fn load_shortwire_reference_image(
     snapshot: &ShortwireReferenceImage,
     bytes: &[u8],
 ) -> anyhow::Result<()> {
-    let decoded = image::load_from_memory(bytes)
-        .map_err(|error| anyhow::anyhow!("failed to decode shortwire reference image: {error}"))?;
-    load_reference_image_from_decoded(
-        app,
-        ctx,
-        render_state,
-        decoded,
-        snapshot.name.clone(),
-        RefImageSource::ShortwirePatch,
-        snapshot.alpha_mode,
-    )?;
+    if is_exr(bytes) {
+        let decoded = decode_premultiplied_linear_exr(bytes)?;
+        load_reference_image_from_pixels(
+            app,
+            ctx,
+            render_state,
+            decoded,
+            snapshot.name.clone(),
+            RefImageSource::ShortwirePatch,
+        )?;
+    } else if is_png(bytes) {
+        let decoded = decode_png_bytes(bytes)?;
+        load_reference_image_from_pixels(
+            app,
+            ctx,
+            render_state,
+            decoded,
+            snapshot.name.clone(),
+            RefImageSource::ShortwirePatch,
+        )?;
+    } else {
+        let decoded = image::load_from_memory(bytes).map_err(|error| {
+            anyhow::anyhow!("failed to decode shortwire reference image: {error}")
+        })?;
+        load_reference_image_from_decoded(
+            app,
+            ctx,
+            render_state,
+            decoded,
+            snapshot.name.clone(),
+            RefImageSource::ShortwirePatch,
+            snapshot.alpha_mode,
+        )?;
+    }
     if let Some(reference) = app.canvas.reference.ref_image.as_mut() {
         reference.mode = snapshot.mode;
         reference.opacity = snapshot.opacity.clamp(0.0, 1.0);
@@ -1019,6 +1177,172 @@ pub fn paste_reference_from_clipboard(
             ))
             .unwrap_or_else(|| "none".to_string())
     );
+    let payload = match read_clipboard_payload()? {
+        Some(payload) => payload,
+        None => return Ok(None),
+    };
+    let (decoded, name_prefix) = match payload {
+        ClipboardPayload::Private(bytes) => (
+            decode_private_envelope(&bytes).map_err(|error| {
+                anyhow::anyhow!("private Node Forge clipboard payload is malformed: {error}")
+            })?,
+            "Clipboard",
+        ),
+        ClipboardPayload::Png(bytes) => (decode_png_bytes(&bytes)?, "Clipboard"),
+        ClipboardPayload::Rgba8 {
+            width,
+            height,
+            bytes,
+        } => {
+            let rgba = image::RgbaImage::from_raw(width, height, bytes)
+                .ok_or_else(|| anyhow::anyhow!("clipboard image has invalid RGBA data"))?;
+            let dynamic = image::DynamicImage::ImageRgba8(rgba);
+            let alpha_mode = app.canvas.reference.alpha_mode;
+            let name = if attach_to_shortwire {
+                format!("Shortwire clipboard {width}x{height}")
+            } else {
+                format!("Clipboard {width}x{height}")
+            };
+            let source = if attach_to_shortwire {
+                RefImageSource::ShortwireClipboard
+            } else {
+                RefImageSource::Clipboard
+            };
+            let shortwire_reference = if attach_to_shortwire {
+                Some(
+                    encode_rgba8_png(dynamic.as_rgba8().unwrap()).map(|encoded_bytes| {
+                        ShortwirePastedReferenceImage {
+                            name: name.clone(),
+                            encoded_bytes,
+                            mime_type: PNG_MIME.to_string(),
+                            width,
+                            height,
+                            alpha_mode,
+                            mode: RefImageMode::Overlay,
+                            opacity: 0.5,
+                            offset: [0.0, 0.0],
+                        }
+                    })?,
+                )
+            } else {
+                None
+            };
+            let decoded = decode_reference_image(dynamic, alpha_mode);
+            let prepared_reference = prepare_reference_image_from_decoded_reference(
+                app,
+                ctx,
+                render_state,
+                decoded,
+                name,
+                source,
+                alpha_mode,
+            )?;
+            return Ok(Some(ClipboardReferencePaste {
+                shortwire_reference,
+                prepared_reference,
+            }));
+        }
+    };
+
+    let width = decoded.width;
+    let height = decoded.height;
+    let alpha_mode = alpha_mode_from_payload(decoded.alpha);
+    let name = if attach_to_shortwire {
+        format!("Shortwire clipboard {width}x{height}")
+    } else {
+        format!("{name_prefix} {width}x{height}")
+    };
+    let source = if attach_to_shortwire {
+        RefImageSource::ShortwireClipboard
+    } else {
+        RefImageSource::Clipboard
+    };
+    let shortwire_reference = if attach_to_shortwire {
+        let (encoded_bytes, mime_type) = encode_shortwire_artifact(&decoded)?;
+        Some(ShortwirePastedReferenceImage {
+            name: name.clone(),
+            encoded_bytes,
+            mime_type,
+            width,
+            height,
+            alpha_mode,
+            mode: RefImageMode::Overlay,
+            opacity: 0.5,
+            offset: [0.0, 0.0],
+        })
+    } else {
+        None
+    };
+    let image = DecodedReferenceImage {
+        width: decoded.width,
+        height: decoded.height,
+        preview_rgba8: decoded.preview_rgba8.clone(),
+        transfer_mode: if decoded.high_precision {
+            RefImageTransferMode::Linear
+        } else {
+            RefImageTransferMode::Srgb
+        },
+        high_precision_source: decoded.high_precision,
+        source_linear_rgba: decoded.source_linear_rgba.clone(),
+        linear_premul_rgba: decoded.linear_premul_rgba(),
+    };
+    let prepared_reference = prepare_reference_image_from_decoded_reference(
+        app,
+        ctx,
+        render_state,
+        image,
+        name,
+        source,
+        alpha_mode,
+    )?;
+    Ok(Some(ClipboardReferencePaste {
+        shortwire_reference,
+        prepared_reference,
+    }))
+}
+
+pub fn commit_clipboard_reference_paste(app: &mut App, paste: ClipboardReferencePaste) {
+    let size = paste.prepared_reference.size;
+    let alpha_mode = paste.prepared_reference.alpha_mode;
+    let shortwire = matches!(
+        &paste.prepared_reference.source,
+        RefImageSource::ShortwireClipboard
+    );
+    commit_prepared_reference_image(app, paste.prepared_reference);
+    app.shell.android_reference.stop();
+    app.canvas.reference.desired_override = Some(ReferenceDesiredSource::Manual);
+    app.canvas.reference.last_attempt_key = None;
+    eprintln!(
+        "[reference-paste] loaded clipboard reference width={} height={} alpha_mode={alpha_mode:?} shortwire={shortwire}",
+        size[0], size[1],
+    );
+}
+
+enum ClipboardPayload {
+    Private(Vec<u8>),
+    Png(Vec<u8>),
+    Rgba8 {
+        width: u32,
+        height: u32,
+        bytes: Vec<u8>,
+    },
+}
+
+fn read_clipboard_payload() -> anyhow::Result<Option<ClipboardPayload>> {
+    #[cfg(target_os = "macos")]
+    {
+        match pasteboard::read_macos_private() {
+            Ok(Some(bytes)) => return Ok(Some(ClipboardPayload::Private(bytes))),
+            Ok(None) => {}
+            Err(error) => return Err(error),
+        }
+        match pasteboard::read_macos_png() {
+            Ok(Some(bytes)) => return Ok(Some(ClipboardPayload::Png(bytes))),
+            Ok(None) => {}
+            Err(error) => return Err(error),
+        }
+    }
+
     let mut clipboard = match arboard::Clipboard::new() {
         Ok(clipboard) => clipboard,
         Err(error) => {
@@ -1026,7 +1350,7 @@ pub fn paste_reference_from_clipboard(
             return Err(error.into());
         }
     };
-    let clipboard_image = match clipboard.get_image() {
+    match clipboard.get_image() {
         Ok(image) => {
             eprintln!(
                 "[reference-paste] clipboard image found width={} height={} bytes={}",
@@ -1034,68 +1358,29 @@ pub fn paste_reference_from_clipboard(
                 image.height,
                 image.bytes.len()
             );
-            image
+            let width: u32 = image
+                .width
+                .try_into()
+                .map_err(|_| anyhow::anyhow!("clipboard image width too large"))?;
+            let height: u32 = image
+                .height
+                .try_into()
+                .map_err(|_| anyhow::anyhow!("clipboard image height too large"))?;
+            Ok(Some(ClipboardPayload::Rgba8 {
+                width,
+                height,
+                bytes: image.bytes.into_owned(),
+            }))
         }
         Err(arboard::Error::ContentNotAvailable) => {
             eprintln!("[reference-paste] clipboard has no image");
-            return Ok(None);
+            Ok(None)
         }
         Err(error) => {
             eprintln!("[reference-paste] clipboard image read failed: {error}");
-            return Err(error.into());
+            Err(error.into())
         }
-    };
-    let width: u32 = clipboard_image
-        .width
-        .try_into()
-        .map_err(|_| anyhow::anyhow!("clipboard image width too large"))?;
-    let height: u32 = clipboard_image
-        .height
-        .try_into()
-        .map_err(|_| anyhow::anyhow!("clipboard image height too large"))?;
-    let rgba = image::RgbaImage::from_raw(width, height, clipboard_image.bytes.into_owned())
-        .ok_or_else(|| anyhow::anyhow!("clipboard image has invalid RGBA data"))?;
-    let png_bytes = attach_to_shortwire
-        .then(|| encode_rgba8_png(&rgba))
-        .transpose()?;
-    let alpha_mode = app.canvas.reference.alpha_mode;
-    let name = if attach_to_shortwire {
-        format!("Shortwire clipboard {width}x{height}")
-    } else {
-        format!("Clipboard {width}x{height}")
-    };
-    let source = if attach_to_shortwire {
-        RefImageSource::ShortwireClipboard
-    } else {
-        RefImageSource::Clipboard
-    };
-    load_reference_image_from_decoded(
-        app,
-        ctx,
-        render_state,
-        image::DynamicImage::ImageRgba8(rgba),
-        name.clone(),
-        source,
-        alpha_mode,
-    )?;
-    app.shell.android_reference.stop();
-    app.canvas.reference.desired_override = Some(ReferenceDesiredSource::Manual);
-    app.canvas.reference.last_attempt_key = None;
-    eprintln!(
-        "[reference-paste] loaded clipboard reference width={width} height={height} alpha_mode={alpha_mode:?} shortwire={attach_to_shortwire}"
-    );
-    Ok(Some(ClipboardReferencePaste {
-        shortwire_reference: png_bytes.map(|png_bytes| ShortwirePastedReferenceImage {
-            name,
-            png_bytes,
-            width,
-            height,
-            alpha_mode,
-            mode: RefImageMode::Overlay,
-            opacity: 0.5,
-            offset: [0.0, 0.0],
-        }),
-    }))
+    }
 }
 
 pub fn maybe_handle_reference_drop(

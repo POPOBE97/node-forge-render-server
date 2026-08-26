@@ -82,7 +82,8 @@ pub struct ShortwireReferenceImage {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ShortwirePastedReferenceImage {
     pub name: String,
-    pub png_bytes: Vec<u8>,
+    pub encoded_bytes: Vec<u8>,
+    pub mime_type: String,
     pub width: u32,
     pub height: u32,
     pub alpha_mode: RefImageAlphaMode,
