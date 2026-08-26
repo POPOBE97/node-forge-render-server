@@ -160,7 +160,7 @@ fn doubao_pinned_thinking_positions_have_no_snap_period_jumps() {
 }
 
 #[test]
-fn lalaland_wave_radius_is_motion_and_effect_cycle_uses_authored_phase_drivers() {
+fn lalaland_wave_radius_is_derived_from_physical_phase() {
     let _function_registry_guard = lock_function_registry();
     let scene = lalaland_scene();
     let state_machine = scene
@@ -172,15 +172,18 @@ fn lalaland_wave_radius_is_motion_and_effect_cycle_uses_authored_phase_drivers()
         .iter()
         .map(|param| param.id.as_str())
         .collect::<Vec<_>>();
+    assert_eq!(state_param_ids.len(), 16);
     assert!(
-        state_param_ids.contains(&"sp_effect_wave_radius_dp"),
-        "wave radius must be an Animation Engine State Param"
+        state_param_ids.contains(&"sp_effect_phase"),
+        "effect phase must be an Animation Engine State Param"
     );
     assert!(
         state_param_ids.contains(&"sp_effect_pulse_gain"),
         "pulse gain must be an Animation Engine State Param"
     );
     for id in [
+        "sp_effect_wave_radius_dp",
+        "sp_effect_wave_travel_dp",
         "sp_effect_wave_width_dp",
         "sp_effect_wave_alpha",
         "sp_effect_wave_dispersion",
@@ -191,64 +194,50 @@ fn lalaland_wave_radius_is_motion_and_effect_cycle_uses_authored_phase_drivers()
             "derived or constant render property {id} must not allocate a State Param"
         );
     }
-    for (
-        state_id,
-        effect_node_id,
-        phase_node_id,
-        start_node_id,
-        duration_node_id,
-        delay_node_id,
-        start_phase,
-    ) in [
+    for (state_id, effect_node_id, start_node_id, duration_node_id, delay_node_id, start_phase) in [
         (
-            "island",
+            "st_mt2sd7m4_4r",
             "effect_cycle_island",
-            "phase_driver_charging_v1",
             "effect_cycle_start_phase_charging_v1",
             "effect_cycle_duration_charging_v1",
             "state_node_msxhupjl_b",
             0.08,
         ),
         (
-            "supercharge",
+            "st_mt2sd7m4_4s",
             "mutation_fn_mszxci1f_4",
-            "phase_driver_supercharge_v1",
             "effect_cycle_start_phase_supercharge_v1",
             "effect_cycle_duration_supercharge_v1",
             "effect_cycle_delay_supercharge_v1",
             0.08,
         ),
         (
-            "st_msybtf2o_m",
+            "st_mt2sd7m4_4t",
             "effect_cycle_fastcharge",
-            "phase_driver_fastcharge_v1",
             "effect_cycle_start_phase_fastcharge_v1",
             "effect_cycle_duration_fastcharge_v1",
             "effect_cycle_delay_fastcharge_v1",
             0.08,
         ),
         (
-            "st_mt1ajfjb_p",
+            "st_mt2sd7m4_4u",
             "effect_cycle_island",
-            "phase_driver_charging_v2",
             "effect_cycle_start_phase_charging_v2",
             "effect_cycle_duration_charging_v2",
             "state_node_msxhupjl_b",
-            0.3,
+            0.0,
         ),
         (
-            "st_mt1ajfjb_r",
+            "st_mt2sd7m4_4w",
             "mutation_fn_mszxci1f_4",
-            "phase_driver_supercharge_v2",
             "effect_cycle_start_phase_supercharge_v2",
             "effect_cycle_duration_supercharge_v2",
             "effect_cycle_delay_supercharge_v2",
             0.9,
         ),
         (
-            "st_mt1ajfjb_s",
+            "st_mt2sd7m4_4x",
             "effect_cycle_fastcharge",
-            "phase_driver_fastcharge_v2",
             "effect_cycle_start_phase_fastcharge_v2",
             "effect_cycle_duration_fastcharge_v2",
             "effect_cycle_delay_fastcharge_v2",
@@ -268,7 +257,7 @@ fn lalaland_wave_radius_is_motion_and_effect_cycle_uses_authored_phase_drivers()
             .nodes
             .iter()
             .find(|node| node.id == effect_node_id)
-            .unwrap_or_else(|| panic!("missing wave radius Mutation Function in {state_id}"));
+            .unwrap_or_else(|| panic!("missing effect phase Mutation Function in {state_id}"));
         assert_eq!(effect_node.node_type, GraphInnerNodeType::MutationFunction);
         assert_eq!(
             effect_node
@@ -277,28 +266,28 @@ fn lalaland_wave_radius_is_motion_and_effect_cycle_uses_authored_phase_drivers()
                 .filter(|port| port.motion == Some(true))
                 .map(|port| port.id.as_str())
                 .collect::<Vec<_>>(),
-            vec!["pulseGain", "waveRadiusDp"]
-        );
-        assert!(
-            graph.input_bindings.iter().all(|binding| {
-                !matches!(
-                    &binding.source,
-                    StateValueSource::FrameInput { frame_input_id }
-                        if frame_input_id == "localElapsedTime"
-                )
-            }),
-            "{state_id} must derive its effect cycle from the authored phase Motion"
+            vec!["phase", "pulseGain"]
         );
         assert!(graph.input_bindings.iter().any(|binding| {
-            binding.source.state_param_id() == Some("sp_effect_wave_travel_dp")
-                && binding.to.node_id == effect_node_id
-                && binding.to.port_id == "waveTravelDp"
+            matches!(
+                &binding.source,
+                StateValueSource::FrameInput { frame_input_id }
+                    if frame_input_id == "localElapsedTime"
+            ) && binding.to.node_id == effect_node_id
+                && binding.to.port_id == "localElapsedTime"
         }));
-        assert!(graph.output_bindings.iter().any(|binding| {
-            binding.state_param_id == "sp_effect_wave_radius_dp"
-                && binding.from.node_id == effect_node_id
-                && binding.from.port_id == "waveRadiusDp"
-        }));
+        assert!(
+            graph
+                .nodes
+                .iter()
+                .all(|node| node.id != "wave_travel_dp_local")
+        );
+        assert!(
+            effect_node
+                .inputs
+                .iter()
+                .all(|port| port.id != "waveTravelDp")
+        );
         assert!(graph.output_bindings.iter().any(|binding| {
             binding.state_param_id == "sp_effect_pulse_gain"
                 && binding.from.node_id == effect_node_id
@@ -307,35 +296,23 @@ fn lalaland_wave_radius_is_motion_and_effect_cycle_uses_authored_phase_drivers()
         assert_eq!(
             state
                 .state_param_overrides
-                .get("sp_effect_cycle_phase")
+                .get("sp_effect_phase")
                 .and_then(serde_json::Value::as_f64),
             Some(start_phase),
             "{state_id} phase override must match Start Phase"
         );
 
-        let phase_node = graph
-            .nodes
-            .iter()
-            .find(|node| node.id == phase_node_id)
-            .unwrap_or_else(|| panic!("missing phase driver in {state_id}"));
-        assert_eq!(phase_node.node_type, GraphInnerNodeType::MutationFunction);
-        assert_eq!(
-            phase_node
-                .inputs
-                .iter()
-                .map(|port| port.id.as_str())
-                .collect::<Vec<_>>(),
-            vec!["cycleSeconds", "startDelaySeconds", "startPhase"]
-        );
-        assert_eq!(
-            phase_node
-                .outputs
-                .iter()
-                .filter(|port| port.motion == Some(true))
-                .map(|port| port.id.as_str())
-                .collect::<Vec<_>>(),
-            vec!["phase"]
-        );
+        for input_id in [
+            "cycleSeconds",
+            "localElapsedTime",
+            "startDelaySeconds",
+            "startPhase",
+        ] {
+            assert!(
+                effect_node.inputs.iter().any(|port| port.id == input_id),
+                "{state_id} effect Mutation is missing {input_id}"
+            );
+        }
         for (source_id, target_port) in [
             (start_node_id, "startPhase"),
             (duration_node_id, "cycleSeconds"),
@@ -344,19 +321,13 @@ fn lalaland_wave_radius_is_motion_and_effect_cycle_uses_authored_phase_drivers()
             assert!(graph.connections.iter().any(|connection| {
                 connection.from.node_id == source_id
                     && connection.from.port_id == "value"
-                    && connection.to.node_id == phase_node_id
+                    && connection.to.node_id == effect_node_id
                     && connection.to.port_id == target_port
             }));
         }
-        assert!(graph.connections.iter().any(|connection| {
-            connection.from.node_id == phase_node_id
-                && connection.from.port_id == "phase"
-                && connection.to.node_id == effect_node_id
-                && connection.to.port_id == "phase"
-        }));
         assert!(graph.output_bindings.iter().any(|binding| {
-            binding.state_param_id == "sp_effect_cycle_phase"
-                && binding.from.node_id == phase_node_id
+            binding.state_param_id == "sp_effect_phase"
+                && binding.from.node_id == effect_node_id
                 && binding.from.port_id == "phase"
         }));
     }
@@ -369,11 +340,7 @@ fn lalaland_wave_radius_is_motion_and_effect_cycle_uses_authored_phase_drivers()
             .unwrap_or_else(|| panic!("missing Motion Graph for {}", transition.id));
         let mut effect_step_node_ids = Vec::new();
         let mut expected_effect_step_count = 0;
-        for property_id in [
-            "sp_effect_cycle_phase",
-            "sp_effect_pulse_gain",
-            "sp_effect_wave_radius_dp",
-        ] {
+        for property_id in ["sp_effect_phase"] {
             let endpoint_has_property = [&transition.source, &transition.target]
                 .into_iter()
                 .filter_map(|state_id| {
@@ -425,9 +392,9 @@ fn lalaland_wave_radius_is_motion_and_effect_cycle_uses_authored_phase_drivers()
         .find(|derivation| derivation.id == "island_layout")
         .expect("Island Layout Derivation");
     assert!(island_layout.input_bindings.iter().any(|binding| {
-        binding.source.state_param_id() == Some("sp_effect_wave_radius_dp")
+        binding.source.state_param_id() == Some("sp_effect_phase")
             && binding.to.node_id == "derive_island_layout"
-            && binding.to.port_id == "waveRadiusDp"
+            && binding.to.port_id == "wavePhase"
     }));
     assert!(
         island_layout.input_bindings.iter().all(|binding| {
@@ -437,8 +404,25 @@ fn lalaland_wave_radius_is_motion_and_effect_cycle_uses_authored_phase_drivers()
                     if frame_input_id == "sceneElapsedTime"
             )
         }),
-        "Effect Cycle Derivation must derive phase from physical wave radius, not frame time"
+        "Effect Cycle Derivation must derive wave uniforms from physical phase, not frame time"
     );
+    for (node_id, expected) in [
+        ("wave_start_width_dp_local", 1.5),
+        ("wave_end_width_dp_local", 12.0),
+        ("wave_travel_dp_local", 40.0),
+    ] {
+        let node = island_layout
+            .nodes
+            .iter()
+            .find(|node| node.id == node_id)
+            .unwrap_or_else(|| panic!("missing Derivation local {node_id}"));
+        assert_eq!(node.node_type, GraphInnerNodeType::FloatInput);
+        assert_eq!(
+            node.params["value"].as_f64(),
+            Some(expected),
+            "Derivation local {node_id} changed"
+        );
+    }
     for (port_id, uniform_node_id) in [
         ("waveRadiusDp", "EffectWaveRadiusDp"),
         ("waveWidthDp", "EffectWaveWidthDp"),
@@ -460,20 +444,10 @@ fn lalaland_wave_radius_is_motion_and_effect_cycle_uses_authored_phase_drivers()
             && binding.uniform.node_id == "EffectPulseGain"
             && binding.uniform.param_id == "value"
     }));
-    let outer_mid_occlusion = scene
-        .nodes
-        .iter()
-        .find(|node| node.id == "EffectOuterMidOcclusion")
-        .expect("constant Effect Outer by Mid input");
-    assert_eq!(
-        outer_mid_occlusion.params["value"],
-        serde_json::json!(1),
-        "constant outer-by-mid occlusion should remain a root render parameter"
-    );
 }
 
 #[test]
-fn lalaland_v2_phase_uses_authored_start_delay_and_repeats() {
+fn lalaland_phase_uses_authored_start_delay_and_cycles() {
     let _function_registry_guard = lock_function_registry();
     let scenario_path =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("scenarios/doubao-lalaland-v2-phase.json");
@@ -484,11 +458,16 @@ fn lalaland_v2_phase_uses_authored_start_delay_and_repeats() {
     )
     .expect("run v2 phase trace");
 
+    assert!(
+        result.assert_error.is_none(),
+        "assert failed: {:?}",
+        result.assert_error
+    );
     assert_eq!(result.report.summary.identity_violations, 0);
     for (state_id, start_phase, start_delay) in [
-        ("st_mt1ajfjb_p", 0.3, 0.4),
-        ("st_mt1ajfjb_r", 0.9, 0.0),
-        ("st_mt1ajfjb_s", 0.9, 0.0),
+        ("st_mt2sd7m4_4u", 0.0, 0.4),
+        ("st_mt2sd7m4_4w", 0.9, 0.0),
+        ("st_mt2sd7m4_4x", 0.9, 0.0),
     ] {
         let samples = result
             .report
@@ -500,27 +479,25 @@ fn lalaland_v2_phase_uses_authored_start_delay_and_repeats() {
                 let channel = frame
                     .motion_channels
                     .iter()
-                    .find(|channel| channel.key == "sp_effect_cycle_phase")?;
+                    .find(|channel| channel.key == "sp_effect_phase")?;
                 Some((local_time, channel))
             })
             .collect::<Vec<_>>();
         assert!(!samples.is_empty(), "missing phase samples for {state_id}");
         for (local_time, channel) in samples {
-            let elapsed = (local_time - start_delay).max(0.0);
-            let cycle_elapsed = elapsed % 2.5;
-            let expected = start_phase + cycle_elapsed / 2.5;
-            let distance_to_seam = cycle_elapsed.min(2.5 - cycle_elapsed);
-            if distance_to_seam > 1.0e-6 {
-                assert!(
-                    (channel.value[0] - expected).abs() <= 1.0e-5,
-                    "{state_id} phase at {local_time}s was {}, expected {expected}",
-                    channel.value[0]
-                );
-            }
-            if local_time > start_delay + 1.0e-6 {
-                assert_eq!(channel.mutation_repeat_count, Some(-1));
-            }
-            assert_eq!(channel.mutation_plan_completed, Some(false));
+            let progress = if local_time <= start_delay {
+                0.0
+            } else {
+                ((local_time - start_delay) / 2.5) % 1.0
+            };
+            let expected = (start_phase + progress) % 1.0;
+            let raw_error = (channel.value[0] - expected).abs();
+            let circular_error = raw_error.min(1.0 - raw_error);
+            assert!(
+                circular_error <= 1.0e-5,
+                "{state_id} phase at {local_time}s was {}, expected {expected}",
+                channel.value[0]
+            );
         }
     }
 
@@ -528,24 +505,26 @@ fn lalaland_v2_phase_uses_authored_start_delay_and_repeats() {
         .report
         .frames
         .iter()
-        .filter(|frame| frame.current_state_id == "st_mt1ajfjb_p")
+        .filter(|frame| frame.current_state_id == "st_mt2sd7m4_4u")
         .filter_map(|frame| {
-            let local_time = frame.state_local_times.get("st_mt1ajfjb_p").copied()?;
+            let local_time = frame.state_local_times.get("st_mt2sd7m4_4u").copied()?;
             let channel = frame
                 .motion_channels
                 .iter()
-                .find(|channel| channel.key == "sp_effect_cycle_phase")?;
+                .find(|channel| channel.key == "sp_effect_phase")?;
             Some((local_time, channel))
         })
         .min_by(|(left, _), (right, _)| (left - 2.9).abs().total_cmp(&(right - 2.9).abs()))
         .expect("charging repeat seam sample");
     assert!((charging_second_cycle.0 - 2.9).abs() <= 1.0 / 60.0);
-    assert!((charging_second_cycle.1.value[0] - 0.3).abs() <= 1.0e-5);
-    assert_eq!(charging_second_cycle.1.mutation_repeat_iteration, Some(2));
+    assert!(
+        charging_second_cycle.1.value[0].abs() <= 1.0e-5
+            || (charging_second_cycle.1.value[0] - 1.0).abs() <= 1.0e-5
+    );
 }
 
 #[test]
-fn lalaland_all_transition_step_routes_never_interpolate_phase_pulse_or_wave() {
+fn lalaland_all_transition_step_routes_never_interpolate_phase() {
     let _function_registry_guard = lock_function_registry();
     let scenario_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("scenarios/doubao-lalaland-all-transitions.json");
@@ -561,15 +540,23 @@ fn lalaland_all_transition_step_routes_never_interpolate_phase_pulse_or_wave() {
         "assert failed: {:?}",
         result.assert_error
     );
-    assert_eq!(result.report.summary.transitions_seen.len(), 20);
+    assert_eq!(result.report.summary.transitions_seen.len(), 10);
     assert_eq!(result.report.summary.identity_violations, 0);
 
     for frame in &result.report.frames {
-        for channel in frame.motion_channels.iter().filter(|channel| {
-            channel.key == "sp_effect_cycle_phase"
-                || channel.key == "sp_effect_pulse_gain"
-                || channel.key == "sp_effect_wave_radius_dp"
-        }) {
+        assert!(
+            frame
+                .motion_channels
+                .iter()
+                .all(|channel| channel.key != "sp_effect_wave_radius_dp"),
+            "derived wave radius allocated a Motion channel at frame {}",
+            frame.frame_index
+        );
+        for channel in frame
+            .motion_channels
+            .iter()
+            .filter(|channel| channel.key == "sp_effect_phase")
+        {
             assert!(
                 channel
                     .transition_error
@@ -592,12 +579,7 @@ fn lalaland_all_transition_step_routes_never_interpolate_phase_pulse_or_wave() {
         let unexpected = handoff
             .channel_continuity
             .iter()
-            .filter(|channel| {
-                !channel.ok
-                    && channel.key != "sp_effect_cycle_phase"
-                    && channel.key != "sp_effect_pulse_gain"
-                    && channel.key != "sp_effect_wave_radius_dp"
-            })
+            .filter(|channel| !channel.ok && channel.key != "sp_effect_phase")
             .map(|channel| channel.key.as_str())
             .collect::<Vec<_>>();
         assert!(
@@ -637,12 +619,19 @@ fn lalaland_island_passes_fit_width_before_outer_resolve() {
     for id in [
         "sp_effect_medium_gain",
         "sp_effect_outer_sigma_dp",
+        "sp_effect_glow_gain",
+        "sp_effect_icon_gain",
+    ] {
+        assert!(
+            state_param_ids.contains(&id),
+            "Shared Effect material property {id} is not owned by the State Machine"
+        );
+    }
+    for id in [
         "sp_effect_outer_gain",
         "sp_effect_mid_sigma_dp",
         "sp_effect_mid_gain",
-        "sp_effect_glow_gain",
         "sp_effect_icon_softness",
-        "sp_effect_icon_gain",
         "sp_effect_absorption_gain",
         "sp_effect_medium_outer_occlusion",
         "sp_effect_medium_mid_occlusion",
@@ -650,8 +639,8 @@ fn lalaland_island_passes_fit_width_before_outer_resolve() {
         "sp_effect_mid_medium_occlusion",
     ] {
         assert!(
-            state_param_ids.contains(&id),
-            "Shared Effect material property {id} is not owned by the State Machine"
+            !state_param_ids.contains(&id),
+            "constant Shared Effect material property {id} must not allocate a State Param"
         );
     }
     assert!(!state_param_ids.contains(&"param_msrh5zs8_4"));
@@ -705,7 +694,7 @@ fn lalaland_island_passes_fit_width_before_outer_resolve() {
         .find(|node| node.id == "ChargingEffectMaterial")
         .expect("Shared Effect ShaderMaterial");
     for (port_id, source_node_id) in [
-        ("param:icon_variant", "EffectIconVariant"),
+        ("param:style_mix", "EffectIconVariant"),
         ("param:px_per_dp", "EffectPxPerDp"),
         ("param:glow_color", "ChargingGlowColor"),
         ("param:wave_radius_dp_animated", "EffectWaveRadiusDp"),
@@ -713,22 +702,13 @@ fn lalaland_island_passes_fit_width_before_outer_resolve() {
         ("param:wave_alpha_animated", "EffectWaveAlpha"),
         ("param:wave_opacity", "EffectWaveOpacity"),
         ("param:wave_dispersion_animated", "EffectWaveDispersion"),
+        ("param:wave_saturation", "EffectWaveSaturation"),
         ("param:pulse_gain_animated", "EffectPulseGain"),
         ("param:content_alpha", "FloatInput_e581097c_28"),
-        ("param:medium_gain", "EffectMediumGain"),
-        ("param:outer_sigma_dp", "EffectOuterSigmaDp"),
-        ("param:outer_gain", "EffectOuterGain"),
-        ("param:mid_sigma_dp", "EffectMidSigmaDp"),
-        ("param:mid_gain", "EffectMidGain"),
+        ("param:orb_gain", "EffectMediumGain"),
+        ("param:orb_spread_dp", "EffectOuterSigmaDp"),
         ("param:glow_gain", "EffectGlowGain"),
-        ("param:icon_softness", "EffectIconSoftness"),
         ("param:icon_gain", "EffectIconGain"),
-        ("param:absorption_gain", "EffectAbsorptionGain"),
-        ("param:medium_outer_occlusion", "EffectMediumOuterOcclusion"),
-        ("param:medium_mid_occlusion", "EffectMediumMidOcclusion"),
-        ("param:outer_mid_occlusion", "EffectOuterMidOcclusion"),
-        ("param:outer_medium_occlusion", "EffectOuterMediumOcclusion"),
-        ("param:mid_medium_occlusion", "EffectMidMediumOcclusion"),
     ] {
         let group_binding = effect_group
             .input_bindings
@@ -766,7 +746,9 @@ fn lalaland_island_passes_fit_width_before_outer_resolve() {
     for static_port_id in [
         "param:px_per_dp",
         "param:wave_center_gate_width",
-        "param:outer_mid_occlusion",
+        "param:wave_saturation",
+        "param:orb_gain",
+        "param:orb_spread_dp",
     ] {
         assert!(
             effect_material
@@ -823,10 +805,10 @@ fn lalaland_island_passes_fit_width_before_outer_resolve() {
     assert_eq!(
         result.report.summary.transitions_seen,
         vec![
-            "tr_msx1vbpw_s".to_string(),
-            "tr_mszxk3wu_q".to_string(),
-            "tr_mt1aax6i_25".to_string(),
-            "tr_mt1abve2_2e".to_string(),
+            "tr_mt2sd7m5_4z".to_string(),
+            "tr_mt2sd7m5_56".to_string(),
+            "tr_mt2sd7m5_57".to_string(),
+            "tr_mt2sdb7n_5s".to_string(),
         ]
     );
     let wave_radius_values = result
@@ -843,7 +825,7 @@ fn lalaland_island_passes_fit_width_before_outer_resolve() {
         .collect::<Vec<_>>();
     assert!(
         wave_radius_values.iter().copied().fold(0.0, f64::max) >= 39.0,
-        "wave radius never reached its State-driven travel distance"
+        "derived wave radius never reached its phase-driven travel distance"
     );
     assert!(
         wave_radius_values
@@ -960,17 +942,15 @@ fn lalaland_island_passes_fit_width_before_outer_resolve() {
             frame.frame_index
         );
 
-        let (icon_variant, effect_offset_dp) = if frame.current_state_id == "entry" {
-            (0.0, 56.0)
+        let icon_variant = if frame.current_state_id == "entry" {
+            0.0
         } else {
-            (
-                channel_value("sp_icon_variant").clamp(0.0, 1.0),
-                channel_value("sp_effect_offset_dp"),
-            )
+            channel_value("sp_icon_variant").clamp(0.0, 1.0)
         };
         let effect_native_width = 518.0 + (602.0 - 518.0) * icon_variant;
         let effect_scale = island_width_px / effect_native_width;
-        let effect_center_x = 309.0 + effect_offset_dp * 3.5 * effect_scale;
+        let native_effect_offset_px = effect_native_width * 0.5 - (2.0 + 16.0) * 3.5;
+        let effect_center_x = 309.0 + native_effect_offset_px * effect_scale;
         assert_override("EffectPlacementCenterPx:x", effect_center_x);
         assert_override("EffectPlacementCenterPx:y", 92.0);
         assert_override("EffectSizePx:x", 308.0 * effect_scale);
@@ -982,14 +962,8 @@ fn lalaland_island_passes_fit_width_before_outer_resolve() {
                 ("param_charging_glow_color", "ChargingGlowColor:value"),
                 ("sp_effect_outer_sigma_dp", "EffectOuterSigmaDp:value"),
                 ("sp_effect_glow_gain", "EffectGlowGain:value"),
-                (
-                    "sp_effect_medium_outer_occlusion",
-                    "EffectMediumOuterOcclusion:value",
-                ),
-                (
-                    "sp_effect_outer_medium_occlusion",
-                    "EffectOuterMediumOcclusion:value",
-                ),
+                ("sp_effect_medium_gain", "EffectMediumGain:value"),
+                ("sp_effect_icon_gain", "EffectIconGain:value"),
             ] {
                 let channel = frame
                     .motion_channels

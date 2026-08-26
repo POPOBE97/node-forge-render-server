@@ -16,42 +16,212 @@ pub(super) struct IngestPhase {
     pub did_rebuild_shader_space: bool,
 }
 
-fn log_shortwire_input_ingest(app: &App, ctx: &egui::Context) {
-    let (hits, raw_focused, modifiers) = ctx.input(|input| {
-        let mut hits = Vec::new();
-        for event in &input.events {
-            match event {
-                egui::Event::Key {
-                    key,
-                    physical_key,
-                    pressed,
-                    repeat,
-                    modifiers,
-                } if *key == egui::Key::V || *key == egui::Key::Paste => {
-                    hits.push(format!(
-                        "Key key={key:?} physical={physical_key:?} pressed={pressed} repeat={repeat} modifiers={modifiers:?}"
-                    ));
-                }
-                egui::Event::Paste(text) => {
-                    hits.push(format!("Paste text_len={}", text.len()));
-                }
-                _ => {}
-            }
-        }
-        (hits, input.raw.focused, input.modifiers)
-    });
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct ClipboardPasteSignals {
+    command_v_pressed: bool,
+    command_v_released: bool,
+    v_released: bool,
+    paste_event: bool,
+}
 
-    if hits.is_empty() {
-        return;
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct ClipboardPasteInput {
+    requested: bool,
+    consume_v_key_events: bool,
+}
+
+fn clipboard_paste_signals(events: &[egui::Event]) -> ClipboardPasteSignals {
+    let mut signals = ClipboardPasteSignals::default();
+    for event in events {
+        match event {
+            egui::Event::Key {
+                key,
+                physical_key,
+                pressed,
+                repeat,
+                modifiers,
+            } if *key == egui::Key::V || *physical_key == Some(egui::Key::V) => {
+                if *pressed && !*repeat && modifiers.command {
+                    signals.command_v_pressed = true;
+                } else if !*pressed {
+                    signals.v_released = true;
+                    signals.command_v_released |= modifiers.command;
+                }
+            }
+            egui::Event::Paste(_) => signals.paste_event = true,
+            _ => {}
+        }
+    }
+    signals
+}
+
+fn projected_canvas_focus_latched(
+    events: &[egui::Event],
+    canvas_rect: egui::Rect,
+    mut focus_latched: bool,
+) -> bool {
+    for event in events {
+        match event {
+            egui::Event::PointerButton { pos, pressed, .. } if *pressed => {
+                focus_latched = canvas_rect.contains(*pos);
+            }
+            egui::Event::WindowFocused(false) => focus_latched = false,
+            _ => {}
+        }
+    }
+    focus_latched
+}
+
+fn canvas_clipboard_paste_scope_enabled(
+    window_focused: bool,
+    text_edit_focused: bool,
+    pointer_pos: Option<egui::Pos2>,
+    canvas_rect: Option<egui::Rect>,
+    focus_latched: bool,
+) -> bool {
+    window_focused
+        && !text_edit_focused
+        && (focus_latched
+            || pointer_pos
+                .zip(canvas_rect)
+                .is_some_and(|(position, rect)| rect.contains(position)))
+}
+
+fn reduce_clipboard_paste_gesture(
+    signals: ClipboardPasteSignals,
+    suppress_next_release: &mut bool,
+) -> bool {
+    let requested = signals.command_v_pressed
+        || (signals.paste_event && !*suppress_next_release)
+        || (signals.command_v_released && !*suppress_next_release);
+
+    if signals.command_v_pressed || signals.paste_event {
+        *suppress_next_release = true;
+    }
+    if signals.v_released {
+        *suppress_next_release = false;
+    }
+    requested
+}
+
+fn clipboard_paste_input(app: &mut App, ctx: &egui::Context) -> ClipboardPasteInput {
+    let (events, window_focused, pointer_pos) = ctx.input(|input| {
+        (
+            input.events.clone(),
+            input.raw.focused,
+            input.pointer.hover_pos(),
+        )
+    });
+    let signals = clipboard_paste_signals(&events);
+    let canvas_rect = app.canvas.interactions.last_canvas_rect;
+    let projected_focus =
+        canvas_rect.map_or(app.canvas.interactions.canvas_event_focus_latched, |rect| {
+            projected_canvas_focus_latched(
+                &events,
+                rect,
+                app.canvas.interactions.canvas_event_focus_latched,
+            )
+        });
+    let scope_enabled = canvas_clipboard_paste_scope_enabled(
+        window_focused,
+        ctx.text_edit_focused(),
+        pointer_pos,
+        canvas_rect,
+        projected_focus,
+    );
+    let release_of_captured_gesture = signals.v_released
+        && app
+            .canvas
+            .interactions
+            .suppress_next_clipboard_paste_release;
+    let consume_v_key_events = release_of_captured_gesture
+        || (scope_enabled
+            && (signals.command_v_pressed || signals.command_v_released || signals.paste_event));
+
+    if !scope_enabled {
+        if signals.v_released {
+            app.canvas
+                .interactions
+                .suppress_next_clipboard_paste_release = false;
+        }
+        return ClipboardPasteInput {
+            requested: false,
+            consume_v_key_events,
+        };
     }
 
-    eprintln!(
-        "[shortwire-paste:ingest] shortwire_active={} window_count={} egui_wants_keyboard={} raw_focused={raw_focused} modifiers={modifiers:?} events={}",
-        pass_debug_window::has_active_shortwire(&app.shell.pass_debug_windows),
-        app.shell.pass_debug_windows.len(),
-        ctx.egui_wants_keyboard_input(),
-        hits.join(" | "),
+    let requested = reduce_clipboard_paste_gesture(
+        signals,
+        &mut app
+            .canvas
+            .interactions
+            .suppress_next_clipboard_paste_release,
     );
+    ClipboardPasteInput {
+        requested,
+        consume_v_key_events,
+    }
+}
+
+fn handle_clipboard_reference_paste(
+    app: &mut App,
+    ctx: &egui::Context,
+    render_state: &egui_wgpu::RenderState,
+) {
+    let shortwire_active = pass_debug_window::has_active_shortwire(&app.shell.pass_debug_windows);
+    match canvas::reference::paste_reference_from_clipboard(
+        app,
+        ctx,
+        render_state,
+        shortwire_active,
+    ) {
+        Ok(Some(paste)) => {
+            if let Some(shortwire_reference) = paste.shortwire_reference {
+                let patch_result = pass_debug_window::request_active_shortwire_diff_capture(
+                    &mut app.shell.pass_debug_windows,
+                    Some(shortwire_reference),
+                );
+                if let Some(diff_capture) = patch_result.diff_capture {
+                    eprintln!(
+                        "[shortwire-diff] paste_queue_capture pass={} patch_key={}",
+                        diff_capture.pass_name, diff_capture.patch_key,
+                    );
+                    app.shell.pending_shortwire_diff_capture = Some(diff_capture);
+                    app.canvas.invalidation.mark_diff_dirty();
+                }
+
+                let mut should_persist_debug_artifacts = false;
+                for (item, content_text) in patch_result.artifacts {
+                    app.shell
+                        .debug_artifacts
+                        .upsert(item.clone(), Some(content_text.clone()));
+                    crate::ws::broadcast_debug_artifact_upsert(
+                        &app.core.ws_hub,
+                        item,
+                        Some(content_text),
+                    );
+                    should_persist_debug_artifacts = true;
+                }
+                for (item, bytes) in patch_result.binary_artifacts {
+                    app.shell
+                        .debug_artifacts
+                        .upsert_bytes(item.clone(), bytes.clone());
+                    crate::ws::broadcast_debug_artifact_binary_upload(
+                        &app.core.ws_hub,
+                        item,
+                        bytes,
+                    );
+                    should_persist_debug_artifacts = true;
+                }
+                if should_persist_debug_artifacts {
+                    app.persist_debug_artifacts_to_source_nforge();
+                }
+            }
+            ctx.request_repaint();
+        }
+        Ok(None) => {}
+        Err(error) => eprintln!("[reference-paste] failed to paste clipboard image: {error:#}"),
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -100,8 +270,6 @@ pub(super) fn run(
     renderer: &mut egui_wgpu::Renderer,
     frame_time: f64,
 ) -> IngestPhase {
-    log_shortwire_input_ingest(app, ctx);
-
     let screencap_shortcut = input_scope::debug_shortcuts_enabled(app, ctx)
         .then(|| android_screencap_clipboard_shortcut_pressed(ctx))
         .flatten();
@@ -264,11 +432,141 @@ pub(super) fn run(
     canvas::sync_reference_from_scene(app, ctx, render_state);
     canvas::sync_android_reference_frame(app, ctx, render_state);
 
+    let paste_input = clipboard_paste_input(app, ctx);
+    if paste_input.requested {
+        handle_clipboard_reference_paste(app, ctx, render_state);
+    }
+
     IngestPhase {
         frame_time,
         queued_interaction_payloads: interaction_bridge::collect_early_canvas_interactions(
-            app, ctx,
+            app,
+            ctx,
+            paste_input.consume_v_key_events,
         ),
         did_rebuild_shader_space,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        ClipboardPasteSignals, canvas_clipboard_paste_scope_enabled,
+        projected_canvas_focus_latched, reduce_clipboard_paste_gesture,
+    };
+    use rust_wgpu_fiber::eframe::egui;
+
+    fn canvas_rect() -> egui::Rect {
+        egui::Rect::from_min_size(egui::pos2(100.0, 100.0), egui::vec2(300.0, 200.0))
+    }
+
+    #[test]
+    fn clipboard_paste_gesture_deduplicates_press_and_release() {
+        let mut suppress_release = false;
+        assert!(reduce_clipboard_paste_gesture(
+            ClipboardPasteSignals {
+                command_v_pressed: true,
+                ..Default::default()
+            },
+            &mut suppress_release,
+        ));
+        assert!(suppress_release);
+        assert!(!reduce_clipboard_paste_gesture(
+            ClipboardPasteSignals {
+                command_v_released: true,
+                v_released: true,
+                ..Default::default()
+            },
+            &mut suppress_release,
+        ));
+        assert!(!suppress_release);
+    }
+
+    #[test]
+    fn clipboard_paste_gesture_deduplicates_paste_event_and_release() {
+        let mut suppress_release = false;
+        assert!(reduce_clipboard_paste_gesture(
+            ClipboardPasteSignals {
+                paste_event: true,
+                ..Default::default()
+            },
+            &mut suppress_release,
+        ));
+        assert!(!reduce_clipboard_paste_gesture(
+            ClipboardPasteSignals {
+                command_v_released: true,
+                v_released: true,
+                ..Default::default()
+            },
+            &mut suppress_release,
+        ));
+    }
+
+    #[test]
+    fn clipboard_paste_gesture_accepts_release_only_fallback() {
+        let mut suppress_release = false;
+        assert!(reduce_clipboard_paste_gesture(
+            ClipboardPasteSignals {
+                command_v_released: true,
+                v_released: true,
+                ..Default::default()
+            },
+            &mut suppress_release,
+        ));
+        assert!(!suppress_release);
+    }
+
+    #[test]
+    fn clipboard_paste_scope_accepts_hover_or_latched_focus_but_not_text_editing() {
+        let rect = canvas_rect();
+        assert!(canvas_clipboard_paste_scope_enabled(
+            true,
+            false,
+            Some(egui::pos2(120.0, 120.0)),
+            Some(rect),
+            false,
+        ));
+        assert!(canvas_clipboard_paste_scope_enabled(
+            true,
+            false,
+            Some(egui::pos2(20.0, 20.0)),
+            Some(rect),
+            true,
+        ));
+        assert!(!canvas_clipboard_paste_scope_enabled(
+            true,
+            true,
+            Some(egui::pos2(120.0, 120.0)),
+            Some(rect),
+            true,
+        ));
+        assert!(!canvas_clipboard_paste_scope_enabled(
+            false,
+            false,
+            Some(egui::pos2(120.0, 120.0)),
+            Some(rect),
+            true,
+        ));
+    }
+
+    #[test]
+    fn outside_click_and_window_blur_clear_projected_canvas_focus() {
+        let rect = canvas_rect();
+        let outside_click = egui::Event::PointerButton {
+            pos: egui::pos2(20.0, 20.0),
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        };
+        assert!(!projected_canvas_focus_latched(
+            &[outside_click],
+            rect,
+            true,
+        ));
+        assert!(!projected_canvas_focus_latched(
+            &[egui::Event::WindowFocused(false)],
+            rect,
+            true,
+        ));
     }
 }

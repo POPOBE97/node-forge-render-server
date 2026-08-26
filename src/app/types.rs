@@ -32,6 +32,7 @@ pub enum RefImageMode {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RefImageSource {
     Manual,
+    Clipboard,
     AndroidScrcpyUsb(String),
     ShortwireClipboard,
     ShortwirePatch,
@@ -381,6 +382,19 @@ pub(super) struct AppRuntime {
     pub time_value_secs: f32,
     pub time_last_raw_secs: f32,
     pub latest_render_profile: Option<RenderProfile>,
+    /// Freeze data for the last frame actually submitted by the normal canvas path.
+    pub last_submitted_frame: Option<crate::frame_freeze::LastSubmittedFrame>,
+    /// Saved live prepared scene while a persisted freeze case is being replayed.
+    pub frame_freeze_playback: Option<FrameFreezePlayback>,
+    /// Set when any CPU-to-GPU value upload for this frame fails.
+    pub frame_freeze_capture_blocked: bool,
+}
+
+pub(super) struct FrameFreezePlayback {
+    pub active_case_id: String,
+    pub live_uniform_scene: crate::dsl::SceneDSL,
+    pub live_time_seconds: f32,
+    pub live_time_updates_enabled: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -530,6 +544,9 @@ pub(super) struct AppShell {
     pub resource_pools: Vec<ResourcePoolInfo>,
     pub matrix_state: super::matrix_render::MatrixRenderState,
     pub android_reference: crate::android_reference::AndroidReferenceState,
+    pub frame_freezes: Vec<crate::frame_freeze::FrameFreezeCase>,
+    pub pending_frame_freeze_case_id: Option<String>,
+    pub frame_freeze_status: Option<String>,
 }
 
 #[derive(Default)]
@@ -785,6 +802,9 @@ impl App {
                 time_value_secs: 0.0,
                 time_last_raw_secs: 0.0,
                 latest_render_profile: None,
+                last_submitted_frame: None,
+                frame_freeze_playback: None,
+                frame_freeze_capture_blocked: false,
             },
             shell: AppShell {
                 window_mode: UiWindowMode::Sidebar,
@@ -812,6 +832,9 @@ impl App {
                 resource_pools: initial_resource_pools,
                 matrix_state: super::matrix_render::MatrixRenderState::default(),
                 android_reference: crate::android_reference::AndroidReferenceState::default(),
+                frame_freezes: Vec::new(),
+                pending_frame_freeze_case_id: None,
+                frame_freeze_status: None,
             },
             interaction_bridge: InteractionBridgeState::default(),
             canvas: CanvasState::new(

@@ -514,6 +514,90 @@ pub(super) fn handle_text_message(
                 }
             }
         }
+        "frame_freezes_sync" => {
+            let payload = match msg.payload {
+                Some(payload) => payload,
+                None => {
+                    send_error(
+                        ws,
+                        msg.request_id,
+                        "PARSE_ERROR",
+                        "frame_freezes_sync missing payload",
+                    );
+                    return Ok(());
+                }
+            };
+            let mut payload: FrameFreezesSyncPayload = match serde_json::from_value(payload) {
+                Ok(payload) => payload,
+                Err(error) => {
+                    send_error(
+                        ws,
+                        msg.request_id,
+                        "PARSE_ERROR",
+                        &format!("invalid frame_freezes_sync payload: {error}"),
+                    );
+                    return Ok(());
+                }
+            };
+            if let Some(error) = payload
+                .cases
+                .iter()
+                .find_map(|case| crate::frame_freeze::validate_case(case).err())
+            {
+                send_error(
+                    ws,
+                    msg.request_id,
+                    "VALIDATION_ERROR",
+                    &format!("invalid frame freeze case: {error:#}"),
+                );
+                return Ok(());
+            }
+            payload.cases.sort_by(|left, right| {
+                (&left.captured_at, &left.case_id).cmp(&(&right.captured_at, &right.case_id))
+            });
+            send_control_update(
+                scene_tx,
+                SceneUpdate::FrameFreezesSync {
+                    cases: payload.cases,
+                },
+                ui_wake,
+            );
+        }
+        "frame_freeze_persisted" => {
+            let payload = match msg.payload {
+                Some(payload) => payload,
+                None => {
+                    send_error(
+                        ws,
+                        msg.request_id,
+                        "PARSE_ERROR",
+                        "frame_freeze_persisted missing payload",
+                    );
+                    return Ok(());
+                }
+            };
+            let payload: FrameFreezePersistedPayload = match serde_json::from_value(payload) {
+                Ok(payload) => payload,
+                Err(error) => {
+                    send_error(
+                        ws,
+                        msg.request_id,
+                        "PARSE_ERROR",
+                        &format!("invalid frame_freeze_persisted payload: {error}"),
+                    );
+                    return Ok(());
+                }
+            };
+            send_control_update(
+                scene_tx,
+                SceneUpdate::FrameFreezePersisted {
+                    case_id: payload.case_id,
+                    ok: payload.ok,
+                    error: payload.error,
+                },
+                ui_wake,
+            );
+        }
         "debug_artifact_request" => {
             // Renderer-side debug artifacts are surfaced through UI actions that
             // broadcast upserts as they happen. The WS thread intentionally does
@@ -862,7 +946,9 @@ fn send_scene_update(
             }
             SceneUpdate::DebugArtifactUpsert { .. }
             | SceneUpdate::DebugArtifactBinaryUpsert { .. }
-            | SceneUpdate::DebugArtifactDelete { .. } => {
+            | SceneUpdate::DebugArtifactDelete { .. }
+            | SceneUpdate::FrameFreezesSync { .. }
+            | SceneUpdate::FrameFreezePersisted { .. } => {
                 // Artifact messages are side-channel state for the debug UI.
                 // Keep an in-flight scene update if one exists; the editor can
                 // answer a later request if this update is skipped.
@@ -874,6 +960,20 @@ fn send_scene_update(
     };
 
     if queued && let Some(wake) = ui_wake {
+        wake();
+    }
+}
+
+fn send_control_update(
+    scene_tx: &Sender<SceneUpdate>,
+    update: SceneUpdate,
+    ui_wake: Option<&UiWakeCallback>,
+) {
+    if let Some(wake) = ui_wake {
+        wake();
+    }
+    let _ = scene_tx.send(update);
+    if let Some(wake) = ui_wake {
         wake();
     }
 }

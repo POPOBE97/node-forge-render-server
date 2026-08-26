@@ -207,11 +207,35 @@ fn state_transition_payloads(
     payloads
 }
 
+fn is_clipboard_paste_v_key_event(event: &egui::Event) -> bool {
+    matches!(
+        event,
+        egui::Event::Key {
+            key: egui::Key::V,
+            ..
+        }
+    ) || matches!(
+        event,
+        egui::Event::Key {
+            physical_key: Some(egui::Key::V),
+            ..
+        }
+    )
+}
+
 pub fn collect_early_canvas_interactions(
     app: &mut App,
     ctx: &egui::Context,
+    consume_clipboard_paste_key_events: bool,
 ) -> Vec<protocol::InteractionEventPayload> {
-    let frame_events = ctx.input(|i| i.events.clone());
+    let mut frame_events = ctx.input(|i| i.events.clone());
+    if consume_clipboard_paste_key_events {
+        frame_events.retain(|event| !is_clipboard_paste_v_key_event(event));
+        app.canvas
+            .interactions
+            .canvas_captured_keys
+            .remove(&egui::Key::V);
+    }
     let interaction_clean_state = interaction_report::is_clean_rendering_state(
         app.canvas.display.preview_texture_name.is_some(),
         app.canvas.reference.ref_image.is_some(),
@@ -330,7 +354,7 @@ mod tests {
 
     use super::{
         assign_sequence_numbers, frag_pixel_position_from_screen_pos, interaction_message_text,
-        state_transition_payloads, synthesize_click_payloads,
+        is_clipboard_paste_v_key_event, state_transition_payloads, synthesize_click_payloads,
     };
     use crate::protocol::InteractionEventPayload;
 
@@ -353,6 +377,26 @@ mod tests {
         assert_eq!(payloads[0].seq, 11);
         assert_eq!(payloads[1].seq, 12);
         assert_eq!(seq, 12);
+    }
+
+    #[test]
+    fn clipboard_paste_v_events_are_reserved_from_scene_input() {
+        let command_v = egui::Event::Key {
+            key: egui::Key::V,
+            physical_key: Some(egui::Key::V),
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::COMMAND,
+        };
+        let command_c = egui::Event::Key {
+            key: egui::Key::C,
+            physical_key: Some(egui::Key::C),
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::COMMAND,
+        };
+        assert!(is_clipboard_paste_v_key_event(&command_v));
+        assert!(!is_clipboard_paste_v_key_event(&command_c));
     }
 
     #[test]

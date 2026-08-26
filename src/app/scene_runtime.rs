@@ -43,11 +43,15 @@ pub(crate) fn apply_state_machine_overrides(
         crate::state_machine::apply_overrides(matrix_source_scene, overrides);
     }
     if let Some(uniform_scene) = app.runtime.uniform_scene.as_ref() {
-        let _ = apply_graph_uniform_updates_parts(
+        if let Err(error) = apply_graph_uniform_updates_parts(
             &mut app.core.passes,
             &mut app.core.shader_space,
             uniform_scene,
-        );
+        ) {
+            app.runtime.frame_freeze_capture_blocked = true;
+            crate::app::frame_freeze::invalidate_submitted_frame(app);
+            eprintln!("[animation] graph uniform update failed: {error:#}");
+        }
     }
     app.runtime.scene_redraw_pending = true;
 }
@@ -492,6 +496,12 @@ fn commit_shader_space_rebuild(
     result: renderer::ShaderSpaceBuildResult,
     pass_shader_overrides: std::collections::HashMap<String, String>,
 ) {
+    crate::app::frame_freeze::invalidate_submitted_frame(app);
+    if let Some(playback) = app.runtime.frame_freeze_playback.take() {
+        app.runtime.time_updates_enabled = playback.live_time_updates_enabled;
+        app.runtime.time_value_secs = playback.live_time_seconds;
+    }
+    app.shell.frame_freeze_status = None;
     app.core.shader_space = result.shader_space;
     app.core.resolution = result.resolution;
     app.core.passes = result.pass_bindings;
@@ -683,10 +693,30 @@ fn apply_uniform_node_param_updates_inner(
     Ok(())
 }
 
-pub fn drain_latest_scene_update(app: &App) -> Option<ws::SceneUpdate> {
+pub fn drain_latest_scene_update(app: &mut App) -> Option<ws::SceneUpdate> {
     let mut latest: Option<ws::SceneUpdate> = None;
     while let Ok(update) = app.runtime.scene_rx.try_recv() {
-        latest = Some(update);
+        match update {
+            ws::SceneUpdate::FrameFreezesSync { cases } => {
+                app.shell.frame_freezes = cases;
+            }
+            ws::SceneUpdate::FrameFreezePersisted { case_id, ok, error } => {
+                if !ok
+                    && app.shell.pending_frame_freeze_case_id.as_deref() == Some(case_id.as_str())
+                {
+                    app.shell.pending_frame_freeze_case_id = None;
+                }
+                app.shell.frame_freeze_status = Some(if ok {
+                    format!("Saved freeze {case_id}")
+                } else {
+                    format!(
+                        "Freeze save failed: {}",
+                        error.unwrap_or_else(|| "unknown editor error".to_string())
+                    )
+                });
+            }
+            update => latest = Some(update),
+        }
     }
     latest
 }
@@ -720,6 +750,17 @@ pub fn apply_scene_update(
     render_state: &egui_wgpu::RenderState,
     update: ws::SceneUpdate,
 ) -> SceneApplyResult {
+    if matches!(
+        &update,
+        ws::SceneUpdate::UniformDelta { .. } | ws::SceneUpdate::Parsed { .. }
+    ) {
+        crate::app::frame_freeze::invalidate_submitted_frame(app);
+        if let Some(playback) = app.runtime.frame_freeze_playback.take() {
+            app.runtime.time_updates_enabled = playback.live_time_updates_enabled;
+            app.runtime.time_value_secs = playback.live_time_seconds;
+        }
+        app.shell.frame_freeze_status = None;
+    }
     match update {
         ws::SceneUpdate::UniformDelta {
             updated_nodes,
@@ -1118,6 +1159,9 @@ pub fn apply_scene_update(
                 previous_output_hash: None,
                 matrix_update: MatrixSceneUpdate::None,
             }
+        }
+        ws::SceneUpdate::FrameFreezesSync { .. } | ws::SceneUpdate::FrameFreezePersisted { .. } => {
+            unreachable!("frame freeze control updates are consumed before scene application")
         }
     }
 }

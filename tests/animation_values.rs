@@ -1449,10 +1449,10 @@ fn doubao_state_and_shader_scales_are_independent() {
 #[test]
 fn doubao_blob_radius_uses_full_size_state_values_and_target_local_output() {
     let _function_registry = support::function_registry_lock();
-    // The current Intelligent Light intermediate is 84x84 (1260px / 15), so full-size radii
-    // cross the render boundary at /15. The previous /30 expectations belonged to the retired
-    // 36x36 reference target and would validate the wrong pipeline size.
-    for (energy, expected_radius) in [(0.0, 53.76), (1.0, 58.8)] {
+    // The current Intelligent Light intermediate is 84x84 (1260px / 15), while the authored
+    // light-effect canvas is 360dp square. Target-local radii therefore scale by 84 / 360;
+    // PxPerDp cancels at this coordinate boundary.
+    for (energy, expected_radius) in [(0.0, 268.8 * 84.0 / 360.0), (1.0, 294.0 * 84.0 / 360.0)] {
         let mut scene = support::load_render_case_scene("doubao-voice-interaction");
         scene
             .state_machine

@@ -81,9 +81,16 @@ pub fn load_template(name: &str) -> String {
         }
     }
 
-    let path = templates_dir().join(name);
-    let content = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("failed to read template {}: {e}", path.display()));
+    #[cfg(feature = "web-core")]
+    let content = embedded_template(name)
+        .unwrap_or_else(|| panic!("unknown embedded WGSL template '{name}'"))
+        .to_string();
+    #[cfg(feature = "native")]
+    let content = {
+        let path = templates_dir().join(name);
+        std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("failed to read template {}: {e}", path.display()))
+    };
 
     let mut c = cache().write().unwrap();
     c.insert(name.to_owned(), content.clone());
@@ -107,6 +114,9 @@ pub fn load_template_with_override(
         {
             return content;
         }
+        #[cfg(feature = "web-core")]
+        return load_template(template_name);
+        #[cfg(feature = "native")]
         {
             let c = override_cache().read().unwrap();
             if let Some(content) = c.get(path) {
@@ -114,6 +124,7 @@ pub fn load_template_with_override(
             }
         }
 
+        #[cfg(feature = "native")]
         match std::fs::read_to_string(path) {
             Ok(content) => {
                 let mut c = override_cache().write().unwrap();
@@ -130,6 +141,25 @@ pub fn load_template_with_override(
     }
 
     load_template(template_name)
+}
+
+#[cfg(feature = "web-core")]
+fn embedded_template(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "glass_material_fragment.wgsl" => include_str!("templates/glass_material_fragment.wgsl"),
+        "hyperos_glass_material_fragment.wgsl" => {
+            include_str!("templates/hyperos_glass_material_fragment.wgsl")
+        }
+        "intelligent_light.wgsl" => include_str!("templates/intelligent_light.wgsl"),
+        "luminance_curve_lab.wgsl" => include_str!("templates/luminance_curve_lab.wgsl"),
+        "luminance_curve_rgb.wgsl" => include_str!("templates/luminance_curve_rgb.wgsl"),
+        "mesh_gradient_fragment.wgsl" => include_str!("templates/mesh_gradient_fragment.wgsl"),
+        "mesh_gradient_vertex.wgsl" => include_str!("templates/mesh_gradient_vertex.wgsl"),
+        "sdf2d.wgsl" => include_str!("templates/sdf2d.wgsl"),
+        "sdf2d_bevel.wgsl" => include_str!("templates/sdf2d_bevel.wgsl"),
+        "shader_material_default.wgsl" => include_str!("templates/shader_material_default.wgsl"),
+        _ => return None,
+    })
 }
 
 pub fn invalidate_cache() {

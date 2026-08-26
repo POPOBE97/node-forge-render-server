@@ -1,6 +1,7 @@
 mod canvas;
 pub(crate) mod display_metrics;
 mod frame;
+pub(crate) mod frame_freeze;
 mod input_scope;
 mod interaction_report;
 mod layout_math;

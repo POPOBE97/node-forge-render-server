@@ -44,6 +44,7 @@ pub enum AppCommand {
     },
     ToggleCanvasOnly,
     SetTestMode(crate::app::TestMode),
+    ActivateFrameFreeze(String),
     ToggleMatrixPool(String),
     SetMatrixMaxRowCols(usize),
     SetMatrixLabelsVisible(bool),
@@ -109,6 +110,9 @@ pub fn from_sidebar_action(action: ui::debug_sidebar::SidebarAction) -> AppComma
             AppCommand::Canvas(CanvasAction::SetQualifierRange { channel, min, max })
         }
         ui::debug_sidebar::SidebarAction::SetTestMode(mode) => AppCommand::SetTestMode(mode),
+        ui::debug_sidebar::SidebarAction::ActivateFrameFreeze(case_id) => {
+            AppCommand::ActivateFrameFreeze(case_id)
+        }
         ui::debug_sidebar::SidebarAction::ToggleMatrixPool(pool_id) => {
             AppCommand::ToggleMatrixPool(pool_id)
         }
@@ -170,6 +174,7 @@ pub fn dispatch(
 ) -> anyhow::Result<()> {
     match command {
         AppCommand::PlayStateMachine => {
+            crate::app::frame_freeze::clear_case(app, now)?;
             let resume_timeline_review = should_resume_timeline_review(
                 app.runtime.state_control_selection.as_ref(),
                 &app.runtime.timeline_review,
@@ -184,6 +189,7 @@ pub fn dispatch(
             ctx.request_repaint();
         }
         AppCommand::ForceState(state_id) => {
+            crate::app::frame_freeze::clear_case(app, now)?;
             scene_runtime::select_state_control(
                 app,
                 crate::app::StateControlSelection::State(state_id),
@@ -191,6 +197,7 @@ pub fn dispatch(
             ctx.request_repaint();
         }
         AppCommand::ClearStateControl => {
+            crate::app::frame_freeze::clear_case(app, now)?;
             scene_runtime::clear_state_control(app);
             ctx.request_repaint();
         }
@@ -380,12 +387,20 @@ pub fn dispatch(
             window_mode::toggle_canvas_only(app, now);
         }
         AppCommand::SetTestMode(mode) => {
+            if mode == crate::app::TestMode::Matrix {
+                crate::app::frame_freeze::clear_case(app, now)?;
+            }
             app.shell.test_mode = mode;
             if mode == crate::app::TestMode::Matrix {
                 start_matrix_rebuild_if_needed(app, render_state, renderer);
             } else {
                 app.shell.matrix_state.clear(renderer);
             }
+        }
+        AppCommand::ActivateFrameFreeze(case_id) => {
+            app.shell.matrix_state.clear(renderer);
+            crate::app::frame_freeze::activate_case(app, &case_id, now)?;
+            sync_after_frame_freeze_render(app, ctx, render_state, renderer);
         }
         AppCommand::ToggleMatrixPool(pool_id) => {
             let selected = &mut app.shell.matrix_config.selected_pool_ids;
@@ -441,6 +456,25 @@ pub fn dispatch(
     Ok(())
 }
 
+fn sync_after_frame_freeze_render(
+    app: &mut App,
+    ctx: &egui::Context,
+    render_state: &egui_wgpu::RenderState,
+    renderer: &mut egui_wgpu::Renderer,
+) {
+    let texture_name = app.core.output_texture_name.clone();
+    texture_bridge::sync_output_texture(
+        app,
+        render_state,
+        renderer,
+        &texture_name,
+        app.canvas.display.texture_filter,
+    );
+    let _ = canvas::display::sync_preview_source(app, render_state, renderer);
+    app.canvas.invalidation.preview_source_changed();
+    ctx.request_repaint();
+}
+
 fn sync_after_shader_rebuild(
     app: &mut App,
     ctx: &egui::Context,
@@ -487,10 +521,22 @@ fn render_current_shader_space(app: &mut App, now: f64) {
     for pass in &mut app.core.passes {
         let mut params = pass.base_params;
         params.time = t;
-        let _ = crate::renderer::update_pass_params(&app.core.shader_space, pass, &params);
+        if let Err(error) =
+            crate::renderer::update_pass_params(&app.core.shader_space, pass, &params)
+        {
+            app.runtime.frame_freeze_capture_blocked = true;
+            eprintln!("[frame-freeze] pass params update failed: {error:#}");
+        }
     }
     let profile = canvas::draw_capture::render_profiled(app, false);
     app.runtime.latest_render_profile = Some(profile);
+    let state_values = app
+        .runtime
+        .animation_session
+        .as_ref()
+        .map(crate::animation::AnimationSession::presentation_snapshot)
+        .unwrap_or_default();
+    crate::app::frame_freeze::commit_submitted_frame(app, &state_values, t);
     app.runtime
         .render_texture_fps_tracker
         .record_scene_redraw(now);

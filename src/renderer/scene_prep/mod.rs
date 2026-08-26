@@ -1,5 +1,9 @@
 mod composite;
 mod data_parse;
+#[cfg(feature = "native")]
+pub(crate) mod data_parse_runtime;
+#[cfg(feature = "web-core")]
+#[path = "data_parse_runtime_web.rs"]
 pub(crate) mod data_parse_runtime;
 pub(crate) mod graph;
 mod group_expand;

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+#[cfg(feature = "native")]
 use std::path::Path;
 use std::sync::{
     Arc, Mutex,
@@ -7,7 +8,10 @@ use std::sync::{
 
 use anyhow::{Context, Result};
 
-use crate::{debug_artifacts::DebugArtifactStore, dsl::SceneDSL};
+#[cfg(feature = "native")]
+use crate::dsl::SceneDSL;
+#[cfg(feature = "native")]
+use crate::debug_artifacts::DebugArtifactStore;
 
 /// Metadata + raw bytes for a single asset.
 #[derive(Debug, Clone)]
@@ -24,6 +28,7 @@ pub struct AssetStore {
     revision: Arc<AtomicU64>,
 }
 
+#[cfg(feature = "native")]
 #[derive(Debug)]
 pub struct LoadedNforge {
     pub scene: SceneDSL,
@@ -132,6 +137,7 @@ impl AssetStore {
 
 /// Populate an `AssetStore` from a `SceneDSL`'s `assets` manifest, resolving
 /// each `entry.path` relative to `base_dir`.
+#[cfg(feature = "native")]
 pub fn load_from_scene_dir(scene: &SceneDSL, base_dir: &Path) -> Result<AssetStore> {
     // A non-.nforge scene must not inherit document-local material overrides
     // from a previously loaded SQLite document in the same process.
@@ -160,17 +166,20 @@ pub fn load_from_scene_dir(scene: &SceneDSL, base_dir: &Path) -> Result<AssetSto
 }
 
 /// Open a SQLite `.nforge` document and return its SceneDSL projection and assets.
+#[cfg(feature = "native")]
 pub fn load_from_nforge(nforge_path: &Path) -> Result<(SceneDSL, AssetStore)> {
     let loaded = load_from_nforge_with_debug_artifacts(nforge_path)?;
     Ok((loaded.scene, loaded.asset_store))
 }
 
 /// Open a SQLite `.nforge` document and also hydrate debug artifacts.
+#[cfg(feature = "native")]
 pub fn load_from_nforge_with_debug_artifacts(nforge_path: &Path) -> Result<LoadedNforge> {
     crate::nforge::load(nforge_path)
 }
 
 /// Transactionally replace debug artifacts in a SQLite `.nforge` document.
+#[cfg(feature = "native")]
 pub fn save_debug_artifacts_to_nforge(
     nforge_path: &Path,
     _scene: &SceneDSL,

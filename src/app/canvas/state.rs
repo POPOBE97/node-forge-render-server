@@ -256,6 +256,7 @@ pub struct CanvasReferenceState {
 pub struct CanvasInteractionState {
     pub canvas_event_focus_latched: bool,
     pub canvas_captured_keys: std::collections::HashSet<egui::Key>,
+    pub suppress_next_clipboard_paste_release: bool,
     pub last_debug_sidebar_rect: Option<egui::Rect>,
     pub last_canvas_rect: Option<egui::Rect>,
     pub last_image_rect: Option<egui::Rect>,

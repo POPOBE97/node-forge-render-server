@@ -37,7 +37,11 @@ pub(super) fn run(
         for pass in &mut app.core.passes {
             let mut params = pass.base_params;
             params.time = t;
-            let _ = renderer::update_pass_params(&app.core.shader_space, pass, &params);
+            if let Err(error) = renderer::update_pass_params(&app.core.shader_space, pass, &params)
+            {
+                app.runtime.frame_freeze_capture_blocked = true;
+                eprintln!("[frame-freeze] pass params update failed: {error:#}");
+            }
         }
 
         if advance.time_driven_scene || advance.animation_values_changed {
@@ -52,6 +56,7 @@ pub(super) fn run(
 
         let profile = canvas::draw_capture::render_profiled(app, false);
         app.runtime.latest_render_profile = Some(profile);
+        crate::app::frame_freeze::commit_submitted_frame(app, &advance.frame_uniform_values, t);
         app.runtime.scene_redraw_pending = false;
         app.runtime
             .render_texture_fps_tracker

@@ -44,6 +44,7 @@ use crate::{
     asset_store::AssetStore,
     dsl,
     dsl::{DebugArtifactItem, Node, SceneDSL},
+    frame_freeze::FrameFreezeCase,
     protocol::{
         DesignParamPatchPayload, ErrorPayload, PassTargetSizeEntry, PassTargetSizesPayload,
         WSMessage, now_millis,
@@ -124,6 +125,28 @@ pub enum SceneUpdate {
     DebugArtifactDelete {
         artifact_id: String,
     },
+    FrameFreezesSync {
+        cases: Vec<FrameFreezeCase>,
+    },
+    FrameFreezePersisted {
+        case_id: String,
+        ok: bool,
+        error: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FrameFreezesSyncPayload {
+    cases: Vec<FrameFreezeCase>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FrameFreezePersistedPayload {
+    case_id: String,
+    ok: bool,
+    error: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -219,6 +242,18 @@ pub fn broadcast_design_param_patch(hub: &WsHub, payload: DesignParamPatchPayloa
         payload: Some(payload),
     };
     if let Ok(text) = serde_json::to_string(&msg) {
+        hub.broadcast(text);
+    }
+}
+
+pub fn broadcast_frame_freeze_captured(hub: &WsHub, case: FrameFreezeCase, request_id: String) {
+    let message = WSMessage {
+        msg_type: "frame_freeze_captured".to_string(),
+        timestamp: now_millis(),
+        request_id: Some(request_id),
+        payload: Some(case),
+    };
+    if let Ok(text) = serde_json::to_string(&message) {
         hub.broadcast(text);
     }
 }

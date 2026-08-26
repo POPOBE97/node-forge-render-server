@@ -31,6 +31,16 @@ pub(super) fn run(app: &mut App) -> AdvancePhase {
     let delta_t = (raw_t - app.runtime.time_last_raw_secs).max(0.0);
     app.runtime.time_last_raw_secs = raw_t;
 
+    if app.runtime.frame_freeze_playback.is_some() {
+        return AdvancePhase {
+            animation_values_changed: false,
+            time_driven_scene: false,
+            animation_session_active: false,
+            should_redraw_scene: false,
+            frame_uniform_values: std::collections::HashMap::new(),
+        };
+    }
+
     let state_control_selection = app.runtime.state_control_selection.clone();
     let state_control_active = state_control_selection.is_some();
     let playing = matches!(state_control_selection, Some(StateControlSelection::Play));

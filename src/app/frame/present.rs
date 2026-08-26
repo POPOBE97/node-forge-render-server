@@ -113,10 +113,20 @@ fn render_timeline_snapshot(app: &mut App, snapshot: &crate::animation::Timeline
     for pass in &mut app.core.passes {
         let mut params = pass.base_params;
         params.time = snapshot.scene_time_secs as f32;
-        let _ = crate::renderer::update_pass_params(&app.core.shader_space, pass, &params);
+        if let Err(error) =
+            crate::renderer::update_pass_params(&app.core.shader_space, pass, &params)
+        {
+            app.runtime.frame_freeze_capture_blocked = true;
+            eprintln!("[frame-freeze] timeline pass params update failed: {error:#}");
+        }
     }
     let profile = canvas::draw_capture::render_profiled(app, false);
     app.runtime.latest_render_profile = Some(profile);
+    crate::app::frame_freeze::commit_submitted_frame(
+        app,
+        &snapshot.active_overrides,
+        snapshot.scene_time_secs as f32,
+    );
     app.runtime.scene_redraw_pending = false;
 }
 
@@ -242,6 +252,9 @@ pub(super) fn run(
         .unwrap_or_default();
 
     let mut pending_commands = Vec::<AppCommand>::new();
+    if let Some(case_id) = crate::app::frame_freeze::pending_capture_ready_to_activate(app) {
+        pending_commands.push(AppCommand::ActivateFrameFreeze(case_id));
+    }
     let mut sidebar_result = ui::debug_sidebar::SidebarResult::default();
 
     // ── Bottom timeline panel ────────────────────────────────────────────
@@ -331,6 +344,13 @@ pub(super) fn run(
                         selected_pool_ids: &app.shell.matrix_config.selected_pool_ids,
                         max_row_cols: app.shell.matrix_config.max_row_cols,
                         show_labels: app.shell.matrix_config.show_labels,
+                        frame_freezes: &app.shell.frame_freezes,
+                        active_frame_freeze_case_id: app
+                            .runtime
+                            .frame_freeze_playback
+                            .as_ref()
+                            .map(|playback| playback.active_case_id.as_str()),
+                        frame_freeze_status: app.shell.frame_freeze_status.as_deref(),
                     },
                     pass_capture_sidebar_state,
                     &app.shell.resource_tree_nodes,
@@ -343,8 +363,10 @@ pub(super) fn run(
         }
     }
 
-    apply_timeline_interaction(app, timeline_interaction);
-    apply_timeline_review_frame(app);
+    if app.runtime.frame_freeze_playback.is_none() {
+        apply_timeline_interaction(app, timeline_interaction);
+        apply_timeline_review_frame(app);
+    }
 
     let panel_frame = egui::Frame::default()
         .fill(egui::Color32::BLACK)
@@ -358,7 +380,20 @@ pub(super) fn run(
         });
 
     for command in pending_commands {
+        let frame_freeze_case_id = match &command {
+            AppCommand::ActivateFrameFreeze(case_id) => Some(case_id.clone()),
+            _ => None,
+        };
+        let is_frame_freeze_command = matches!(&command, AppCommand::ActivateFrameFreeze(_));
         if let Err(err) = commands::dispatch(app, ctx, render_state, renderer, now, command) {
+            if is_frame_freeze_command {
+                if app.shell.pending_frame_freeze_case_id.as_deref()
+                    == frame_freeze_case_id.as_deref()
+                {
+                    app.shell.pending_frame_freeze_case_id = None;
+                }
+                app.shell.frame_freeze_status = Some(format!("Freeze replay failed: {err:#}"));
+            }
             eprintln!("[app] command failed: {err:#}");
         }
     }

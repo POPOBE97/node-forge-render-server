@@ -13,11 +13,12 @@ use crate::{
     asset_store::{AssetData, AssetStore, LoadedNforge},
     debug_artifacts::DebugArtifactStore,
     dsl::{DebugArtifactItem, SceneDSL},
+    frame_freeze::{FrameFreezeCase, FrameFreezeV1, validate_case},
     renderer::node_compiler::template_loader,
 };
 
 const APPLICATION_ID: i64 = 1_313_232_455;
-const FORMAT_VERSION: i64 = 5;
+const FORMAT_VERSION: i64 = 6;
 const SCENE_DSL_VERSION: &str = "6.0";
 const SYNC_LOG_RETENTION: i64 = 10_000;
 const CONTENT_HISTORY_RETENTION: i64 = 256;
@@ -387,7 +388,7 @@ fn read_scene(connection: &Connection) -> Result<(SceneDSL, AssetStore, DebugArt
                     derivations.insert(owner_id, definition);
                 }
                 (unsupported, _) => {
-                    bail!("unsupported graph scope kind '{unsupported}' in v5 .nforge");
+                    bail!("unsupported graph scope kind '{unsupported}' in .nforge");
                 }
             }
         }
@@ -522,10 +523,10 @@ fn read_scene(connection: &Connection) -> Result<(SceneDSL, AssetStore, DebugArt
         let states = header
             .get_mut("states")
             .and_then(Value::as_array_mut)
-            .ok_or_else(|| anyhow::anyhow!("stateMachine.states is missing in v5 .nforge"))?;
+            .ok_or_else(|| anyhow::anyhow!("stateMachine.states is missing in .nforge"))?;
         for state in states {
             let Some(object) = state.as_object_mut() else {
-                bail!("invalid State definition in v5 .nforge");
+                bail!("invalid State definition in .nforge");
             };
             if object.get("type").and_then(Value::as_str) != Some("animationState") {
                 continue;
@@ -609,6 +610,56 @@ pub fn load(path: &Path) -> Result<LoadedNforge> {
         asset_store,
         debug_artifacts,
     })
+}
+
+pub fn load_frame_freezes(path: &Path) -> Result<Vec<FrameFreezeCase>> {
+    let connection = open_readonly(path)?;
+    let mut statement = connection.prepare(
+        "SELECT case_id, name, captured_at, topology_fingerprint, payload_json
+           FROM frame_freezes
+          ORDER BY captured_at, case_id",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, String>(4)?,
+        ))
+    })?;
+    let mut cases = Vec::new();
+    for row in rows {
+        let (case_id, name, captured_at, topology_fingerprint, payload_json) = row?;
+        let payload: FrameFreezeV1 = serde_json::from_str(&payload_json)
+            .with_context(|| format!("invalid frame freeze payload for case {case_id}"))?;
+        let case = FrameFreezeCase {
+            case_id,
+            name,
+            captured_at,
+            topology_fingerprint,
+            payload,
+        };
+        validate_case(&case)?;
+        cases.push(case);
+    }
+    Ok(cases)
+}
+
+pub fn load_frame_freeze_case(path: &Path, selector: &str) -> Result<FrameFreezeCase> {
+    let cases = load_frame_freezes(path)?;
+    if let Some(case) = cases.iter().find(|case| case.case_id == selector) {
+        return Ok(case.clone());
+    }
+    let matches = cases
+        .into_iter()
+        .filter(|case| case.name == selector)
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [case] => Ok(case.clone()),
+        [] => bail!("frame freeze case not found: {selector}"),
+        _ => bail!("frame freeze case name is ambiguous: {selector}"),
+    }
 }
 
 pub fn save_debug_artifacts(path: &Path, debug_artifacts: &DebugArtifactStore) -> Result<()> {
@@ -919,4 +970,70 @@ pub fn initialize_test_document(path: &Path, scene: &SceneDSL) -> Result<()> {
         )?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod frame_freeze_tests {
+    use super::*;
+    use crate::dsl::Metadata;
+
+    fn empty_scene() -> SceneDSL {
+        SceneDSL {
+            version: "6.0".into(),
+            metadata: Metadata {
+                name: "freeze test".into(),
+                created: None,
+                modified: None,
+            },
+            nodes: Vec::new(),
+            connections: Vec::new(),
+            outputs: None,
+            groups: Vec::new(),
+            assets: Default::default(),
+            state_machine: None,
+            debug_artifacts: None,
+        }
+    }
+
+    #[test]
+    fn loads_frozen_cases_by_id_or_unique_name() {
+        let path = std::env::temp_dir().join(format!(
+            "node-forge-frame-freeze-{}-{}.nforge",
+            std::process::id(),
+            now_millis()
+        ));
+        initialize_test_document(&path, &empty_scene()).unwrap();
+        let payload = FrameFreezeV1 {
+            schema_version: crate::frame_freeze::FRAME_FREEZE_SCHEMA_VERSION,
+            scene_output_texture_name: "scene.output".into(),
+            scene_time_seconds: 2.5,
+            state_params: Vec::new(),
+            node_params: Vec::new(),
+        };
+        let connection = Connection::open(&path).unwrap();
+        connection
+            .execute(
+                "INSERT INTO frame_freezes(
+                   case_id, name, captured_at, topology_fingerprint, payload_json, updated_revision
+                 ) VALUES (?, ?, ?, ?, ?, 1)",
+                params![
+                    "freeze-1",
+                    "Hero frame",
+                    "1770000000000",
+                    "ab".repeat(32),
+                    serde_json::to_string(&payload).unwrap()
+                ],
+            )
+            .unwrap();
+        drop(connection);
+
+        let by_id = load_frame_freeze_case(&path, "freeze-1").unwrap();
+        let by_name = load_frame_freeze_case(&path, "Hero frame").unwrap();
+        assert_eq!(by_id, by_name);
+        assert_eq!(by_id.payload.scene_time_seconds, 2.5);
+
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(format!("{}-wal", path.display()));
+        let _ = std::fs::remove_file(format!("{}-shm", path.display()));
+    }
 }

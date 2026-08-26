@@ -28,6 +28,9 @@ struct Cli {
     dump_shader_deps_output: Option<PathBuf>,
     headless_state: Option<String>,
     headless_overrides_output: Option<PathBuf>,
+    freeze_case: Option<String>,
+    list_freezes: bool,
+    export_freeze_case: Option<String>,
     export_texture: Option<String>,
     capture_pass: Option<String>,
     render_to_file: bool,
@@ -307,6 +310,24 @@ fn parse_cli(args: &[String]) -> Result<Cli> {
                 cli.headless_overrides_output = Some(PathBuf::from(value));
                 i += 2;
             }
+            "--freeze-case" => {
+                let Some(value) = args.get(i + 1) else {
+                    return Err(anyhow!("missing value for --freeze-case"));
+                };
+                cli.freeze_case = Some(value.clone());
+                i += 2;
+            }
+            "--list-freezes" => {
+                cli.list_freezes = true;
+                i += 1;
+            }
+            "--export-freeze-case" => {
+                let Some(value) = args.get(i + 1) else {
+                    return Err(anyhow!("missing value for --export-freeze-case"));
+                };
+                cli.export_freeze_case = Some(value.clone());
+                i += 2;
+            }
             "--export-texture" => {
                 let Some(value) = args.get(i + 1) else {
                     return Err(anyhow!("missing value for --export-texture"));
@@ -497,7 +518,7 @@ fn parse_cli(args: &[String]) -> Result<Cli> {
             }
             other => {
                 return Err(anyhow!(
-                    "unknown argument: {other} (supported: --android-screencap-clipboard [figma-srgb|source], --headless, --dsl-json <scene.json>, --nforge <file.nforge>, --headless-state <id|name>, --headless-overrides-output <path>, --export-texture <resource-name>, --capture-pass <pass-id>, --render-to-file, --continuous-redraw, --output <abs/path/to/output>, --outputdir <dir>, --dump-wgsl-dir <dir>, --dump-shader-deps <pass-name>, --dump-shader-deps-output <path>, --profile, --profile-output <path|->, --profile-format ndjson, --profile-frames <n>, --profile-warmup-frames <n>, --trace-animation, --trace-scenario <path>, --trace-seconds <n>, --trace-fps <n>, --trace-output <path|->, --trace-format json,summary,table, ...)"
+                    "unknown argument: {other} (supported: --android-screencap-clipboard [figma-srgb|source], --headless, --dsl-json <scene.json>, --nforge <file.nforge>, --freeze-case <id|name>, --list-freezes, --export-freeze-case <id|name>, --headless-state <id|name>, --headless-overrides-output <path>, --export-texture <resource-name>, --capture-pass <pass-id>, --render-to-file, --continuous-redraw, --output <abs/path/to/output>, --outputdir <dir>, --dump-wgsl-dir <dir>, --dump-shader-deps <pass-name>, --dump-shader-deps-output <path>, --profile, --profile-output <path|->, --profile-format ndjson, --profile-frames <n>, --profile-warmup-frames <n>, --trace-animation, --trace-scenario <path>, --trace-seconds <n>, --trace-fps <n>, --trace-output <path|->, --trace-format json,summary,table, ...)"
                 ));
             }
         }
@@ -535,6 +556,39 @@ fn parse_cli(args: &[String]) -> Result<Cli> {
         return Err(anyhow!(
             "--headless-overrides-output requires --headless-state"
         ));
+    }
+    if cli.freeze_case.is_some() {
+        if !cli.headless || cli.nforge.is_none() || cli.dsl_json.is_some() {
+            return Err(anyhow!(
+                "--freeze-case requires --headless and --nforge <file.nforge>"
+            ));
+        }
+        if cli.headless_state.is_some()
+            || cli.headless_overrides_output.is_some()
+            || cli.profile
+            || cli.continuous_redraw
+        {
+            return Err(anyhow!(
+                "--freeze-case cannot be combined with state overrides, profiling, or continuous redraw"
+            ));
+        }
+    }
+    if cli.list_freezes {
+        if cli.nforge.is_none() || cli_has_render_options_except_freeze_listing(&cli) {
+            return Err(anyhow!(
+                "--list-freezes is standalone and requires only --nforge <file.nforge>"
+            ));
+        }
+    }
+    if cli.export_freeze_case.is_some() {
+        if cli.nforge.is_none()
+            || cli.output.is_none()
+            || cli_has_render_options_except_freeze_export(&cli)
+        {
+            return Err(anyhow!(
+                "--export-freeze-case is standalone and requires --nforge <file.nforge> --output <path>"
+            ));
+        }
     }
     if cli.export_texture.is_some() && cli.capture_pass.is_some() {
         return Err(anyhow!(
@@ -659,6 +713,9 @@ fn cli_has_render_or_trace_options(cli: &Cli) -> bool {
         || cli.dump_shader_deps_output.is_some()
         || cli.headless_state.is_some()
         || cli.headless_overrides_output.is_some()
+        || cli.freeze_case.is_some()
+        || cli.list_freezes
+        || cli.export_freeze_case.is_some()
         || cli.export_texture.is_some()
         || cli.capture_pass.is_some()
         || cli.render_to_file
@@ -685,6 +742,45 @@ fn cli_has_render_or_trace_options(cli: &Cli) -> bool {
         || cli.trace_check_identity.is_some()
         || cli.trace_fail_on_jump
         || cli.trace_pretty.is_some()
+}
+
+fn cli_has_render_options_except_freeze_listing(cli: &Cli) -> bool {
+    cli.headless
+        || cli.dsl_json.is_some()
+        || cli.output_dir.is_some()
+        || cli.output.is_some()
+        || cli.dump_wgsl_dir.is_some()
+        || cli.dump_shader_deps.is_some()
+        || cli.dump_shader_deps_output.is_some()
+        || cli.headless_state.is_some()
+        || cli.headless_overrides_output.is_some()
+        || cli.freeze_case.is_some()
+        || cli.export_freeze_case.is_some()
+        || cli.export_texture.is_some()
+        || cli.capture_pass.is_some()
+        || cli.render_to_file
+        || cli.continuous_redraw
+        || cli.profile
+        || cli.trace_animation
+}
+
+fn cli_has_render_options_except_freeze_export(cli: &Cli) -> bool {
+    cli.headless
+        || cli.dsl_json.is_some()
+        || cli.output_dir.is_some()
+        || cli.dump_wgsl_dir.is_some()
+        || cli.dump_shader_deps.is_some()
+        || cli.dump_shader_deps_output.is_some()
+        || cli.headless_state.is_some()
+        || cli.headless_overrides_output.is_some()
+        || cli.freeze_case.is_some()
+        || cli.list_freezes
+        || cli.export_texture.is_some()
+        || cli.capture_pass.is_some()
+        || cli.render_to_file
+        || cli.continuous_redraw
+        || cli.profile
+        || cli.trace_animation
 }
 
 fn run_trace_animation(cli: &Cli) -> Result<()> {
@@ -1290,8 +1386,15 @@ fn run_headless_nforge_render_once(
     headless_overrides_output: Option<PathBuf>,
     export_texture: Option<String>,
     capture_pass: Option<String>,
+    freeze_case: Option<String>,
 ) -> Result<()> {
     let (scene, store) = asset_store::load_from_nforge(nforge_path)?;
+    let frame_freeze = freeze_case
+        .as_deref()
+        .map(|selector| {
+            node_forge_render_server::nforge::load_frame_freeze_case(nforge_path, selector)
+        })
+        .transpose()?;
     let runtime_overrides = evaluate_headless_state_at_zero(
         &scene,
         headless_state.as_deref(),
@@ -1325,25 +1428,45 @@ fn run_headless_nforge_render_once(
     ensure_parent_dir_exists(&out_path)?;
 
     if let Some(pass_name) = capture_pass.as_deref() {
-        renderer::render_scene_pass_to_file_headless_with_runtime_overrides(
-            &scene,
-            pass_name,
-            &out_path,
-            Some(&store),
-            runtime_overrides.as_ref(),
-        )?;
+        if let Some(frame_freeze) = frame_freeze.as_ref() {
+            renderer::render_scene_pass_to_file_headless_with_frame_freeze(
+                &scene,
+                pass_name,
+                &out_path,
+                Some(&store),
+                frame_freeze,
+            )?;
+        } else {
+            renderer::render_scene_pass_to_file_headless_with_runtime_overrides(
+                &scene,
+                pass_name,
+                &out_path,
+                Some(&store),
+                runtime_overrides.as_ref(),
+            )?;
+        }
         println!(
             "[headless] captured pass {pass_name}: {}",
             out_path.display()
         );
     } else if let Some(texture_name) = export_texture.as_deref() {
-        renderer::render_scene_texture_to_file_headless_with_runtime_overrides(
-            &scene,
-            texture_name,
-            &out_path,
-            Some(&store),
-            runtime_overrides.as_ref(),
-        )?;
+        if let Some(frame_freeze) = frame_freeze.as_ref() {
+            renderer::render_scene_texture_to_file_headless_with_frame_freeze(
+                &scene,
+                texture_name,
+                &out_path,
+                Some(&store),
+                frame_freeze,
+            )?;
+        } else {
+            renderer::render_scene_texture_to_file_headless_with_runtime_overrides(
+                &scene,
+                texture_name,
+                &out_path,
+                Some(&store),
+                runtime_overrides.as_ref(),
+            )?;
+        }
         println!(
             "[headless] saved texture {texture_name}: {}",
             out_path.display()
@@ -1363,6 +1486,18 @@ fn run_headless_nforge_render_once(
         if !stdout_profile {
             eprintln!("[headless] profile saved");
         }
+    } else if let Some(frame_freeze) = frame_freeze.as_ref() {
+        renderer::render_scene_to_file_headless_with_frame_freeze(
+            &scene,
+            &out_path,
+            Some(&store),
+            frame_freeze,
+        )?;
+        println!(
+            "[headless] replayed freeze {}: {}",
+            frame_freeze.case_id,
+            out_path.display()
+        );
     } else {
         renderer::render_scene_to_file_headless_with_runtime_overrides(
             &scene,
@@ -1501,7 +1636,9 @@ fn run_headless_ws_render_once(
             }
             ws::SceneUpdate::DebugArtifactUpsert { .. }
             | ws::SceneUpdate::DebugArtifactBinaryUpsert { .. }
-            | ws::SceneUpdate::DebugArtifactDelete { .. } => {
+            | ws::SceneUpdate::DebugArtifactDelete { .. }
+            | ws::SceneUpdate::FrameFreezesSync { .. }
+            | ws::SceneUpdate::FrameFreezePersisted { .. } => {
                 // Debug artifacts do not affect headless render output.
             }
             ws::SceneUpdate::ParseError {
@@ -1525,6 +1662,44 @@ fn run_headless_ws_render_once(
             }
         }
     }
+}
+
+fn list_frame_freezes(nforge_path: &std::path::Path) -> Result<()> {
+    let cases = node_forge_render_server::nforge::load_frame_freezes(nforge_path)?;
+    if cases.is_empty() {
+        println!("No frozen frame cases in {}", nforge_path.display());
+        return Ok(());
+    }
+    for case in cases {
+        println!(
+            "{}\t{}\t{}\t{}",
+            case.case_id, case.name, case.captured_at, case.topology_fingerprint
+        );
+    }
+    Ok(())
+}
+
+fn export_frame_freeze(
+    nforge_path: &std::path::Path,
+    selector: &str,
+    output_path: &std::path::Path,
+) -> Result<()> {
+    let case = node_forge_render_server::nforge::load_frame_freeze_case(nforge_path, selector)?;
+    if let Some(parent) = output_path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut json = serde_json::to_string_pretty(&case)?;
+    json.push('\n');
+    std::fs::write(output_path, json)?;
+    println!(
+        "exported freeze {} from {} to {}",
+        case.case_id,
+        nforge_path.display(),
+        output_path.display()
+    );
+    Ok(())
 }
 
 fn resolve_file_output_path(rt: &dsl::FileRenderTarget) -> std::path::PathBuf {
@@ -1664,6 +1839,26 @@ pub(crate) fn run() -> Result<()> {
         return Ok(());
     }
 
+    if cli.list_freezes {
+        return list_frame_freezes(
+            cli.nforge
+                .as_deref()
+                .expect("--list-freezes validation requires --nforge"),
+        );
+    }
+
+    if let Some(selector) = cli.export_freeze_case.as_deref() {
+        return export_frame_freeze(
+            cli.nforge
+                .as_deref()
+                .expect("--export-freeze-case validation requires --nforge"),
+            selector,
+            cli.output
+                .as_deref()
+                .expect("--export-freeze-case validation requires --output"),
+        );
+    }
+
     if cli.trace_animation {
         return run_trace_animation(&cli);
     }
@@ -1687,6 +1882,7 @@ pub(crate) fn run() -> Result<()> {
                 cli.headless_overrides_output.clone(),
                 cli.export_texture.clone(),
                 cli.capture_pass.clone(),
+                cli.freeze_case.clone(),
             );
         }
         if let Some(dsl_json_path) = cli.dsl_json.as_deref() {
@@ -2052,6 +2248,78 @@ mod tests {
         assert!(cli.headless);
         assert_eq!(cli.dsl_json.as_ref().unwrap(), &PathBuf::from("scene.json"));
         assert_eq!(cli.output_dir.as_ref().unwrap(), &PathBuf::from("out"));
+    }
+
+    #[test]
+    fn parse_cli_accepts_archive_freeze_replay_and_standalone_listing() {
+        let replay = parse_cli(&[
+            "--headless".into(),
+            "--nforge".into(),
+            "scene.nforge".into(),
+            "--freeze-case".into(),
+            "Hero frame".into(),
+        ])
+        .unwrap();
+        assert_eq!(replay.freeze_case.as_deref(), Some("Hero frame"));
+
+        let capture = parse_cli(&[
+            "--headless".into(),
+            "--nforge".into(),
+            "scene.nforge".into(),
+            "--freeze-case".into(),
+            "Hero frame".into(),
+            "--capture-pass".into(),
+            "render.pass.hero.pass".into(),
+            "--output".into(),
+            "/tmp/hero-pass.rgba16f".into(),
+        ])
+        .unwrap();
+        assert_eq!(
+            capture.capture_pass.as_deref(),
+            Some("render.pass.hero.pass")
+        );
+
+        let listing = parse_cli(&[
+            "--nforge".into(),
+            "scene.nforge".into(),
+            "--list-freezes".into(),
+        ])
+        .unwrap();
+        assert!(listing.list_freezes);
+
+        let export = parse_cli(&[
+            "--nforge".into(),
+            "scene.nforge".into(),
+            "--export-freeze-case".into(),
+            "Hero frame".into(),
+            "--output".into(),
+            "hero-frame.json".into(),
+        ])
+        .unwrap();
+        assert_eq!(export.export_freeze_case.as_deref(), Some("Hero frame"));
+        assert_eq!(export.output, Some(PathBuf::from("hero-frame.json")));
+    }
+
+    #[test]
+    fn parse_cli_rejects_freeze_replay_without_archive_headless_mode() {
+        let error = parse_cli(&["--freeze-case".into(), "freeze-1".into()]).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("requires --headless and --nforge")
+        );
+    }
+
+    #[test]
+    fn parse_cli_rejects_freeze_export_without_output() {
+        let error = parse_cli(&[
+            "--nforge".into(),
+            "scene.nforge".into(),
+            "--export-freeze-case".into(),
+            "freeze-1".into(),
+        ])
+        .unwrap_err();
+        assert!(error.to_string().contains("requires --nforge"));
     }
 
     #[test]

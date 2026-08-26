@@ -35,6 +35,10 @@
 
 pub mod easing;
 pub mod graph;
+#[cfg(feature = "native")]
+pub mod graph_function;
+#[cfg(feature = "web-core")]
+#[path = "graph_function_web.rs"]
 pub mod graph_function;
 pub mod motion;
 pub mod runtime;

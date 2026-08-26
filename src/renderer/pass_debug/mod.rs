@@ -849,7 +849,13 @@ fn fs_main() -> @location(0) vec4f {
             dependency_graph_reaches_target(&doc, root_id, &lighting2_id),
             "root dependency graph should reach lighting2 through target references"
         );
-        let frag_out = child_target(&doc, root, "_frag_out", Some("Compose"));
+        child_target(&doc, root, "_frag_color", Some("Multiply"));
+        let frag_color_id = target_id_by_name(&doc, "_frag_color");
+        let frag_color_tree = doc
+            .dependency_trees
+            .get(&frag_color_id)
+            .expect("missing dependency tree for _frag_color");
+        let frag_out = child_target(&doc, frag_color_tree, "_frag_out", Some("Compose"));
         assert_node_range_selects(
             &doc,
             frag_out,

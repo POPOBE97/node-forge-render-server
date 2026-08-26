@@ -660,7 +660,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      hyperos_glass_mat = vec4f(hyperos_glass_add_light(hyperos_glass_mat.rgb, reflection.rgb, (1.0 - light_normalized_sdf) * f32(0.5)), hyperos_glass_mat.a);
 
      // --- Process color (luminance curve + saturation + brightness) ---
-     hyperos_glass_mat = hyperos_glass_luminance_curve(hyperos_glass_mat, vec4f(0.0, 0.0, 0.0, 0.0), f32(0.0));
+     hyperos_glass_mat = hyperos_glass_luminance_curve(hyperos_glass_mat, vec4f(0.0, 1.387034059, 1.116781473, 1.732936382), f32(0.0));
      hyperos_glass_mat = vec4f(hyperos_glass_adjust_color(hyperos_glass_mat, f32(1.0), f32(0.0)).rgb, hyperos_glass_mat.a);
 
      // --- Background color tinting ---

@@ -79,6 +79,10 @@ struct AndroidReferenceUploadSample {
     recreated_texture: bool,
 }
 
+pub struct ClipboardReferencePaste {
+    pub shortwire_reference: Option<ShortwirePastedReferenceImage>,
+}
+
 #[derive(Default)]
 struct AndroidReferenceUploadPerf {
     window_start: Option<Instant>,
@@ -396,11 +400,21 @@ pub fn clear_reference(app: &mut App) {
     clear_reference_internal(app, true);
 }
 
+fn is_transient_shortwire_reference_source(source: &RefImageSource) -> bool {
+    matches!(
+        source,
+        RefImageSource::ShortwireClipboard | RefImageSource::ShortwirePatch
+    )
+}
+
 pub fn clear_shortwire_clipboard_reference(app: &mut App) -> bool {
-    if matches!(
-        app.canvas.reference.ref_image.as_ref().map(|r| &r.source),
-        Some(RefImageSource::ShortwireClipboard | RefImageSource::ShortwirePatch)
-    ) {
+    if app
+        .canvas
+        .reference
+        .ref_image
+        .as_ref()
+        .is_some_and(|reference| is_transient_shortwire_reference_source(&reference.source))
+    {
         eprintln!("[shortwire-paste] clearing shortwire clipboard reference");
         clear_reference_internal(app, true);
         return true;
@@ -985,14 +999,16 @@ pub fn load_shortwire_reference_image(
     Ok(())
 }
 
-pub fn paste_shortwire_reference_from_clipboard(
+pub fn paste_reference_from_clipboard(
     app: &mut App,
     ctx: &egui::Context,
     render_state: &egui_wgpu::RenderState,
-) -> anyhow::Result<Option<ShortwirePastedReferenceImage>> {
+    attach_to_shortwire: bool,
+) -> anyhow::Result<Option<ClipboardReferencePaste>> {
     eprintln!(
-        "[shortwire-paste] arboard start alpha_mode={:?} existing_ref={}",
+        "[reference-paste] clipboard read start alpha_mode={:?} shortwire={} existing_ref={}",
         app.canvas.reference.alpha_mode,
+        attach_to_shortwire,
         app.canvas
             .reference
             .ref_image
@@ -1006,14 +1022,14 @@ pub fn paste_shortwire_reference_from_clipboard(
     let mut clipboard = match arboard::Clipboard::new() {
         Ok(clipboard) => clipboard,
         Err(error) => {
-            eprintln!("[shortwire-paste] arboard init failed: {error}");
+            eprintln!("[reference-paste] clipboard init failed: {error}");
             return Err(error.into());
         }
     };
     let clipboard_image = match clipboard.get_image() {
         Ok(image) => {
             eprintln!(
-                "[shortwire-paste] arboard image found width={} height={} bytes={}",
+                "[reference-paste] clipboard image found width={} height={} bytes={}",
                 image.width,
                 image.height,
                 image.bytes.len()
@@ -1021,11 +1037,11 @@ pub fn paste_shortwire_reference_from_clipboard(
             image
         }
         Err(arboard::Error::ContentNotAvailable) => {
-            eprintln!("[shortwire-paste] arboard content not available");
+            eprintln!("[reference-paste] clipboard has no image");
             return Ok(None);
         }
         Err(error) => {
-            eprintln!("[shortwire-paste] arboard get_image failed: {error}");
+            eprintln!("[reference-paste] clipboard image read failed: {error}");
             return Err(error.into());
         }
     };
@@ -1039,32 +1055,46 @@ pub fn paste_shortwire_reference_from_clipboard(
         .map_err(|_| anyhow::anyhow!("clipboard image height too large"))?;
     let rgba = image::RgbaImage::from_raw(width, height, clipboard_image.bytes.into_owned())
         .ok_or_else(|| anyhow::anyhow!("clipboard image has invalid RGBA data"))?;
-    let png_bytes = encode_rgba8_png(&rgba)?;
+    let png_bytes = attach_to_shortwire
+        .then(|| encode_rgba8_png(&rgba))
+        .transpose()?;
     let alpha_mode = app.canvas.reference.alpha_mode;
-    let name = format!("Shortwire clipboard {width}x{height}");
+    let name = if attach_to_shortwire {
+        format!("Shortwire clipboard {width}x{height}")
+    } else {
+        format!("Clipboard {width}x{height}")
+    };
+    let source = if attach_to_shortwire {
+        RefImageSource::ShortwireClipboard
+    } else {
+        RefImageSource::Clipboard
+    };
     load_reference_image_from_decoded(
         app,
         ctx,
         render_state,
         image::DynamicImage::ImageRgba8(rgba),
         name.clone(),
-        RefImageSource::ShortwireClipboard,
+        source,
         alpha_mode,
     )?;
+    app.shell.android_reference.stop();
     app.canvas.reference.desired_override = Some(ReferenceDesiredSource::Manual);
     app.canvas.reference.last_attempt_key = None;
     eprintln!(
-        "[shortwire-paste] loaded shortwire clipboard reference width={width} height={height} alpha_mode={alpha_mode:?}"
+        "[reference-paste] loaded clipboard reference width={width} height={height} alpha_mode={alpha_mode:?} shortwire={attach_to_shortwire}"
     );
-    Ok(Some(ShortwirePastedReferenceImage {
-        name,
-        png_bytes,
-        width,
-        height,
-        alpha_mode,
-        mode: RefImageMode::Overlay,
-        opacity: 0.5,
-        offset: [0.0, 0.0],
+    Ok(Some(ClipboardReferencePaste {
+        shortwire_reference: png_bytes.map(|png_bytes| ShortwirePastedReferenceImage {
+            name,
+            png_bytes,
+            width,
+            height,
+            alpha_mode,
+            mode: RefImageMode::Overlay,
+            opacity: 0.5,
+            offset: [0.0, 0.0],
+        }),
     }))
 }
 
@@ -1102,8 +1132,10 @@ pub fn maybe_handle_reference_drop(
 #[cfg(test)]
 mod tests {
     use super::{
-        RefImageAlphaMode, apply_reference_alpha_mode_to_linear_rgba, decode_reference_image,
-        is_supported_reference_image, reference_texture_format, validate_android_reference_rgba8,
+        RefImageAlphaMode, RefImageSource, apply_reference_alpha_mode_to_linear_rgba,
+        decode_reference_image, is_supported_reference_image,
+        is_transient_shortwire_reference_source, reference_texture_format,
+        validate_android_reference_rgba8,
     };
     use image::{DynamicImage, ImageBuffer, Rgba, RgbaImage};
     use rust_wgpu_fiber::eframe::wgpu;
@@ -1114,6 +1146,19 @@ mod tests {
         assert!(is_supported_reference_image(Path::new("foo.exr")));
         assert!(is_supported_reference_image(Path::new("foo.png")));
         assert!(!is_supported_reference_image(Path::new("foo.gif")));
+    }
+
+    #[test]
+    fn ordinary_clipboard_reference_is_not_transient_shortwire_state() {
+        assert!(!is_transient_shortwire_reference_source(
+            &RefImageSource::Clipboard
+        ));
+        assert!(is_transient_shortwire_reference_source(
+            &RefImageSource::ShortwireClipboard
+        ));
+        assert!(is_transient_shortwire_reference_source(
+            &RefImageSource::ShortwirePatch
+        ));
     }
 
     #[test]

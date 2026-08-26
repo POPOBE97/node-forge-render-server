@@ -56,7 +56,7 @@ fn aspect_correct_uv_fill(uv: vec2f, img_dim: vec2f, geo_dim: vec2f) -> vec2f {
 }
 
 
-// ---- LuminanceCurve RGB helper (generated) ----
+// ---- LuminanceCurve RGB helper (generated, override for LuminanceCurve_1) ----
 // LuminanceCurve (RGB) — helper template
 //
 // Embedded at compile time via template_loader. No markers — this file is the
@@ -71,7 +71,7 @@ fn aspect_correct_uv_fill(uv: vec2f, img_dim: vec2f, geo_dim: vec2f) -> vec2f {
 //   - Mix between remapped and original RGB by `mix_factor`.
 //   - Re-premultiply by alpha and return.
 
-fn lc_luminance_curve_rgb(color: vec4f, factors: vec4f, mix_factor: f32) -> vec4f {
+fn lc_luminance_curve_rgb__LuminanceCurve_1(color: vec4f, factors: vec4f, mix_factor: f32) -> vec4f {
     let factor_adjust = vec4f(
         -1.0 * factors.x + 3.0 * factors.y - 3.0 * factors.z + 1.0 * factors.w,
         3.0 * factors.x - 6.0 * factors.y + 3.0 * factors.z,

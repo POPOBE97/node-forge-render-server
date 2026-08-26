@@ -718,7 +718,10 @@ mod tests {
             parse_color_value(&json!([4.0, 1.5, 0.25, 0.6])),
             Some([4.0, 1.5, 0.25, 0.6])
         );
-        assert_eq!(parse_hex_color("#fc0"), Some([1.0, 0.8, 0.0, 1.0]));
+        assert_eq!(
+            parse_hex_color("#fc0"),
+            Some([1.0, srgb_to_linear_channel(0.8), 0.0, 1.0])
+        );
     }
 
     #[test]

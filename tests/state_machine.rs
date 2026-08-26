@@ -430,7 +430,7 @@ fn doubao_nforge_executes_shared_driver_as_physical_p_derivation() {
         .expect("shared Intelligent Light Derivation must exist");
     assert_eq!(
         derivation.output_bindings.len(),
-        61,
+        63,
         "every computed render field must be an explicit derived output"
     );
     assert!(

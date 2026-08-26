@@ -325,6 +325,8 @@ pub enum SidebarAction {
     },
     /// Switch test mode (Single / Matrix).
     SetTestMode(TestMode),
+    /// Replay a persisted frozen frame case on the current archive topology.
+    ActivateFrameFreeze(String),
     /// Toggle a resource pool's selection in matrix mode.
     ToggleMatrixPool(String),
     /// Set the maximum visible columns per matrix row. `0` disables wrapping.
@@ -366,6 +368,9 @@ pub struct TestModeSidebarState<'a> {
     pub selected_pool_ids: &'a [String],
     pub max_row_cols: usize,
     pub show_labels: bool,
+    pub frame_freezes: &'a [crate::frame_freeze::FrameFreezeCase],
+    pub active_frame_freeze_case_id: Option<&'a str>,
+    pub frame_freeze_status: Option<&'a str>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1220,6 +1225,62 @@ fn show_test_mode_section(
                 });
             });
         });
+
+        ui.add_space(SIDEBAR_GRID_ROW_GAP);
+        sidebar_grid_label(ui, "Frozen Cases");
+        ui.add_space(SIDEBAR_GRID_LABEL_GAP);
+
+        if state.frame_freezes.is_empty() {
+            ui.add_space(SIDEBAR_GRID_ROW_GAP);
+            ui.label(design_tokens::rich_text(
+                "No frozen cases in archive",
+                TextRole::InactiveItemTitle,
+            ));
+        } else {
+            let column_width = (ui.available_width()
+                - SIDEBAR_GRID_GAP * (STATE_GRID_COLUMNS - 1) as f32)
+                / STATE_GRID_COLUMNS as f32;
+            for row in state.frame_freezes.chunks(STATE_GRID_COLUMNS) {
+                ui.add_space(SIDEBAR_GRID_ROW_GAP);
+                ui.horizontal_top(|ui| {
+                    ui.spacing_mut().item_spacing.x = SIDEBAR_GRID_GAP;
+                    for case in row {
+                        let selected =
+                            state.active_frame_freeze_case_id == Some(case.case_id.as_str());
+                        let response = button::button_with_width(
+                            ui,
+                            ButtonOptions {
+                                label: &case.name,
+                                tooltip: Some(&case.case_id),
+                                variant: if selected {
+                                    ButtonVariant::Default
+                                } else {
+                                    ButtonVariant::Secondary
+                                },
+                                size: ButtonSize::Small,
+                                enabled: true,
+                                icon: None,
+                                icon_kind: None,
+                                visual_override: selected.then_some(active_state_button_visual()),
+                                group_position: ButtonGroupPosition::Single,
+                            },
+                            column_width,
+                        );
+                        if response.clicked() && !selected {
+                            *sidebar_action =
+                                Some(SidebarAction::ActivateFrameFreeze(case.case_id.clone()));
+                        }
+                    }
+                });
+            }
+        }
+        if let Some(status) = state.frame_freeze_status {
+            ui.add_space(SIDEBAR_GRID_ROW_GAP);
+            ui.label(design_tokens::rich_text(
+                status,
+                TextRole::InactiveItemTitle,
+            ));
+        }
 
         if state.mode == TestMode::Matrix && !state.resource_pools.is_empty() {
             let selected_col_count = selected_matrix_col_count(state);

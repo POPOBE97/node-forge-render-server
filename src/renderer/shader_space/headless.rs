@@ -10,6 +10,9 @@ use rust_wgpu_fiber::shader_space::{
 
 use crate::asset_store::AssetStore;
 use crate::dsl::SceneDSL;
+use crate::frame_freeze::{
+    FrameFreezeCase, apply_param_values, apply_state_param_values, fingerprint_hex, validate_case,
+};
 use crate::profile::{self, ProfileAccumulator, ProfileRunConfig, ProfileWriter};
 use crate::state_machine::OverrideKey;
 use crate::ui::resource_tree::ResourceSnapshot;
@@ -26,7 +29,11 @@ fn build_headless_shader_space(
     scene: &SceneDSL,
     asset_store: Option<&AssetStore>,
     runtime_overrides: Option<&HeadlessRuntimeOverrides>,
+    frame_freeze: Option<&FrameFreezeCase>,
 ) -> Result<ShaderSpaceBuildResult> {
+    if runtime_overrides.is_some() && frame_freeze.is_some() {
+        bail!("headless runtime overrides and frame freeze are mutually exclusive");
+    }
     let mut builder = ShaderSpaceBuilder::new(renderer.device.clone(), renderer.queue.clone())
         .with_adapter(renderer.adapter.clone())
         .with_options(ShaderSpaceBuildOptions {
@@ -37,6 +44,55 @@ fn build_headless_shader_space(
         builder = builder.with_asset_store(store.clone());
     }
     let mut result = builder.build(scene)?;
+
+    if let Some(frame_freeze) = frame_freeze {
+        validate_case(frame_freeze)?;
+        if result.scene_output_texture.as_str() != frame_freeze.payload.scene_output_texture_name {
+            bail!(
+                "freeze output texture mismatch: archive={} freeze={}",
+                result.scene_output_texture,
+                frame_freeze.payload.scene_output_texture_name
+            );
+        }
+        let archive_fingerprint = fingerprint_hex(&result.pipeline_signature);
+        if archive_fingerprint != frame_freeze.topology_fingerprint {
+            eprintln!(
+                "[frame-freeze] pipeline fingerprint changed; continuing with semantic replay validation: archive={} freeze={}",
+                archive_fingerprint, frame_freeze.topology_fingerprint
+            );
+        }
+        let prepared_scene = result
+            .prepared_scene
+            .as_mut()
+            .ok_or_else(|| anyhow!("frame freeze requires a prepared scene"))?;
+        apply_state_param_values(prepared_scene, &frame_freeze.payload.state_params);
+        apply_param_values(prepared_scene, &frame_freeze.payload.node_params)?;
+        crate::renderer::graph_uniforms::apply_graph_uniform_updates(
+            &mut result.pass_bindings,
+            &mut result.shader_space,
+            prepared_scene,
+        )?;
+        if !result.gaussian_blur_bundles.is_empty() {
+            super::dynamic_gaussian_blur::update_dynamic_gaussian_blur_bundles(
+                prepared_scene,
+                &mut result.shader_space,
+                &mut result.pass_bindings,
+                &mut result.gaussian_blur_bundles,
+                &HashMap::new(),
+            )?;
+        }
+        result.pipeline_signature =
+            crate::renderer::graph_uniforms::compute_pipeline_signature_for_pass_bindings(
+                prepared_scene,
+                &result.pass_bindings,
+            );
+        for pass in &mut result.pass_bindings {
+            let mut params = pass.base_params;
+            params.time = frame_freeze.payload.scene_time_seconds;
+            crate::renderer::update_pass_params(&result.shader_space, pass, &params)?;
+        }
+        return Ok(result);
+    }
 
     let Some(runtime_overrides) = runtime_overrides else {
         return Ok(result);
@@ -163,13 +219,50 @@ pub fn render_scene_to_file_headless_with_runtime_overrides(
     asset_store: Option<&AssetStore>,
     runtime_overrides: Option<&HeadlessRuntimeOverrides>,
 ) -> Result<()> {
+    render_scene_to_file_headless_with_runtime(
+        scene,
+        output_path,
+        asset_store,
+        runtime_overrides,
+        None,
+    )
+}
+
+pub fn render_scene_to_file_headless_with_frame_freeze(
+    scene: &SceneDSL,
+    output_path: impl AsRef<Path>,
+    asset_store: Option<&AssetStore>,
+    frame_freeze: &FrameFreezeCase,
+) -> Result<()> {
+    render_scene_to_file_headless_with_runtime(
+        scene,
+        output_path,
+        asset_store,
+        None,
+        Some(frame_freeze),
+    )
+}
+
+fn render_scene_to_file_headless_with_runtime(
+    scene: &SceneDSL,
+    output_path: impl AsRef<Path>,
+    asset_store: Option<&AssetStore>,
+    runtime_overrides: Option<&HeadlessRuntimeOverrides>,
+    frame_freeze: Option<&FrameFreezeCase>,
+) -> Result<()> {
     let output_path = output_path.as_ref();
     let renderer = HeadlessRenderer::new(HeadlessRendererConfig::default())
         .map_err(|e| anyhow!("failed to create headless renderer: {e}"))?;
 
     // Build the default GPU graph first, matching the interactive app. State
     // values are uploaded only after resource allocation and pipeline build.
-    let result = build_headless_shader_space(&renderer, scene, asset_store, runtime_overrides)?;
+    let result = build_headless_shader_space(
+        &renderer,
+        scene,
+        asset_store,
+        runtime_overrides,
+        frame_freeze,
+    )?;
 
     result.shader_space.render();
     let output_info = result
@@ -225,10 +318,51 @@ pub fn render_scene_texture_to_file_headless_with_runtime_overrides(
     asset_store: Option<&AssetStore>,
     runtime_overrides: Option<&HeadlessRuntimeOverrides>,
 ) -> Result<()> {
+    render_scene_texture_to_file_headless_with_runtime(
+        scene,
+        texture_name,
+        output_path,
+        asset_store,
+        runtime_overrides,
+        None,
+    )
+}
+
+pub fn render_scene_texture_to_file_headless_with_frame_freeze(
+    scene: &SceneDSL,
+    texture_name: &str,
+    output_path: impl AsRef<Path>,
+    asset_store: Option<&AssetStore>,
+    frame_freeze: &FrameFreezeCase,
+) -> Result<()> {
+    render_scene_texture_to_file_headless_with_runtime(
+        scene,
+        texture_name,
+        output_path,
+        asset_store,
+        None,
+        Some(frame_freeze),
+    )
+}
+
+fn render_scene_texture_to_file_headless_with_runtime(
+    scene: &SceneDSL,
+    texture_name: &str,
+    output_path: impl AsRef<Path>,
+    asset_store: Option<&AssetStore>,
+    runtime_overrides: Option<&HeadlessRuntimeOverrides>,
+    frame_freeze: Option<&FrameFreezeCase>,
+) -> Result<()> {
     let output_path = output_path.as_ref();
     let renderer = HeadlessRenderer::new(HeadlessRendererConfig::default())
         .map_err(|error| anyhow!("failed to create headless renderer: {error}"))?;
-    let result = build_headless_shader_space(&renderer, scene, asset_store, runtime_overrides)?;
+    let result = build_headless_shader_space(
+        &renderer,
+        scene,
+        asset_store,
+        runtime_overrides,
+        frame_freeze,
+    )?;
     result.shader_space.render();
 
     let texture_info = result
@@ -280,10 +414,51 @@ pub fn render_scene_pass_to_file_headless_with_runtime_overrides(
     asset_store: Option<&AssetStore>,
     runtime_overrides: Option<&HeadlessRuntimeOverrides>,
 ) -> Result<()> {
+    render_scene_pass_to_file_headless_with_runtime(
+        scene,
+        pass_name,
+        output_path,
+        asset_store,
+        runtime_overrides,
+        None,
+    )
+}
+
+pub fn render_scene_pass_to_file_headless_with_frame_freeze(
+    scene: &SceneDSL,
+    pass_name: &str,
+    output_path: impl AsRef<Path>,
+    asset_store: Option<&AssetStore>,
+    frame_freeze: &FrameFreezeCase,
+) -> Result<()> {
+    render_scene_pass_to_file_headless_with_runtime(
+        scene,
+        pass_name,
+        output_path,
+        asset_store,
+        None,
+        Some(frame_freeze),
+    )
+}
+
+fn render_scene_pass_to_file_headless_with_runtime(
+    scene: &SceneDSL,
+    pass_name: &str,
+    output_path: impl AsRef<Path>,
+    asset_store: Option<&AssetStore>,
+    runtime_overrides: Option<&HeadlessRuntimeOverrides>,
+    frame_freeze: Option<&FrameFreezeCase>,
+) -> Result<()> {
     let output_path = output_path.as_ref();
     let renderer = HeadlessRenderer::new(HeadlessRendererConfig::default())
         .map_err(|error| anyhow!("failed to create headless renderer: {error}"))?;
-    let mut result = build_headless_shader_space(&renderer, scene, asset_store, runtime_overrides)?;
+    let mut result = build_headless_shader_space(
+        &renderer,
+        scene,
+        asset_store,
+        runtime_overrides,
+        frame_freeze,
+    )?;
     let request = PassCaptureRequest::new(pass_name, PassCaptureMode::Solo);
     let capture = result
         .shader_space
@@ -340,7 +515,8 @@ pub fn render_scene_to_file_headless_profiled_with_runtime_overrides(
     let renderer = HeadlessRenderer::new(HeadlessRendererConfig::default())
         .map_err(|e| anyhow!("failed to create headless renderer: {e}"))?;
 
-    let result = build_headless_shader_space(&renderer, scene, asset_store, runtime_overrides)?;
+    let result =
+        build_headless_shader_space(&renderer, scene, asset_store, runtime_overrides, None)?;
     let snapshot = ResourceSnapshot::capture(
         &result.shader_space,
         &result.pass_bindings,
@@ -435,6 +611,66 @@ pub fn render_scene_to_png_headless(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn frame_freeze_reuses_the_existing_headless_builder() {
+        let archive = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/render/editor-examples/graph-rectangle/scene.nforge");
+        let Ok((scene, store)) = crate::asset_store::load_from_nforge(&archive) else {
+            return;
+        };
+        let Ok(renderer) = HeadlessRenderer::new(HeadlessRendererConfig::default()) else {
+            return;
+        };
+        if renderer.adapter.get_info().backend == rust_wgpu_fiber::eframe::wgpu::Backend::Noop {
+            return;
+        }
+        let base =
+            build_headless_shader_space(&renderer, &scene, Some(&store), None, None).unwrap();
+        let mut node_params = crate::frame_freeze::collect_scene_params(
+            base.prepared_scene.as_ref().expect("prepared scene"),
+        );
+        let changed = node_params
+            .iter_mut()
+            .find(|value| value.param_name == "value" && value.value.as_f64().is_some());
+        let Some(changed) = changed else {
+            return;
+        };
+        changed.value = serde_json::json!(0.375);
+        let expected_node_id = changed.node_id.clone();
+        let mut diagnostic_only_fingerprint = base.pipeline_signature;
+        diagnostic_only_fingerprint[0] ^= 0xff;
+        let case = FrameFreezeCase {
+            case_id: "freeze-test".into(),
+            name: "Freeze test".into(),
+            captured_at: "1770000000000".into(),
+            topology_fingerprint: fingerprint_hex(&diagnostic_only_fingerprint),
+            payload: crate::frame_freeze::FrameFreezeV1 {
+                schema_version: crate::frame_freeze::FRAME_FREEZE_SCHEMA_VERSION,
+                scene_output_texture_name: base.scene_output_texture.as_str().to_string(),
+                scene_time_seconds: 1.5,
+                state_params: Vec::new(),
+                node_params,
+            },
+        };
+        drop(base);
+
+        let replay =
+            build_headless_shader_space(&renderer, &scene, Some(&store), None, Some(&case))
+                .unwrap();
+        let replay_scene = replay
+            .prepared_scene
+            .as_ref()
+            .expect("prepared replay scene");
+        assert_eq!(
+            replay_scene
+                .nodes
+                .iter()
+                .find(|node| node.id == expected_node_id)
+                .and_then(|node| node.params.get("value")),
+            Some(&serde_json::json!(0.375))
+        );
+    }
 
     #[test]
     fn route_headless_output_accepts_hdr_exr() {
