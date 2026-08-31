@@ -193,7 +193,10 @@ On entry:
 Each tick first updates Motion `Q,Qdot`, advances the active Transition plan, stores `P=Q-E` and
 `V=Qdot-Edot`, and finally recomputes derived values from P. A direct authored route compiles to one
 Segment and keeps the prior ErrorDriver behavior exactly: spring/timeline decay residual `E` to
-zero; instant sets it to zero.
+zero; instant sets it to zero. An Always edge (unbound Condition Out) does not fire until the
+current State's local elapsed time covers the Timing plan's leading delay; that delay is consumed
+at fire so presentation starts immediately. Event-conditioned delays remain a visual hold after the
+pulse fires.
 
 Transition Timing paths alternate `State In/Waypoint → Timing → Waypoint/State Out` and each
 property must reduce to a two-terminal `Segment / Sequence / Parallel` tree. A Segment ending at

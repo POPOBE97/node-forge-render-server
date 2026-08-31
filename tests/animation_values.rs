@@ -757,14 +757,50 @@ fn doubao_off_to_idle_fixture_uses_per_property_springs_and_snaps() {
     );
 
     session.fire_event(space_event("keydown"));
-    session.step(0.1);
+    let warmup = session.step(0.0);
+    assert_eq!(warmup.current_state_id, "st_mshiyxvq_3");
+    assert_eq!(
+        warmup.active_transition_id.as_deref(),
+        Some("tr_mtgyio1t_7"),
+        "space down from Off must enter Warmup, diagnostics={:?}",
+        warmup.diagnostics
+    );
+
+    let still_warmup = session.step(0.1);
+    assert_eq!(
+        still_warmup.current_state_id, "st_mshiyxvq_3",
+        "Warmup → Idle is Always with a 1.5s spring delay and must not route yet"
+    );
+
     session.fire_event(space_event("keyup"));
-    let started = session.step(0.0);
+    let cancelled = session.step(0.0);
+    assert_eq!(cancelled.current_state_id, "st_mrerw3qg_6");
+    assert_eq!(
+        cancelled.active_transition_id.as_deref(),
+        Some("tr_warmup_to_off"),
+        "space up during Warmup must return to Off, not play Idle → Off"
+    );
+
+    for _ in 0..60 {
+        if session.step(1.0 / 60.0).active_transition_id.is_none() {
+            break;
+        }
+    }
+
+    session.fire_event(space_event("keydown"));
+    session.step(0.0);
+    let mut started = session.step(0.0);
+    for _ in 0..120 {
+        if started.current_state_id == "st_mrerxocx_8" {
+            break;
+        }
+        started = session.step(1.0 / 60.0);
+    }
     assert_eq!(started.current_state_id, "st_mrerxocx_8");
     assert_eq!(
         started.active_transition_id.as_deref(),
-        Some("tr_mrery48v_a"),
-        "channels={:?} diagnostics={:?}",
+        Some("tr_mtgypmu9_f"),
+        "holding through Warmup delay must fire Warmup → Idle, channels={:?} diagnostics={:?}",
         started.motion_channels,
         started.diagnostics
     );
@@ -791,14 +827,10 @@ fn doubao_off_to_idle_fixture_uses_per_property_springs_and_snaps() {
         );
     }
 
-    let mut completed = started;
-    for _ in 0..240 {
-        if completed.active_transition_id.is_none() {
-            break;
-        }
-        completed = session.step(1.0 / 60.0);
-    }
-    assert_eq!(completed.active_transition_id, None);
+    session
+        .force_state("st_mrerxocx_8")
+        .expect("Idle should be forceable after Warmup");
+    let completed = session.step(0.0);
     assert_eq!(completed.current_state_id, "st_mrerxocx_8");
 
     assert_state_override_values(
@@ -982,10 +1014,9 @@ fn doubao_listening_transitions_animate_ui_opacity_and_snap_all_channels() {
         .expect("doubao state machine should compile")
         .expect("doubao fixture should have a state machine");
     enter_off(&mut idle_session);
-    idle_session.fire_event(space_event("keydown"));
-    idle_session.step(0.1);
-    idle_session.fire_event(space_event("keyup"));
-    idle_session.step(0.0);
+    idle_session
+        .force_state("st_mrerxocx_8")
+        .expect("Idle should be forceable");
     let idle = settle(&mut idle_session);
     assert_eq!(idle.current_state_id, "st_mrerxocx_8");
     assert_state_override_values(
@@ -994,10 +1025,6 @@ fn doubao_listening_transitions_animate_ui_opacity_and_snap_all_channels() {
         "st_mrerxocx_8",
         &[("FloatInput_42", "value")],
     );
-    idle_session
-        .force_state("st_mrerxocx_8")
-        .expect("Idle should be forceable");
-    settle(&mut idle_session);
 
     let idle_to_listening = idle_session
         .force_state("st_listening")
@@ -1062,8 +1089,13 @@ fn doubao_shared_intelligent_light_derivation_advances_with_global_scene_time() 
         .expect("doubao fixture should have an Any State");
     assert_eq!(
         derivation_by_state.keys().copied().collect::<BTreeSet<_>>(),
-        BTreeSet::from([any_state_id, "st_listening", "st_thinking"]),
-        "doubao should use the Any fallback plus explicit Listening/Thinking bindings"
+        BTreeSet::from([
+            any_state_id,
+            "st_listening",
+            "st_thinking",
+            "st_mshiyxvq_3",
+        ]),
+        "doubao should use the Any fallback plus explicit Listening/Thinking/Warmup bindings"
     );
     let shared_derivation = derivation_by_state[any_state_id];
     for state_id in [
@@ -1118,15 +1150,14 @@ fn doubao_shared_intelligent_light_derivation_advances_with_global_scene_time() 
     }
     assert_eq!(snapshot.current_state_id, "st_mrerw3qg_6");
 
-    session.fire_event(space_event("keydown"));
-    session.step(0.1);
-    session.fire_event(space_event("keyup"));
-    session.step(0.0);
+    snapshot = session
+        .force_state("st_mrerxocx_8")
+        .expect("Idle should be forceable");
     for _ in 0..240 {
-        snapshot = session.step(1.0 / 60.0);
         if snapshot.current_state_id == "st_mrerxocx_8" && snapshot.active_transition_id.is_none() {
             break;
         }
+        snapshot = session.step(1.0 / 60.0);
     }
     assert_eq!(snapshot.current_state_id, "st_mrerxocx_8");
     assert_eq!(snapshot.active_transition_id, None);

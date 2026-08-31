@@ -282,7 +282,50 @@ impl MotionEngine {
         previous: &MotionEngine,
         transition_keys: &HashSet<StateParamKey>,
     ) {
-        let plans = compile_channel_plans(graph);
+        self.begin_transition_from_with_leading_delay(
+            transition_id,
+            graph,
+            previous,
+            transition_keys,
+            false,
+        );
+    }
+
+    /// Same as [`Self::begin_transition_from`], but drop the plan's leading
+    /// delay because the state machine already waited for it before firing.
+    pub(crate) fn begin_transition_from_consuming_leading_delay(
+        &mut self,
+        transition_id: &str,
+        graph: &TransitionMotionGraph,
+        previous: &MotionEngine,
+        transition_keys: &HashSet<StateParamKey>,
+    ) {
+        self.begin_transition_from_with_leading_delay(
+            transition_id,
+            graph,
+            previous,
+            transition_keys,
+            true,
+        );
+    }
+
+    fn begin_transition_from_with_leading_delay(
+        &mut self,
+        transition_id: &str,
+        graph: &TransitionMotionGraph,
+        previous: &MotionEngine,
+        transition_keys: &HashSet<StateParamKey>,
+        consume_leading_delay: bool,
+    ) {
+        let mut plans = compile_channel_plans(graph);
+        if consume_leading_delay {
+            if let Some(fallback) = plans.fallback.as_mut() {
+                *fallback = fallback.without_leading_delay();
+            }
+            for plan in plans.specific.values_mut() {
+                *plan = plan.without_leading_delay();
+            }
+        }
         let mut keys = transition_keys.iter().cloned().collect::<Vec<_>>();
         keys.sort_by(|left, right| key_string(left).cmp(&key_string(right)));
 
@@ -685,6 +728,24 @@ struct CompiledPlans {
     specific: HashMap<String, PlanTemplate>,
 }
 
+/// Leading delay before an Always transition may fire.
+///
+/// Unbound Condition Out means Always. The delay on the authored Timing plan
+/// is a start delay for that automatic edge, not a reason to change logical
+/// State immediately and only hold the visual. Event-conditioned edges keep
+/// their delay as a visual hold after the edge fires.
+pub(crate) fn transition_leading_delay(graph: &TransitionMotionGraph) -> f64 {
+    let plans = compile_channel_plans(graph);
+    let mut delay = 0.0_f64;
+    if let Some(fallback) = &plans.fallback {
+        delay = delay.max(fallback.leading_delay());
+    }
+    for plan in plans.specific.values() {
+        delay = delay.max(plan.leading_delay());
+    }
+    delay
+}
+
 fn compile_channel_plans(graph: &TransitionMotionGraph) -> CompiledPlans {
     #[derive(Clone)]
     struct Candidate {
@@ -1000,6 +1061,38 @@ impl PlanTemplate {
                 Some(segment)
             }
             _ => None,
+        }
+    }
+
+    fn leading_delay(&self) -> f64 {
+        match self {
+            Self::Segment(segment) => segment.motion.delay(),
+            Self::Sequence(children) => children.first().map(Self::leading_delay).unwrap_or(0.0),
+            Self::Parallel(children) if children.is_empty() => 0.0,
+            Self::Parallel(children) => children
+                .iter()
+                .map(Self::leading_delay)
+                .fold(f64::INFINITY, f64::min),
+        }
+    }
+
+    fn without_leading_delay(&self) -> Self {
+        match self {
+            Self::Segment(segment) => Self::Segment(SegmentTemplate {
+                timing_node_id: segment.timing_node_id.clone(),
+                motion: segment.motion.without_delay(),
+                target: segment.target.clone(),
+            }),
+            Self::Sequence(children) => {
+                let mut children = children.clone();
+                if let Some(first) = children.first_mut() {
+                    *first = first.without_leading_delay();
+                }
+                Self::Sequence(children)
+            }
+            Self::Parallel(children) => {
+                Self::Parallel(children.iter().map(Self::without_leading_delay).collect())
+            }
         }
     }
 }
@@ -3081,6 +3174,23 @@ mod tests {
             layout: None,
             viewport: None,
         }
+    }
+
+    #[test]
+    fn wildcard_spring_leading_delay_reads_timing_node() {
+        let mut graph = wildcard_spring_graph(0.45, 0.1);
+        match &mut graph.nodes[0] {
+            TransitionMotionNode::Spring { delay, .. } => *delay = 1.5,
+            other => panic!("expected spring, got {other:?}"),
+        }
+        assert!(
+            (super::transition_leading_delay(&graph) - 1.5).abs() < 1e-9,
+            "Always start delay must come from the * spring"
+        );
+        assert_eq!(
+            super::transition_leading_delay(&wildcard_spring_graph(0.45, 0.1)),
+            0.0
+        );
     }
 
     #[derive(Deserialize)]

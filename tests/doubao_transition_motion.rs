@@ -430,13 +430,20 @@ fn doubao_positions_are_derived_from_physical_p_without_a_motion_channel() {
     assert_eq!(settle(&mut session).current_state_id, "st_mrerw3qg_6");
 
     session.fire_event(space_event("keydown"));
-    session.step(0.1);
-    session.fire_event(space_event("keyup"));
     session.step(0.0);
-    assert_eq!(settle(&mut session).current_state_id, "st_mrerxocx_8");
+    let mut reached_idle = false;
+    for _ in 0..120 {
+        let step = session.step(1.0 / 60.0);
+        if step.current_state_id == "st_mrerxocx_8" {
+            reached_idle = true;
+            break;
+        }
+    }
+    assert!(
+        reached_idle,
+        "holding Space must wait for Warmup delay before Idle"
+    );
 
-    session.fire_event(space_event("keydown"));
-    session.step(0.0);
     let mut first_active = None;
     for _ in 0..60 {
         let step = session.step(1.0 / 60.0);

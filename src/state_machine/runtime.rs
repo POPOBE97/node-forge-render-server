@@ -596,7 +596,8 @@ impl StateMachineRuntime {
         self.trigger_holds.process_events(self.scene_time, events);
         let mut diagnostics: Vec<String> = Vec::new();
 
-        // Logical state changes immediately on transition fire. Presentation
+        // Logical state changes immediately on transition fire, except Always
+        // edges wait for their Timing leading delay first. Presentation
         // drivers retain the visual source independently, so both source and
         // target local clocks may still advance during a handoff.
         let current_id = self.current_state_id.clone();
@@ -869,7 +870,21 @@ impl StateMachineRuntime {
         // clock, but do not commit the reset unless the target Mutation succeeds.
         self.evaluate_state_mutation(&transition.target, 0.0, 0.0, &mut target_engine)?;
 
-        target_engine.begin_transition_from(&transition.id, &graph, &previous, &transition_keys);
+        if graph.condition_binding.is_none() {
+            target_engine.begin_transition_from_consuming_leading_delay(
+                &transition.id,
+                &graph,
+                &previous,
+                &transition_keys,
+            );
+        } else {
+            target_engine.begin_transition_from(
+                &transition.id,
+                &graph,
+                &previous,
+                &transition_keys,
+            );
+        }
         self.motion_engine = target_engine;
         self.state_local_times
             .insert(transition.target.clone(), 0.0);
@@ -922,6 +937,21 @@ impl StateMachineRuntime {
             };
             if !self.evaluate_transition_condition(graph, params, events) {
                 continue;
+            }
+            // Always (unbound Condition Out) waits for the Timing plan's
+            // leading delay in the current State. Event pulses stay
+            // edge-triggered: their delay is a visual hold after fire, because
+            // the pulse is only true on the event frame.
+            if graph.condition_binding.is_none() {
+                let delay = super::motion::transition_leading_delay(graph);
+                let local = self
+                    .state_local_times
+                    .get(&self.current_state_id)
+                    .copied()
+                    .unwrap_or(0.0);
+                if local + f64::EPSILON < delay {
+                    continue;
+                }
             }
             return Some((*t).clone());
         }
@@ -1474,6 +1504,15 @@ mod tests {
     }
 
     fn spring_motion_graph(id: &str, duration: f64, bounce: f64) -> TransitionMotionGraph {
+        spring_motion_graph_with_delay(id, duration, bounce, 0.0)
+    }
+
+    fn spring_motion_graph_with_delay(
+        id: &str,
+        duration: f64,
+        bounce: f64,
+        delay: f64,
+    ) -> TransitionMotionGraph {
         let mut graph = instant_motion_graph(id);
         graph.name = "Spring".into();
         graph.nodes = vec![TransitionMotionNode::Spring {
@@ -1482,8 +1521,53 @@ mod tests {
             label: None,
             duration,
             bounce,
-            delay: 0.0,
+            delay,
         }];
+        graph
+    }
+
+    fn key_event(event_type: &str, key: &str) -> FiredEvent {
+        FiredEvent {
+            event_type: event_type.into(),
+            key: Some(key.into()),
+            ..Default::default()
+        }
+    }
+
+    fn regular_state(id: &str, x: f64) -> AnimationState {
+        AnimationState {
+            id: id.into(),
+            name: id.into(),
+            position: None,
+            state_param_overrides: [("Node:x".into(), serde_json::json!(x))]
+                .into_iter()
+                .collect(),
+            state_type: AnimationStateType::AnimationState,
+            mutation_graph: None,
+            derivation_id: None,
+        }
+    }
+
+    fn with_key_event_condition(
+        mut graph: TransitionMotionGraph,
+        event_type: &str,
+        key: &str,
+    ) -> TransitionMotionGraph {
+        graph.nodes.push(TransitionMotionNode::EventTrigger {
+            id: "trigger".into(),
+            position: Position::default(),
+            label: None,
+            event_type: event_type.into(),
+            key: Some(key.into()),
+            modifiers: EventModifiers::default(),
+            ignore_repeat: true,
+        });
+        graph.condition_binding = Some(TransitionConditionBinding::Node {
+            from: GraphEndpoint {
+                node_id: "trigger".into(),
+                port_id: "fired".into(),
+            },
+        });
         graph
     }
 
@@ -1633,6 +1717,166 @@ mod tests {
             result.overrides.is_empty(),
             "no Derivation means no GPU writes"
         );
+    }
+
+    #[test]
+    fn always_transition_waits_for_leading_delay_before_routing() {
+        let mut sm = minimal_sm();
+        declare_state_param(&mut sm, "Node:x", "float", serde_json::json!(0.0));
+        sm.states.push(regular_state("warmup", 1.0));
+        sm.states.push(regular_state("idle", 10.0));
+        sm.transitions.push(AnimationTransition {
+            id: "entry_to_warmup".into(),
+            source: "entry".into(),
+            target: "warmup".into(),
+            motion_graph_id: "instant".into(),
+        });
+        sm.motion_graphs.push(spring_motion_graph_with_delay(
+            "warmup-idle",
+            0.45,
+            0.1,
+            1.5,
+        ));
+        sm.transitions.push(AnimationTransition {
+            id: "warmup_to_idle".into(),
+            source: "warmup".into(),
+            target: "idle".into(),
+            motion_graph_id: "warmup-idle".into(),
+        });
+
+        let mut rt = StateMachineRuntime::new(sm);
+        assert_eq!(
+            rt.tick(0.016, &HashMap::new(), &vec![]).current_state_id,
+            "warmup"
+        );
+        assert_eq!(
+            rt.tick(0.5, &HashMap::new(), &vec![]).current_state_id,
+            "warmup"
+        );
+        assert_eq!(
+            rt.tick(0.9, &HashMap::new(), &vec![]).current_state_id,
+            "warmup"
+        );
+
+        let fired = rt.tick(0.2, &HashMap::new(), &vec![]);
+        assert_eq!(fired.current_state_id, "idle");
+        let x = rt
+            .motion_engine
+            .physical_value(&StateParamKey::new("Node:x"))
+            .and_then(|value| value.as_f64())
+            .expect("physical x");
+        assert!(
+            x > 1.0,
+            "Always delay is consumed at fire so presentation starts immediately, got {x}"
+        );
+        assert!(x < 10.0, "spring should still be in flight, got {x}");
+    }
+
+    #[test]
+    fn delayed_always_does_not_let_idle_keyup_fire_during_warmup() {
+        let mut sm = minimal_sm();
+        declare_state_param(&mut sm, "Node:x", "float", serde_json::json!(0.0));
+        sm.states.extend([
+            regular_state("off", 0.0),
+            regular_state("warmup", 1.0),
+            regular_state("idle", 10.0),
+        ]);
+        sm.transitions.push(AnimationTransition {
+            id: "entry_to_off".into(),
+            source: "entry".into(),
+            target: "off".into(),
+            motion_graph_id: "instant".into(),
+        });
+        sm.motion_graphs.push(with_key_event_condition(
+            instant_motion_graph("off-warmup"),
+            "keydown",
+            " ",
+        ));
+        sm.transitions.push(AnimationTransition {
+            id: "off_to_warmup".into(),
+            source: "off".into(),
+            target: "warmup".into(),
+            motion_graph_id: "off-warmup".into(),
+        });
+        sm.motion_graphs.push(spring_motion_graph_with_delay(
+            "warmup-idle",
+            0.45,
+            0.1,
+            1.5,
+        ));
+        sm.transitions.push(AnimationTransition {
+            id: "warmup_to_idle".into(),
+            source: "warmup".into(),
+            target: "idle".into(),
+            motion_graph_id: "warmup-idle".into(),
+        });
+        sm.motion_graphs.push(with_key_event_condition(
+            spring_motion_graph("idle-off", 0.45, 0.1),
+            "keyup",
+            " ",
+        ));
+        sm.transitions.push(AnimationTransition {
+            id: "idle_to_off".into(),
+            source: "idle".into(),
+            target: "off".into(),
+            motion_graph_id: "idle-off".into(),
+        });
+        sm.motion_graphs.push(with_key_event_condition(
+            spring_motion_graph("warmup-off", 0.45, 0.1),
+            "keyup",
+            " ",
+        ));
+        sm.transitions.push(AnimationTransition {
+            id: "warmup_to_off".into(),
+            source: "warmup".into(),
+            target: "off".into(),
+            motion_graph_id: "warmup-off".into(),
+        });
+
+        let mut rt = StateMachineRuntime::new(sm);
+        assert_eq!(
+            rt.tick(0.016, &HashMap::new(), &vec![]).current_state_id,
+            "off"
+        );
+        assert_eq!(
+            rt.tick(0.016, &HashMap::new(), &vec![key_event("keydown", " ")])
+                .current_state_id,
+            "warmup"
+        );
+        assert_eq!(
+            rt.tick(0.05, &HashMap::new(), &vec![]).current_state_id,
+            "warmup"
+        );
+        let released = rt.tick(0.016, &HashMap::new(), &vec![key_event("keyup", " ")]);
+        assert_eq!(
+            released.current_state_id, "off",
+            "space up during Warmup delay must exit Warmup, not play Idle→Off"
+        );
+    }
+
+    #[test]
+    fn event_conditioned_delay_still_routes_immediately() {
+        let mut sm = minimal_sm();
+        declare_state_param(&mut sm, "Node:x", "float", serde_json::json!(0.0));
+        sm.states.push(regular_state("idle", 1.0));
+        sm.motion_graphs.push(with_event_condition(
+            spring_motion_graph_with_delay("go", 0.45, 0.1, 1.5),
+            "go",
+        ));
+        sm.transitions.push(AnimationTransition {
+            id: "entry_to_idle".into(),
+            source: "entry".into(),
+            target: "idle".into(),
+            motion_graph_id: "go".into(),
+        });
+
+        let mut rt = StateMachineRuntime::new(sm);
+        assert_eq!(
+            rt.tick(0.016, &HashMap::new(), &vec![]).current_state_id,
+            "entry"
+        );
+        let fired = rt.tick(0.016, &HashMap::new(), &vec!["go".into()]);
+        assert_eq!(fired.current_state_id, "idle");
     }
 
     #[test]
