@@ -1,0 +1,142 @@
+{
+  "width": 84,
+  "height": 84,
+  "androidRange": {
+    "min": [
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "max": [
+      0.568359375,
+      0.0233612060546875,
+      1.0068359375,
+      1.0
+    ]
+  },
+  "nodeForgeRange": {
+    "min": [
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "max": [
+      0.56982421875,
+      0.0233917236328125,
+      1.01171875,
+      1.0
+    ]
+  },
+  "comparisons": [
+    {
+      "variant": "identity",
+      "maxRgbAe": 0.0048828125,
+      "maxRgbaAe": 0.0048828125,
+      "perChannelMaxAe": {
+        "r": 0.001953125,
+        "g": 0.00006103515625,
+        "b": 0.0048828125,
+        "a": 0.00048828125
+      },
+      "maxRgbSample": {
+        "x": 48,
+        "y": 75,
+        "channel": "B",
+        "android": 1.0,
+        "nodeForge": 1.0048828125
+      }
+    },
+    {
+      "variant": "flip_y",
+      "maxRgbAe": 1.01171875,
+      "maxRgbaAe": 1.01171875,
+      "perChannelMaxAe": {
+        "r": 0.56982421875,
+        "g": 0.0233917236328125,
+        "b": 1.01171875,
+        "a": 1.0
+      },
+      "maxRgbSample": {
+        "x": 44,
+        "y": 80,
+        "channel": "B",
+        "android": 0.0,
+        "nodeForge": 1.01171875
+      }
+    },
+    {
+      "variant": "identity_srgb_decode",
+      "maxRgbAe": 0.2900537848472595,
+      "maxRgbaAe": 0.2900537848472595,
+      "perChannelMaxAe": {
+        "r": 0.2890772223472595,
+        "g": 0.02158358134329319,
+        "b": 0.2900537848472595,
+        "a": 0.00048828125
+      },
+      "maxRgbSample": {
+        "x": 24,
+        "y": 68,
+        "channel": "B",
+        "android": 0.24754387140274048,
+        "nodeForge": 0.53759765625
+      }
+    },
+    {
+      "variant": "flip_y_srgb_decode",
+      "maxRgbAe": 1.0156216621398926,
+      "maxRgbaAe": 1.0156216621398926,
+      "perChannelMaxAe": {
+        "r": 0.56982421875,
+        "g": 0.0233917236328125,
+        "b": 1.0156216621398926,
+        "a": 1.0
+      },
+      "maxRgbSample": {
+        "x": 44,
+        "y": 1,
+        "channel": "B",
+        "android": 1.0156216621398926,
+        "nodeForge": 0.0
+      }
+    },
+    {
+      "variant": "identity_srgb_encode",
+      "maxRgbAe": 0.28664761781692505,
+      "maxRgbaAe": 0.28664761781692505,
+      "perChannelMaxAe": {
+        "r": 0.28664761781692505,
+        "g": 0.14214903116226196,
+        "b": 0.28625184297561646,
+        "a": 0.00048828125
+      },
+      "maxRgbSample": {
+        "x": 9,
+        "y": 79,
+        "channel": "R",
+        "android": 0.531520664691925,
+        "nodeForge": 0.244873046875
+      }
+    },
+    {
+      "variant": "flip_y_srgb_encode",
+      "maxRgbAe": 1.01171875,
+      "maxRgbaAe": 1.01171875,
+      "perChannelMaxAe": {
+        "r": 0.7787042856216431,
+        "g": 0.16552549600601196,
+        "b": 1.01171875,
+        "a": 1.0
+      },
+      "maxRgbSample": {
+        "x": 44,
+        "y": 80,
+        "channel": "B",
+        "android": 0.0,
+        "nodeForge": 1.01171875
+      }
+    }
+  ]
+}

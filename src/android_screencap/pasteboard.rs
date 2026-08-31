@@ -143,10 +143,11 @@ mod tests {
     fn macos_unique_pasteboard_writes_both_flavors() {
         use objc2_app_kit::NSPasteboard;
         let png = encode_srgb_png(&RgbaImage::from_raw(1, 1, vec![9, 8, 7, 6]).unwrap()).unwrap();
-        let envelope = envelope_from_raw_fp16(1, 1, &[1.25, 0.0, 0.0, 1.0], true, Some(png.clone()))
-            .unwrap()
-            .encode()
-            .unwrap();
+        let envelope =
+            envelope_from_raw_fp16(1, 1, &[1.25, 0.0, 0.0, 1.0], true, Some(png.clone()))
+                .unwrap()
+                .encode()
+                .unwrap();
         let pasteboard = NSPasteboard::pasteboardWithUniqueName();
         write_macos_pasteboard(&pasteboard, &envelope, &png).unwrap();
         let png_type = unsafe { objc2_app_kit::NSPasteboardTypePNG };

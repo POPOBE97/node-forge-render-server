@@ -1,0 +1,73 @@
+{
+  "dimensions": {
+    "width": 1260,
+    "height": 2800
+  },
+  "android": {
+    "payload_kind": "GainmapPng",
+    "alpha": "Straight",
+    "high_precision": true,
+    "max_rgb": 1.462484359741211,
+    "stats": {
+      "rgb_min": -0.07212381064891815,
+      "rgb_max": 1.462484359741211,
+      "rgb_mean": 0.19801383921344243,
+      "alpha_min": 1.0,
+      "alpha_max": 1.0,
+      "luma_p50": 0.0522913858294487,
+      "luma_p95": 0.6671113967895508,
+      "luma_p99": 0.9382951855659485,
+      "luma_max": 1.0132122039794922
+    }
+  },
+  "node_forge": {
+    "alpha_assumption": "premultiplied",
+    "stats": {
+      "rgb_min": 0.0,
+      "rgb_max": 1.94140625,
+      "rgb_mean": 0.19395154112894497,
+      "alpha_min": 1.0,
+      "alpha_max": 1.0,
+      "luma_p50": 0.05126035958528519,
+      "luma_p95": 0.6710286140441895,
+      "luma_p99": 0.9447128772735596,
+      "luma_max": 1.0
+    }
+  },
+  "comparison": {
+    "full_frame": {
+      "rows": [
+        0,
+        2800
+      ],
+      "pixels": 3528000,
+      "rgb_mae": 0.013959894167180527,
+      "rgb_rmse": 0.02632461720391105,
+      "rgb_max_abs": 0.7988443374633789,
+      "mean_luma_abs": 0.0020732142975700306,
+      "android_mean_luma": 0.14676250475409713,
+      "node_mean_luma": 0.14642499924423147,
+      "node_to_android_mean_luma_ratio": 0.9977003287697279,
+      "pixel_fraction_max_channel_gt_0_01": 0.6187108843537414,
+      "pixel_fraction_max_channel_gt_0_05": 0.13142318594104307,
+      "pixel_fraction_max_channel_gt_0_10": 0.018549886621315192
+    },
+    "bottom_436_rows": {
+      "rows": [
+        2364,
+        2800
+      ],
+      "pixels": 549360,
+      "rgb_mae": 0.00442719930608431,
+      "rgb_rmse": 0.018736942080640508,
+      "rgb_max_abs": 0.7988443374633789,
+      "mean_luma_abs": 0.0009878013461727159,
+      "android_mean_luma": 0.01693083042486109,
+      "node_mean_luma": 0.016321458951226078,
+      "node_to_android_mean_luma_ratio": 0.9640081757159283,
+      "pixel_fraction_max_channel_gt_0_01": 0.22871523227027815,
+      "pixel_fraction_max_channel_gt_0_05": 0.024639580602883356,
+      "pixel_fraction_max_channel_gt_0_10": 0.009876947720984419
+    }
+  }
+}

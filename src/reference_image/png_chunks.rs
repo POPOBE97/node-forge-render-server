@@ -45,7 +45,10 @@ pub fn parse_png_chunks(bytes: &[u8]) -> anyhow::Result<ParsedPng> {
             .checked_add(4)
             .ok_or_else(|| anyhow!("PNG CRC offset overflow"))?;
         if crc_end > bytes.len() {
-            bail!("PNG chunk {:?} is truncated", std::str::from_utf8(&name).unwrap_or("????"));
+            bail!(
+                "PNG chunk {:?} is truncated",
+                std::str::from_utf8(&name).unwrap_or("????")
+            );
         }
         let data = bytes[data_start..data_end].to_vec();
         let expected_crc = u32::from_be_bytes(bytes[data_end..crc_end].try_into().unwrap());
@@ -96,7 +99,10 @@ pub fn parse_png_chunks(bytes: &[u8]) -> anyhow::Result<ParsedPng> {
     Ok(ParsedPng { chunks })
 }
 
-pub fn find_unique_chunk<'a>(png: &'a ParsedPng, name: &[u8; 4]) -> anyhow::Result<Option<&'a PngChunk>> {
+pub fn find_unique_chunk<'a>(
+    png: &'a ParsedPng,
+    name: &[u8; 4],
+) -> anyhow::Result<Option<&'a PngChunk>> {
     let mut found = None;
     for chunk in &png.chunks {
         if &chunk.name == name {
@@ -162,14 +168,24 @@ mod tests {
         let mut corrupt = png;
         let last = corrupt.len() - 1;
         corrupt[last] ^= 0xff;
-        assert!(parse_png_chunks(&corrupt).unwrap_err().to_string().contains("CRC"));
+        assert!(
+            parse_png_chunks(&corrupt)
+                .unwrap_err()
+                .to_string()
+                .contains("CRC")
+        );
     }
 
     #[test]
     fn rejects_trailing_bytes_and_missing_iend() {
         let mut png = tiny_rgba_png();
         png.push(0);
-        assert!(parse_png_chunks(&png).unwrap_err().to_string().contains("after IEND"));
+        assert!(
+            parse_png_chunks(&png)
+                .unwrap_err()
+                .to_string()
+                .contains("after IEND")
+        );
     }
 
     #[test]

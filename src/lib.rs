@@ -15,13 +15,13 @@ pub mod frame_freeze;
 #[cfg(feature = "native")]
 pub mod nforge;
 #[cfg(feature = "native")]
-pub mod reference_image;
-#[cfg(feature = "native")]
 pub mod perf_log;
 pub mod playback;
 #[cfg(feature = "native")]
 pub mod profile;
 pub mod protocol;
+#[cfg(feature = "native")]
+pub mod reference_image;
 pub mod renderer;
 pub mod schema;
 pub mod state_machine;

@@ -12,11 +12,11 @@ pub use color::{
 };
 pub use decode::{
     DecodedReferencePixels, ReferencePayloadKind, apply_alpha_mode, decode_linear_f32,
-    decode_png_bytes, decode_png_sdr_base_rgba8, decode_private_envelope, envelope_from_encoded_png,
-    envelope_from_raw_fp16, figma_srgb_png_from_source, is_exr, is_png, payload_kind_label,
-    quantize_helper_sdr,
+    decode_png_bytes, decode_png_sdr_base_rgba8, decode_private_envelope,
+    envelope_from_encoded_png, envelope_from_raw_fp16, figma_srgb_png_from_source, is_exr, is_png,
+    payload_kind_label, quantize_helper_sdr,
 };
-pub use envelope::{
-    Alpha, MAGIC, PayloadKind, ReferenceImageEnvelope, Transfer, parse_envelope,
+pub use envelope::{Alpha, MAGIC, PayloadKind, ReferenceImageEnvelope, Transfer, parse_envelope};
+pub use exr::{
+    EXR_MIME, PNG_MIME, decode_premultiplied_linear_exr, encode_premultiplied_linear_exr,
 };
-pub use exr::{EXR_MIME, PNG_MIME, decode_premultiplied_linear_exr, encode_premultiplied_linear_exr};

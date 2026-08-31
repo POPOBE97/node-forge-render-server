@@ -1,0 +1,11 @@
+{
+  "width": 1260,
+  "height": 2800,
+  "payloadKind": "GainmapPng",
+  "alpha": "Straight",
+  "highPrecision": true,
+  "maxRgb": 1.462484359741211,
+  "meanRgb": 0.19801854557783627,
+  "rgbSamplesOverOne": 222177,
+  "note": "EXR is authoritative premultiplied linear data. PNG16 is linear UNORM and clamps values to [0,1]."
+}

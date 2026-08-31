@@ -152,8 +152,8 @@ pub fn parse_envelope(bytes: &[u8]) -> anyhow::Result<ReferenceImageEnvelope> {
         bail!("NodeForgeReferenceImageV1 has trailing data");
     }
 
-    let primary_end = HEADER_LEN as usize
-        + usize::try_from(primary_len).context("primary payload too large")?;
+    let primary_end =
+        HEADER_LEN as usize + usize::try_from(primary_len).context("primary payload too large")?;
     let png_end = primary_end + usize::try_from(source_png_len).context("source PNG too large")?;
     let primary = bytes[HEADER_LEN as usize..primary_end].to_vec();
     let source_png = has_source_png.then(|| bytes[primary_end..png_end].to_vec());
@@ -421,27 +421,57 @@ mod tests {
     fn rejects_unknown_version_flags_enums_and_reserved() {
         let mut encoded = raw_hdr_envelope(false).encode().unwrap();
         encoded[8..10].copy_from_slice(&2u16.to_le_bytes());
-        assert!(parse_envelope(&encoded).unwrap_err().to_string().contains("version"));
+        assert!(
+            parse_envelope(&encoded)
+                .unwrap_err()
+                .to_string()
+                .contains("version")
+        );
 
         encoded = raw_hdr_envelope(false).encode().unwrap();
         encoded[12..16].copy_from_slice(&(FLAG_HAS_SOURCE_PNG << 2).to_le_bytes());
-        assert!(parse_envelope(&encoded).unwrap_err().to_string().contains("flags"));
+        assert!(
+            parse_envelope(&encoded)
+                .unwrap_err()
+                .to_string()
+                .contains("flags")
+        );
 
         encoded = raw_hdr_envelope(false).encode().unwrap();
         encoded[16..18].copy_from_slice(&99u16.to_le_bytes());
-        assert!(parse_envelope(&encoded).unwrap_err().to_string().contains("payload kind"));
+        assert!(
+            parse_envelope(&encoded)
+                .unwrap_err()
+                .to_string()
+                .contains("payload kind")
+        );
 
         encoded = raw_hdr_envelope(false).encode().unwrap();
         encoded[22..24].copy_from_slice(&1u16.to_le_bytes());
-        assert!(parse_envelope(&encoded).unwrap_err().to_string().contains("reserved"));
+        assert!(
+            parse_envelope(&encoded)
+                .unwrap_err()
+                .to_string()
+                .contains("reserved")
+        );
 
         encoded = raw_hdr_envelope(false).encode().unwrap();
         encoded[36..40].copy_from_slice(&1u32.to_le_bytes());
-        assert!(parse_envelope(&encoded).unwrap_err().to_string().contains("reserved"));
+        assert!(
+            parse_envelope(&encoded)
+                .unwrap_err()
+                .to_string()
+                .contains("reserved")
+        );
 
         encoded = raw_hdr_envelope(false).encode().unwrap();
         encoded[56..64].copy_from_slice(&1u64.to_le_bytes());
-        assert!(parse_envelope(&encoded).unwrap_err().to_string().contains("reserved"));
+        assert!(
+            parse_envelope(&encoded)
+                .unwrap_err()
+                .to_string()
+                .contains("reserved")
+        );
     }
 
     #[test]
@@ -469,7 +499,12 @@ mod tests {
         assert!(parse_envelope(&encoded[..encoded.len() - 1]).is_err());
         let mut trailing = encoded.clone();
         trailing.push(0);
-        assert!(parse_envelope(&trailing).unwrap_err().to_string().contains("trailing"));
+        assert!(
+            parse_envelope(&trailing)
+                .unwrap_err()
+                .to_string()
+                .contains("trailing")
+        );
 
         let mut envelope = raw_hdr_envelope(false);
         envelope.bytes_per_row = 16;
@@ -505,7 +540,12 @@ mod tests {
     fn rejects_nan_inf_and_invalid_alpha() {
         for value in [f16::NAN, f16::INFINITY, f16::NEG_INFINITY] {
             let mut bytes = raw_hdr_envelope(false).encode().unwrap();
-            let primary = pack_rgba16f(value, f16::from_f32(0.0), f16::from_f32(0.0), f16::from_f32(1.0));
+            let primary = pack_rgba16f(
+                value,
+                f16::from_f32(0.0),
+                f16::from_f32(0.0),
+                f16::from_f32(1.0),
+            );
             bytes.splice(64.., primary);
             assert!(
                 parse_envelope(&bytes).is_err(),
@@ -515,14 +555,22 @@ mod tests {
 
         let mut bytes = raw_hdr_envelope(false).encode().unwrap();
         bytes[64 + 6..64 + 8].copy_from_slice(&f16::from_f32(1.5).to_le_bytes());
-        assert!(parse_envelope(&bytes).unwrap_err().to_string().contains("alpha"));
+        assert!(
+            parse_envelope(&bytes)
+                .unwrap_err()
+                .to_string()
+                .contains("alpha")
+        );
     }
 
     #[test]
     fn little_endian_header_fields_cover_every_offset() {
         let encoded = raw_hdr_envelope(true).encode().unwrap();
         assert_eq!(&encoded[0..8], &MAGIC);
-        assert_eq!(u16::from_le_bytes(encoded[8..10].try_into().unwrap()), VERSION);
+        assert_eq!(
+            u16::from_le_bytes(encoded[8..10].try_into().unwrap()),
+            VERSION
+        );
         assert_eq!(
             u16::from_le_bytes(encoded[10..12].try_into().unwrap()),
             HEADER_LEN

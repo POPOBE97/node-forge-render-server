@@ -1,0 +1,292 @@
+{
+  "comparison": "Android minus Node Forge, premultiplied linear RGBA16F EXR",
+  "width": 1260,
+  "height": 2800,
+  "inputStats": {
+    "android": {
+      "maxRgb": 1.462890625,
+      "minRgb": -0.0721435546875,
+      "rgbSamplesOverOne": 221697,
+      "negativeRgbSamples": 620471
+    },
+    "nodeForge": {
+      "maxRgb": 1.94140625,
+      "minRgb": 0.0,
+      "rgbSamplesOverOne": 3928,
+      "negativeRgbSamples": 0
+    }
+  },
+  "fullFrame": {
+    "yRange": [
+      0,
+      2800
+    ],
+    "pixelCount": 3528000,
+    "rgb": {
+      "mae": 0.013962495810129115,
+      "rmse": 0.026320156713437255,
+      "maxAbsoluteError": 0.798828125,
+      "maxErrorSample": {
+        "x": 657,
+        "y": 2797,
+        "channel": "B",
+        "android": 1.142578125,
+        "nodeForge": 1.94140625
+      },
+      "absoluteErrorPercentiles": {
+        "p50": 0.0045166015625,
+        "p90": 0.041015625,
+        "p95": 0.05126953125,
+        "p99": 0.0792236328125,
+        "p99_9": 0.208984375
+      },
+      "samplesAboveThresholdPercent": {
+        "0.01": 35.90955215419501,
+        "0.02": 24.63066893424036,
+        "0.05": 5.443698034769463,
+        "0.10": 0.6800075585789872
+      },
+      "perChannel": [
+        {
+          "channel": "R",
+          "androidMean": 0.10034206782615915,
+          "nodeForgeMean": 0.10781000009304137,
+          "meanSignedError": -0.007467932266882218,
+          "mae": 0.016559189612193714,
+          "rmse": 0.03303765544587048
+        },
+        {
+          "channel": "G",
+          "androidMean": 0.13963620958350548,
+          "nodeForgeMean": 0.1388469223748732,
+          "meanSignedError": 0.0007892872086322767,
+          "mae": 0.0035839001245779787,
+          "rmse": 0.00866756802553819
+        },
+        {
+          "channel": "B",
+          "androidMean": 0.35407927284061974,
+          "nodeForgeMean": 0.3351977009189203,
+          "meanSignedError": 0.018881571921699442,
+          "mae": 0.021744397693615653,
+          "rmse": 0.030193352503859208
+        }
+      ]
+    },
+    "luminance": {
+      "androidMean": 0.14676506421384447,
+      "nodeForgeMean": 0.1464249989085485,
+      "androidOverNodeForge": 1.0023224538694269,
+      "mae": 0.002074296280000391,
+      "rmse": 0.006640945898774511
+    },
+    "pixelsWithAnyRgbErrorAbove0_05": 462784,
+    "pixelsWithAnyRgbErrorAbove0_05Percent": 13.117460317460317,
+    "errorAbove0_05BoundingBox": {
+      "minX": 0,
+      "minY": 54,
+      "maxX": 1259,
+      "maxY": 2798
+    }
+  },
+  "bottom436Rows": {
+    "yRange": [
+      2364,
+      2800
+    ],
+    "pixelCount": 549360,
+    "rgb": {
+      "mae": 0.004444442961496448,
+      "rmse": 0.018688362419031726,
+      "maxAbsoluteError": 0.798828125,
+      "maxErrorSample": {
+        "x": 657,
+        "y": 2797,
+        "channel": "B",
+        "android": 1.142578125,
+        "nodeForge": 1.94140625
+      },
+      "absoluteErrorPercentiles": {
+        "p50": 0.000911712646484375,
+        "p90": 0.010498046875,
+        "p95": 0.019287109375,
+        "p99": 0.0537109375,
+        "p99_9": 0.2138671875
+      },
+      "samplesAboveThresholdPercent": {
+        "0.01": 10.389180136886559,
+        "0.02": 4.786236105043445,
+        "0.05": 1.1004926945293918,
+        "0.10": 0.39312412018834036
+      },
+      "perChannel": [
+        {
+          "channel": "R",
+          "androidMean": 0.023720181128383117,
+          "nodeForgeMean": 0.02117014792360592,
+          "meanSignedError": 0.0025500332047771954,
+          "mae": 0.004419359451617427,
+          "rmse": 0.01824454912758466
+        },
+        {
+          "channel": "G",
+          "androidMean": 0.007712834841718628,
+          "nodeForgeMean": 0.008154539515466274,
+          "meanSignedError": -0.00044170467374764693,
+          "mae": 0.0011192155037104033,
+          "rmse": 0.003672930916433235
+        },
+        {
+          "channel": "B",
+          "androidMean": 0.08844190271587825,
+          "nodeForgeMean": 0.08294402904796587,
+          "meanSignedError": 0.005497873667912381,
+          "mae": 0.007794753929161515,
+          "rmse": 0.02648415895076698
+        }
+      ]
+    },
+    "luminance": {
+      "androidMean": 0.01694463536278,
+      "nodeForgeMean": 0.01632145900728515,
+      "androidOverNodeForge": 1.038181412287755,
+      "mae": 0.0009972877911577918,
+      "rmse": 0.003414121165416227
+    },
+    "pixelsWithAnyRgbErrorAbove0_05": 13545,
+    "pixelsWithAnyRgbErrorAbove0_05Percent": 2.4655963302752295,
+    "errorAbove0_05BoundingBox": {
+      "minX": 227,
+      "minY": 2747,
+      "maxX": 1003,
+      "maxY": 2798
+    }
+  },
+  "bottom100Rows": {
+    "yRange": [
+      2700,
+      2800
+    ],
+    "pixelCount": 126000,
+    "rgb": {
+      "mae": 0.011652934928419728,
+      "rmse": 0.03789530615122036,
+      "maxAbsoluteError": 0.798828125,
+      "maxErrorSample": {
+        "x": 657,
+        "y": 2797,
+        "channel": "B",
+        "android": 1.142578125,
+        "nodeForge": 1.94140625
+      },
+      "absoluteErrorPercentiles": {
+        "p50": 0.00153350830078125,
+        "p90": 0.0289306640625,
+        "p95": 0.0484161376953125,
+        "p99": 0.1416015625,
+        "p99_9": 0.59375
+      },
+      "samplesAboveThresholdPercent": {
+        "0.01": 24.983333333333334,
+        "0.02": 14.308994708994708,
+        "0.05": 4.798148148148148,
+        "0.10": 1.714021164021164
+      },
+      "perChannel": [
+        {
+          "channel": "R",
+          "androidMean": 0.0984728715722523,
+          "nodeForgeMean": 0.08420410124839298,
+          "meanSignedError": 0.014268770323859321,
+          "mae": 0.015622268461045764,
+          "rmse": 0.03799722936112245
+        },
+        {
+          "channel": "G",
+          "androidMean": 0.009604593655419729,
+          "nodeForgeMean": 0.012332693334609743,
+          "meanSignedError": -0.002728099679190015,
+          "mae": 0.003360746421511211,
+          "rmse": 0.007581713019311018
+        },
+        {
+          "channel": "B",
+          "androidMean": 0.16453741679115902,
+          "nodeForgeMean": 0.1585662744612921,
+          "meanSignedError": 0.005971142329866924,
+          "mae": 0.01597578990270221,
+          "rmse": 0.05298009884338856
+        }
+      ]
+    },
+    "luminance": {
+      "androidMean": 0.039684139370940674,
+      "nodeForgeMean": 0.03817061921442684,
+      "androidOverNodeForge": 1.039651443640762,
+      "mae": 0.0026636397736934892,
+      "rmse": 0.006989402672701549
+    },
+    "pixelsWithAnyRgbErrorAbove0_05": 13545,
+    "pixelsWithAnyRgbErrorAbove0_05Percent": 10.75,
+    "errorAbove0_05BoundingBox": {
+      "minX": 227,
+      "minY": 2747,
+      "maxX": 1003,
+      "maxY": 2798
+    }
+  },
+  "rowBands100Px": [
+    {
+      "yStart": 2000,
+      "yEnd": 2100,
+      "rgbMae": 0.026221488496456197,
+      "rgbRmse": 0.05008296274488279
+    },
+    {
+      "yStart": 2100,
+      "yEnd": 2200,
+      "rgbMae": 0.024971695686616596,
+      "rgbRmse": 0.052374697650544005
+    },
+    {
+      "yStart": 1700,
+      "yEnd": 1800,
+      "rgbMae": 0.022922809917144675,
+      "rgbRmse": 0.040555402133502796
+    },
+    {
+      "yStart": 1100,
+      "yEnd": 1200,
+      "rgbMae": 0.02136849633489967,
+      "rgbRmse": 0.0284985577864866
+    },
+    {
+      "yStart": 1600,
+      "yEnd": 1700,
+      "rgbMae": 0.020510096511512838,
+      "rgbRmse": 0.03137605024420599
+    },
+    {
+      "yStart": 1000,
+      "yEnd": 1100,
+      "rgbMae": 0.02043947349953904,
+      "rgbRmse": 0.02717400149026478
+    },
+    {
+      "yStart": 1200,
+      "yEnd": 1300,
+      "rgbMae": 0.02027964957775893,
+      "rgbRmse": 0.02868132177195391
+    },
+    {
+      "yStart": 1400,
+      "yEnd": 1500,
+      "rgbMae": 0.018799487461488712,
+      "rgbRmse": 0.025203192160656154
+    }
+  ],
+  "inputs": {
+    "android": "out/freeze-1787716149208-1-fp16-comparison/android-private-linear.exr",
+    "nodeForge": "out/freeze-1787716149208-1-fp16-comparison/node-forge.exr"
+  }
+}

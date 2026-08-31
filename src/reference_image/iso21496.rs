@@ -158,7 +158,11 @@ fn exp2(value: f32) -> anyhow::Result<f32> {
 }
 
 fn write_rational(out: &mut Vec<u8>, value: f32) {
-    let denominator: u32 = if value.abs() > 1.0 { 0x1000 } else { 0x1000_0000 };
+    let denominator: u32 = if value.abs() > 1.0 {
+        0x1000
+    } else {
+        0x1000_0000
+    };
     let numerator = (f64::from(value) * f64::from(denominator)).round() as i32;
     out.extend_from_slice(&numerator.to_be_bytes());
     out.extend_from_slice(&denominator.to_be_bytes());

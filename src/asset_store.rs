@@ -9,9 +9,9 @@ use std::sync::{
 use anyhow::{Context, Result};
 
 #[cfg(feature = "native")]
-use crate::dsl::SceneDSL;
-#[cfg(feature = "native")]
 use crate::debug_artifacts::DebugArtifactStore;
+#[cfg(feature = "native")]
+use crate::dsl::SceneDSL;
 
 /// Metadata + raw bytes for a single asset.
 #[derive(Debug, Clone)]

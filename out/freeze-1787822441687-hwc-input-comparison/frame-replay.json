@@ -1,0 +1,6175 @@
+{
+  "caseId": "freeze-1787822441687-1",
+  "name": "Freeze 1787822441687",
+  "capturedAt": "1787822441687",
+  "topologyFingerprint": "4ddae9edee77ee4bc67de06ca11bdcde502bbcade4f2960cf291779a8488301d",
+  "payload": {
+    "schemaVersion": 1,
+    "sceneOutputTextureName": "node_default_render_texture",
+    "sceneTimeSeconds": 23.824951,
+    "stateParams": [
+      {
+        "nodeId": "ColorArrayInput_IntelligentLightColors",
+        "paramName": "value",
+        "value": [
+          [
+            1,
+            1,
+            1,
+            0.24313726
+          ],
+          [
+            1,
+            1,
+            1,
+            0.22352941
+          ],
+          [
+            1,
+            1,
+            1,
+            0.20784314000000004
+          ],
+          [
+            1,
+            1,
+            1,
+            0.20784314000000004
+          ],
+          [
+            1,
+            1,
+            1,
+            0.22352941000000004
+          ],
+          [
+            1,
+            1,
+            1,
+            0.24313726
+          ],
+          [
+            1,
+            1,
+            1,
+            0.22352941
+          ],
+          [
+            1,
+            1,
+            1,
+            0.20784314
+          ],
+          [
+            1,
+            1,
+            1,
+            0.20784314000000004
+          ],
+          [
+            1,
+            1,
+            1,
+            0.20784314000000004
+          ],
+          [
+            1,
+            1,
+            1,
+            0.1882353
+          ]
+        ]
+      },
+      {
+        "nodeId": "ColorInput_IntelligentLightParticleColor",
+        "paramName": "value",
+        "value": [
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "ColorInput_IntelligentLightParticleNoiseColor",
+        "paramName": "value",
+        "value": [
+          0.13286832155381798,
+          0.046665086336880074,
+          0.768151147247507,
+          1
+        ]
+      },
+      {
+        "nodeId": "ColorInput_IntelligentLightPointerTintColor",
+        "paramName": "value",
+        "value": [
+          0.004391442037410293,
+          0.06847816984440017,
+          0.4396571738409188,
+          1
+        ]
+      },
+      {
+        "nodeId": "ColorInput_IntelligentLightPresentationColorCenter",
+        "paramName": "value",
+        "value": [
+          0,
+          0.01520851442291271,
+          0.17788841598362912,
+          1
+        ]
+      },
+      {
+        "nodeId": "ColorInput_IntelligentLightPresentationColorLeft",
+        "paramName": "value",
+        "value": [
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "ColorInput_IntelligentLightPresentationColorRight",
+        "paramName": "value",
+        "value": [
+          0.019382360956935723,
+          0.27467731206038465,
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "ColorInput_PttPromptColor",
+        "paramName": "value",
+        "value": [
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "ColorInput_VoiceDotColor",
+        "paramName": "value",
+        "value": [
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "FloatInput_37",
+        "paramName": "value",
+        "value": 70
+      },
+      {
+        "nodeId": "FloatInput_38",
+        "paramName": "value",
+        "value": 560
+      },
+      {
+        "nodeId": "FloatInput_39",
+        "paramName": "value",
+        "value": 0
+      },
+      {
+        "nodeId": "FloatInput_40",
+        "paramName": "value",
+        "value": 0
+      },
+      {
+        "nodeId": "FloatInput_41",
+        "paramName": "value",
+        "value": 58.333333333333336
+      },
+      {
+        "nodeId": "FloatInput_42",
+        "paramName": "value",
+        "value": 0
+      },
+      {
+        "nodeId": "FloatInput_43",
+        "paramName": "value",
+        "value": 0
+      },
+      {
+        "nodeId": "FloatInput_44",
+        "paramName": "value",
+        "value": 0.6
+      },
+      {
+        "nodeId": "FloatInput_45",
+        "paramName": "value",
+        "value": 0
+      },
+      {
+        "nodeId": "FloatInput_46",
+        "paramName": "value",
+        "value": 0
+      },
+      {
+        "nodeId": "FloatInput_47",
+        "paramName": "value",
+        "value": 1
+      },
+      {
+        "nodeId": "FloatInput_48",
+        "paramName": "value",
+        "value": 0
+      },
+      {
+        "nodeId": "FloatInput_49",
+        "paramName": "value",
+        "value": 0
+      },
+      {
+        "nodeId": "FloatInput_50",
+        "paramName": "value",
+        "value": 0
+      },
+      {
+        "nodeId": "FloatInput_CausticBlurRadiusPx",
+        "paramName": "value",
+        "value": 175
+      },
+      {
+        "nodeId": "FloatInput_CausticOpacity",
+        "paramName": "value",
+        "value": 1
+      },
+      {
+        "nodeId": "FloatInput_GlassBlurRadiusPx",
+        "paramName": "value",
+        "value": 74.66666666666666
+      },
+      {
+        "nodeId": "FloatInput_GlassShapeEdgePx",
+        "paramName": "value",
+        "value": 35
+      },
+      {
+        "nodeId": "FloatInput_GlassShapeReflectOffsetPx",
+        "paramName": "value",
+        "value": 875
+      },
+      {
+        "nodeId": "FloatInput_GlassShapeThicknessPx",
+        "paramName": "value",
+        "value": 93.33333333333334
+      },
+      {
+        "nodeId": "FloatInput_Glow",
+        "paramName": "value",
+        "value": 1
+      },
+      {
+        "nodeId": "FloatInput_GlowBloomSigmaPx",
+        "paramName": "value",
+        "value": 2800
+      },
+      {
+        "nodeId": "FloatInput_GlowCoreSigmaPx",
+        "paramName": "value",
+        "value": 5.833333333333334
+      },
+      {
+        "nodeId": "FloatInput_GlowMidSigmaPx",
+        "paramName": "value",
+        "value": 23.333333333333336
+      },
+      {
+        "nodeId": "FloatInput_GlowWideSigmaPx",
+        "paramName": "value",
+        "value": 70
+      },
+      {
+        "nodeId": "FloatInput_InputBarRefractionIndex",
+        "paramName": "value",
+        "value": 1
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightBlobRadiusLocalPx",
+        "paramName": "value",
+        "value": 62.720000000000006
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightDownsampleFactor",
+        "paramName": "value",
+        "value": 15
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightEmergenceProgress",
+        "paramName": "value",
+        "value": 1
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightLightness",
+        "paramName": "value",
+        "value": 0.78
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightParticleGain",
+        "paramName": "value",
+        "value": 1.55
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightParticleOpacity",
+        "paramName": "value",
+        "value": 0.35
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightParticlePointerWarpProgress",
+        "paramName": "value",
+        "value": 1
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightPointerRadiusLocalPx",
+        "paramName": "value",
+        "value": 42
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightPointerTintGain",
+        "paramName": "value",
+        "value": 1.55
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightPointerTintOpacityResolved",
+        "paramName": "value",
+        "value": 1
+      },
+      {
+        "nodeId": "FloatInput_LightBloomMinSigmaPx",
+        "paramName": "value",
+        "value": 2.916666666666667
+      },
+      {
+        "nodeId": "FloatInput_LightClipBloomProgress",
+        "paramName": "value",
+        "value": 1
+      },
+      {
+        "nodeId": "FloatInput_LightHardClipFeatherPx",
+        "paramName": "value",
+        "value": 2.916666666666667
+      },
+      {
+        "nodeId": "FloatInput_ParticleEdgeSigmaPx",
+        "paramName": "value",
+        "value": 105
+      },
+      {
+        "nodeId": "FloatInput_ParticleInnerSizePx",
+        "paramName": "value",
+        "value": 4.2
+      },
+      {
+        "nodeId": "FloatInput_ParticleMinSizePx",
+        "paramName": "value",
+        "value": 0.5833333333333333
+      },
+      {
+        "nodeId": "FloatInput_ParticleOriginYPx",
+        "paramName": "value",
+        "value": 28
+      },
+      {
+        "nodeId": "FloatInput_ParticleOuterSizePx",
+        "paramName": "value",
+        "value": 2.1
+      },
+      {
+        "nodeId": "FloatInput_ParticleWarpPx",
+        "paramName": "value",
+        "value": 420
+      },
+      {
+        "nodeId": "FloatInput_ParticleWarpRadiusPx",
+        "paramName": "value",
+        "value": 840
+      },
+      {
+        "nodeId": "FloatInput_PttPromptCancel",
+        "paramName": "value",
+        "value": 0
+      },
+      {
+        "nodeId": "FloatInput_PttPromptOpacity",
+        "paramName": "value",
+        "value": 1
+      },
+      {
+        "nodeId": "FloatInput_SoundBarInnerFalloffPx",
+        "paramName": "value",
+        "value": 58.333333333333336
+      },
+      {
+        "nodeId": "FloatInput_SoundBarOffsetPx",
+        "paramName": "value",
+        "value": 11.666666666666668
+      },
+      {
+        "nodeId": "FloatInput_SoundBarOuterFalloffPx",
+        "paramName": "value",
+        "value": 116.66666666666669
+      },
+      {
+        "nodeId": "FloatInput_SoundBarRadiusPx",
+        "paramName": "value",
+        "value": 35
+      },
+      {
+        "nodeId": "FloatInput_TotalEnergy",
+        "paramName": "value",
+        "value": 0
+      },
+      {
+        "nodeId": "FloatInput_VoiceDotMaxHeightPx",
+        "paramName": "value",
+        "value": 84
+      },
+      {
+        "nodeId": "FloatInput_VoiceDotMinHeightPx",
+        "paramName": "value",
+        "value": 25.2
+      },
+      {
+        "nodeId": "FloatInput_VoiceDotSdfFeatherPx",
+        "paramName": "value",
+        "value": 1.1666666666666663
+      },
+      {
+        "nodeId": "FloatInput_VoiceDotSpacingPx",
+        "paramName": "value",
+        "value": 21
+      },
+      {
+        "nodeId": "FloatInput_VoiceDotWidthPx",
+        "paramName": "value",
+        "value": 8.4
+      },
+      {
+        "nodeId": "Vector2ArrayInput_IntelligentLightPositions",
+        "paramName": "value",
+        "value": [
+          [
+            35.66935124875655,
+            5.600000000000001
+          ],
+          [
+            37.874847008613294,
+            5.600000000000001
+          ],
+          [
+            37.81676923548584,
+            5.600000000000001
+          ],
+          [
+            47.55033283704443,
+            5.600000000000001
+          ],
+          [
+            48.03205897635686,
+            5.600000000000001
+          ],
+          [
+            45.056640693742985,
+            5.600000000000001
+          ],
+          [
+            35.25566071991394,
+            5.600000000000001
+          ],
+          [
+            39.09655011002811,
+            5.600000000000001
+          ],
+          [
+            43.98941549241746,
+            5.600000000000001
+          ],
+          [
+            44.54959131223901,
+            5.600000000000001
+          ],
+          [
+            47.108782365401446,
+            5.600000000000001
+          ]
+        ]
+      },
+      {
+        "nodeId": "Vector2Input_35",
+        "paramName": "x",
+        "value": 1176
+      },
+      {
+        "nodeId": "Vector2Input_35",
+        "paramName": "y",
+        "value": 196
+      },
+      {
+        "nodeId": "Vector2Input_36",
+        "paramName": "x",
+        "value": 630
+      },
+      {
+        "nodeId": "Vector2Input_36",
+        "paramName": "y",
+        "value": 168
+      },
+      {
+        "nodeId": "Vector2Input_38",
+        "paramName": "x",
+        "value": 1260
+      },
+      {
+        "nodeId": "Vector2Input_38",
+        "paramName": "y",
+        "value": 1260
+      },
+      {
+        "nodeId": "Vector2Input_CausticOffsetPx",
+        "paramName": "x",
+        "value": 0
+      },
+      {
+        "nodeId": "Vector2Input_CausticOffsetPx",
+        "paramName": "y",
+        "value": 46.66666666666667
+      },
+      {
+        "nodeId": "Vector2Input_IntelligentLightSourceCanvasSizePx",
+        "paramName": "x",
+        "value": 1260
+      },
+      {
+        "nodeId": "Vector2Input_IntelligentLightSourceCanvasSizePx",
+        "paramName": "y",
+        "value": 1260
+      },
+      {
+        "nodeId": "Vector2Input_LightEffectCanvasSizePx",
+        "paramName": "x",
+        "value": 1260
+      },
+      {
+        "nodeId": "Vector2Input_LightEffectCanvasSizePx",
+        "paramName": "y",
+        "value": 1260
+      },
+      {
+        "nodeId": "Vector2Input_LightEffectFrameSizePx",
+        "paramName": "x",
+        "value": 1176
+      },
+      {
+        "nodeId": "Vector2Input_LightEffectFrameSizePx",
+        "paramName": "y",
+        "value": 196
+      },
+      {
+        "nodeId": "Vector2Input_LightEffectPositionPx",
+        "paramName": "x",
+        "value": 630
+      },
+      {
+        "nodeId": "Vector2Input_LightEffectPositionPx",
+        "paramName": "y",
+        "value": 168
+      },
+      {
+        "nodeId": "Vector2Input_PointerIntelligentLightLocalPx",
+        "paramName": "x",
+        "value": 42.58604927969978
+      },
+      {
+        "nodeId": "Vector2Input_PointerIntelligentLightLocalPx",
+        "paramName": "y",
+        "value": 37.82387240906376
+      },
+      {
+        "nodeId": "Vector2Input_PointerLightEffectLocalPx",
+        "paramName": "x",
+        "value": 638.7907391954967
+      },
+      {
+        "nodeId": "Vector2Input_PointerLightEffectLocalPx",
+        "paramName": "y",
+        "value": 567.3580861359565
+      },
+      {
+        "nodeId": "Vector2Input_PttPromptPositionPx",
+        "paramName": "x",
+        "value": 630
+      },
+      {
+        "nodeId": "Vector2Input_PttPromptPositionPx",
+        "paramName": "y",
+        "value": 350
+      },
+      {
+        "nodeId": "Vector2Input_PttPromptSizePx",
+        "paramName": "x",
+        "value": 1260
+      },
+      {
+        "nodeId": "Vector2Input_PttPromptSizePx",
+        "paramName": "y",
+        "value": 63
+      }
+    ],
+    "nodeParams": [
+      {
+        "nodeId": "ColorArrayInput_IntelligentLightColors",
+        "paramName": "__node_label",
+        "value": "Intelligent Light Colors"
+      },
+      {
+        "nodeId": "ColorArrayInput_IntelligentLightColors",
+        "paramName": "_uiCollapsed",
+        "value": false
+      },
+      {
+        "nodeId": "ColorArrayInput_IntelligentLightColors",
+        "paramName": "label",
+        "value": "Intelligent Light Colors"
+      },
+      {
+        "nodeId": "ColorArrayInput_IntelligentLightColors",
+        "paramName": "value",
+        "value": [
+          [
+            1,
+            1,
+            1,
+            0.24313726
+          ],
+          [
+            1,
+            1,
+            1,
+            0.22352941
+          ],
+          [
+            1,
+            1,
+            1,
+            0.20784314000000004
+          ],
+          [
+            1,
+            1,
+            1,
+            0.20784314000000004
+          ],
+          [
+            1,
+            1,
+            1,
+            0.22352941000000004
+          ],
+          [
+            1,
+            1,
+            1,
+            0.24313726
+          ],
+          [
+            1,
+            1,
+            1,
+            0.22352941
+          ],
+          [
+            1,
+            1,
+            1,
+            0.20784314
+          ],
+          [
+            1,
+            1,
+            1,
+            0.20784314000000004
+          ],
+          [
+            1,
+            1,
+            1,
+            0.20784314000000004
+          ],
+          [
+            1,
+            1,
+            1,
+            0.1882353
+          ]
+        ]
+      },
+      {
+        "nodeId": "ColorInput_IntelligentLightBaseColor",
+        "paramName": "__node_label",
+        "value": "IntelligentLightBaseColor"
+      },
+      {
+        "nodeId": "ColorInput_IntelligentLightBaseColor",
+        "paramName": "label",
+        "value": "IntelligentLightBaseColor"
+      },
+      {
+        "nodeId": "ColorInput_IntelligentLightBaseColor",
+        "paramName": "value",
+        "value": [
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "nodeId": "ColorInput_IntelligentLightParticleColor",
+        "paramName": "__node_label",
+        "value": "IntelligentLightParticleColor"
+      },
+      {
+        "nodeId": "ColorInput_IntelligentLightParticleColor",
+        "paramName": "label",
+        "value": "IntelligentLightParticleColor"
+      },
+      {
+        "nodeId": "ColorInput_IntelligentLightParticleColor",
+        "paramName": "value",
+        "value": [
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "ColorInput_IntelligentLightParticleNoiseColor",
+        "paramName": "__node_label",
+        "value": "IntelligentLightParticleNoiseColor"
+      },
+      {
+        "nodeId": "ColorInput_IntelligentLightParticleNoiseColor",
+        "paramName": "label",
+        "value": "IntelligentLightParticleNoiseColor"
+      },
+      {
+        "nodeId": "ColorInput_IntelligentLightParticleNoiseColor",
+        "paramName": "value",
+        "value": [
+          0.13286832155381798,
+          0.046665086336880074,
+          0.768151147247507,
+          1
+        ]
+      },
+      {
+        "nodeId": "ColorInput_IntelligentLightPointerTintColor",
+        "paramName": "__node_label",
+        "value": "IntelligentLightPointerTintColor"
+      },
+      {
+        "nodeId": "ColorInput_IntelligentLightPointerTintColor",
+        "paramName": "label",
+        "value": "IntelligentLightPointerTintColor"
+      },
+      {
+        "nodeId": "ColorInput_IntelligentLightPointerTintColor",
+        "paramName": "value",
+        "value": [
+          0.004391442037410293,
+          0.06847816984440017,
+          0.4396571738409188,
+          1
+        ]
+      },
+      {
+        "nodeId": "ColorInput_IntelligentLightPresentationColorCenter",
+        "paramName": "__node_label",
+        "value": "IntelligentLightPresentationColorCenter"
+      },
+      {
+        "nodeId": "ColorInput_IntelligentLightPresentationColorCenter",
+        "paramName": "label",
+        "value": "IntelligentLightPresentationColorCenter"
+      },
+      {
+        "nodeId": "ColorInput_IntelligentLightPresentationColorCenter",
+        "paramName": "value",
+        "value": [
+          0,
+          0.01520851442291271,
+          0.17788841598362912,
+          1
+        ]
+      },
+      {
+        "nodeId": "ColorInput_IntelligentLightPresentationColorLeft",
+        "paramName": "__node_label",
+        "value": "IntelligentLightPresentationColorLeft"
+      },
+      {
+        "nodeId": "ColorInput_IntelligentLightPresentationColorLeft",
+        "paramName": "label",
+        "value": "IntelligentLightPresentationColorLeft"
+      },
+      {
+        "nodeId": "ColorInput_IntelligentLightPresentationColorLeft",
+        "paramName": "value",
+        "value": [
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "ColorInput_IntelligentLightPresentationColorRight",
+        "paramName": "__node_label",
+        "value": "IntelligentLightPresentationColorRight"
+      },
+      {
+        "nodeId": "ColorInput_IntelligentLightPresentationColorRight",
+        "paramName": "label",
+        "value": "IntelligentLightPresentationColorRight"
+      },
+      {
+        "nodeId": "ColorInput_IntelligentLightPresentationColorRight",
+        "paramName": "value",
+        "value": [
+          0.019382360956935723,
+          0.27467731206038465,
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "ColorInput_PttPromptColor",
+        "paramName": "__node_label",
+        "value": "PttPromptColor"
+      },
+      {
+        "nodeId": "ColorInput_PttPromptColor",
+        "paramName": "label",
+        "value": "PttPromptColor"
+      },
+      {
+        "nodeId": "ColorInput_PttPromptColor",
+        "paramName": "value",
+        "value": [
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "ColorInput_VoiceDotColor",
+        "paramName": "__node_label",
+        "value": "VoiceDotColor"
+      },
+      {
+        "nodeId": "ColorInput_VoiceDotColor",
+        "paramName": "label",
+        "value": "VoiceDotColor"
+      },
+      {
+        "nodeId": "ColorInput_VoiceDotColor",
+        "paramName": "value",
+        "value": [
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "FloatInput_37",
+        "paramName": "__node_label",
+        "value": "InputBarCornerRadiusPx"
+      },
+      {
+        "nodeId": "FloatInput_37",
+        "paramName": "label",
+        "value": "InputBarCornerRadiusPx"
+      },
+      {
+        "nodeId": "FloatInput_37",
+        "paramName": "value",
+        "value": 70
+      },
+      {
+        "nodeId": "FloatInput_38",
+        "paramName": "__node_label",
+        "value": "GradientBlurStartY"
+      },
+      {
+        "nodeId": "FloatInput_38",
+        "paramName": "label",
+        "value": "GradientBlurStartY"
+      },
+      {
+        "nodeId": "FloatInput_38",
+        "paramName": "value",
+        "value": 560
+      },
+      {
+        "nodeId": "FloatInput_39",
+        "paramName": "__node_label",
+        "value": "GradientBlurEndY"
+      },
+      {
+        "nodeId": "FloatInput_39",
+        "paramName": "label",
+        "value": "GradientBlurEndY"
+      },
+      {
+        "nodeId": "FloatInput_39",
+        "paramName": "value",
+        "value": 0
+      },
+      {
+        "nodeId": "FloatInput_40",
+        "paramName": "__node_label",
+        "value": "GradientBlurStartSigma"
+      },
+      {
+        "nodeId": "FloatInput_40",
+        "paramName": "label",
+        "value": "GradientBlurStartSigma"
+      },
+      {
+        "nodeId": "FloatInput_40",
+        "paramName": "value",
+        "value": 0
+      },
+      {
+        "nodeId": "FloatInput_41",
+        "paramName": "__node_label",
+        "value": "GradientBlurEndSigma"
+      },
+      {
+        "nodeId": "FloatInput_41",
+        "paramName": "label",
+        "value": "GradientBlurEndSigma"
+      },
+      {
+        "nodeId": "FloatInput_41",
+        "paramName": "value",
+        "value": 58.333333333333336
+      },
+      {
+        "nodeId": "FloatInput_42",
+        "paramName": "__node_label",
+        "value": "InputBarUiOpacity"
+      },
+      {
+        "nodeId": "FloatInput_42",
+        "paramName": "label",
+        "value": "InputBarUiOpacity"
+      },
+      {
+        "nodeId": "FloatInput_42",
+        "paramName": "value",
+        "value": 0
+      },
+      {
+        "nodeId": "FloatInput_43",
+        "paramName": "__node_label",
+        "value": "InputBarOpacity"
+      },
+      {
+        "nodeId": "FloatInput_43",
+        "paramName": "label",
+        "value": "InputBarOpacity"
+      },
+      {
+        "nodeId": "FloatInput_43",
+        "paramName": "value",
+        "value": 0
+      },
+      {
+        "nodeId": "FloatInput_44",
+        "paramName": "__node_label",
+        "value": "BackgroundDarkenAlpha"
+      },
+      {
+        "nodeId": "FloatInput_44",
+        "paramName": "label",
+        "value": "BackgroundDarkenAlpha"
+      },
+      {
+        "nodeId": "FloatInput_44",
+        "paramName": "value",
+        "value": 0.6
+      },
+      {
+        "nodeId": "FloatInput_45",
+        "paramName": "__node_label",
+        "value": "VoiceOpacity"
+      },
+      {
+        "nodeId": "FloatInput_45",
+        "paramName": "label",
+        "value": "VoiceOpacity"
+      },
+      {
+        "nodeId": "FloatInput_45",
+        "paramName": "value",
+        "value": 0
+      },
+      {
+        "nodeId": "FloatInput_46",
+        "paramName": "__node_label",
+        "value": "CoreGlowOpacity"
+      },
+      {
+        "nodeId": "FloatInput_46",
+        "paramName": "label",
+        "value": "CoreGlowOpacity"
+      },
+      {
+        "nodeId": "FloatInput_46",
+        "paramName": "value",
+        "value": 0
+      },
+      {
+        "nodeId": "FloatInput_47",
+        "paramName": "__node_label",
+        "value": "GlowMaskMorph"
+      },
+      {
+        "nodeId": "FloatInput_47",
+        "paramName": "label",
+        "value": "GlowMaskMorph"
+      },
+      {
+        "nodeId": "FloatInput_47",
+        "paramName": "value",
+        "value": 1
+      },
+      {
+        "nodeId": "FloatInput_48",
+        "paramName": "__node_label",
+        "value": "VoiceDotOpacity"
+      },
+      {
+        "nodeId": "FloatInput_48",
+        "paramName": "label",
+        "value": "VoiceDotOpacity"
+      },
+      {
+        "nodeId": "FloatInput_48",
+        "paramName": "value",
+        "value": 0
+      },
+      {
+        "nodeId": "FloatInput_49",
+        "paramName": "__node_label",
+        "value": "VoiceDotProgress"
+      },
+      {
+        "nodeId": "FloatInput_49",
+        "paramName": "label",
+        "value": "VoiceDotProgress"
+      },
+      {
+        "nodeId": "FloatInput_49",
+        "paramName": "value",
+        "value": 0
+      },
+      {
+        "nodeId": "FloatInput_50",
+        "paramName": "__node_label",
+        "value": "VoiceDotResponse"
+      },
+      {
+        "nodeId": "FloatInput_50",
+        "paramName": "label",
+        "value": "VoiceDotResponse"
+      },
+      {
+        "nodeId": "FloatInput_50",
+        "paramName": "value",
+        "value": 0
+      },
+      {
+        "nodeId": "FloatInput_CausticBlurRadiusPx",
+        "paramName": "__node_label",
+        "value": "CausticBlurRadiusPx"
+      },
+      {
+        "nodeId": "FloatInput_CausticBlurRadiusPx",
+        "paramName": "label",
+        "value": "CausticBlurRadiusPx"
+      },
+      {
+        "nodeId": "FloatInput_CausticBlurRadiusPx",
+        "paramName": "value",
+        "value": 175
+      },
+      {
+        "nodeId": "FloatInput_CausticOpacity",
+        "paramName": "__node_label",
+        "value": "CausticOpacity"
+      },
+      {
+        "nodeId": "FloatInput_CausticOpacity",
+        "paramName": "label",
+        "value": "CausticOpacity"
+      },
+      {
+        "nodeId": "FloatInput_CausticOpacity",
+        "paramName": "value",
+        "value": 1
+      },
+      {
+        "nodeId": "FloatInput_GlassBlurRadiusPx",
+        "paramName": "__node_label",
+        "value": "GlassBlurRadiusPx"
+      },
+      {
+        "nodeId": "FloatInput_GlassBlurRadiusPx",
+        "paramName": "label",
+        "value": "GlassBlurRadiusPx"
+      },
+      {
+        "nodeId": "FloatInput_GlassBlurRadiusPx",
+        "paramName": "value",
+        "value": 74.66666666666666
+      },
+      {
+        "nodeId": "FloatInput_GlassShapeEdgePx",
+        "paramName": "__node_label",
+        "value": "GlassShapeEdgePx"
+      },
+      {
+        "nodeId": "FloatInput_GlassShapeEdgePx",
+        "paramName": "label",
+        "value": "GlassShapeEdgePx"
+      },
+      {
+        "nodeId": "FloatInput_GlassShapeEdgePx",
+        "paramName": "value",
+        "value": 35
+      },
+      {
+        "nodeId": "FloatInput_GlassShapeReflectOffsetPx",
+        "paramName": "__node_label",
+        "value": "GlassShapeReflectOffsetPx"
+      },
+      {
+        "nodeId": "FloatInput_GlassShapeReflectOffsetPx",
+        "paramName": "label",
+        "value": "GlassShapeReflectOffsetPx"
+      },
+      {
+        "nodeId": "FloatInput_GlassShapeReflectOffsetPx",
+        "paramName": "value",
+        "value": 875
+      },
+      {
+        "nodeId": "FloatInput_GlassShapeThicknessPx",
+        "paramName": "__node_label",
+        "value": "GlassShapeThicknessPx"
+      },
+      {
+        "nodeId": "FloatInput_GlassShapeThicknessPx",
+        "paramName": "label",
+        "value": "GlassShapeThicknessPx"
+      },
+      {
+        "nodeId": "FloatInput_GlassShapeThicknessPx",
+        "paramName": "value",
+        "value": 93.33333333333334
+      },
+      {
+        "nodeId": "FloatInput_Glow",
+        "paramName": "__node_label",
+        "value": "Glow"
+      },
+      {
+        "nodeId": "FloatInput_Glow",
+        "paramName": "label",
+        "value": "Glow"
+      },
+      {
+        "nodeId": "FloatInput_Glow",
+        "paramName": "value",
+        "value": 1
+      },
+      {
+        "nodeId": "FloatInput_GlowBloomSigmaPx",
+        "paramName": "__node_label",
+        "value": "GlowBloomSigmaPx"
+      },
+      {
+        "nodeId": "FloatInput_GlowBloomSigmaPx",
+        "paramName": "label",
+        "value": "GlowBloomSigmaPx"
+      },
+      {
+        "nodeId": "FloatInput_GlowBloomSigmaPx",
+        "paramName": "value",
+        "value": 2800
+      },
+      {
+        "nodeId": "FloatInput_GlowCoreSigmaPx",
+        "paramName": "__node_label",
+        "value": "GlowCoreSigmaPx"
+      },
+      {
+        "nodeId": "FloatInput_GlowCoreSigmaPx",
+        "paramName": "label",
+        "value": "GlowCoreSigmaPx"
+      },
+      {
+        "nodeId": "FloatInput_GlowCoreSigmaPx",
+        "paramName": "value",
+        "value": 5.833333333333334
+      },
+      {
+        "nodeId": "FloatInput_GlowMidSigmaPx",
+        "paramName": "__node_label",
+        "value": "GlowMidSigmaPx"
+      },
+      {
+        "nodeId": "FloatInput_GlowMidSigmaPx",
+        "paramName": "label",
+        "value": "GlowMidSigmaPx"
+      },
+      {
+        "nodeId": "FloatInput_GlowMidSigmaPx",
+        "paramName": "value",
+        "value": 23.333333333333336
+      },
+      {
+        "nodeId": "FloatInput_GlowWideSigmaPx",
+        "paramName": "__node_label",
+        "value": "GlowWideSigmaPx"
+      },
+      {
+        "nodeId": "FloatInput_GlowWideSigmaPx",
+        "paramName": "label",
+        "value": "GlowWideSigmaPx"
+      },
+      {
+        "nodeId": "FloatInput_GlowWideSigmaPx",
+        "paramName": "value",
+        "value": 70
+      },
+      {
+        "nodeId": "FloatInput_InputBarRefractionIndex",
+        "paramName": "__node_label",
+        "value": "InputBarRefractionIndex"
+      },
+      {
+        "nodeId": "FloatInput_InputBarRefractionIndex",
+        "paramName": "label",
+        "value": "InputBarRefractionIndex"
+      },
+      {
+        "nodeId": "FloatInput_InputBarRefractionIndex",
+        "paramName": "value",
+        "value": 1
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightBlobRadiusLocalPx",
+        "paramName": "__node_label",
+        "value": "IntelligentLightBlobRadiusLocalPx"
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightBlobRadiusLocalPx",
+        "paramName": "label",
+        "value": "IntelligentLightBlobRadiusLocalPx"
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightBlobRadiusLocalPx",
+        "paramName": "value",
+        "value": 62.720000000000006
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightDownsampleFactor",
+        "paramName": "__node_label",
+        "value": "IntelligentLightDownsampleFactor"
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightDownsampleFactor",
+        "paramName": "label",
+        "value": "IntelligentLightDownsampleFactor"
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightDownsampleFactor",
+        "paramName": "value",
+        "value": 15
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightEmergenceProgress",
+        "paramName": "__node_label",
+        "value": "IntelligentLightEmergenceProgress"
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightEmergenceProgress",
+        "paramName": "label",
+        "value": "IntelligentLightEmergenceProgress"
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightEmergenceProgress",
+        "paramName": "value",
+        "value": 1
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightLightness",
+        "paramName": "__node_label",
+        "value": "IntelligentLightLightness"
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightLightness",
+        "paramName": "label",
+        "value": "IntelligentLightLightness"
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightLightness",
+        "paramName": "value",
+        "value": 0.78
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightParticleGain",
+        "paramName": "__node_label",
+        "value": "IntelligentLightParticleGain"
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightParticleGain",
+        "paramName": "label",
+        "value": "IntelligentLightParticleGain"
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightParticleGain",
+        "paramName": "value",
+        "value": 1.55
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightParticleOpacity",
+        "paramName": "__node_label",
+        "value": "IntelligentLightParticleOpacity"
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightParticleOpacity",
+        "paramName": "label",
+        "value": "IntelligentLightParticleOpacity"
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightParticleOpacity",
+        "paramName": "value",
+        "value": 0.35
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightParticlePointerWarpProgress",
+        "paramName": "__node_label",
+        "value": "IntelligentLightParticlePointerWarpProgress"
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightParticlePointerWarpProgress",
+        "paramName": "label",
+        "value": "IntelligentLightParticlePointerWarpProgress"
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightParticlePointerWarpProgress",
+        "paramName": "value",
+        "value": 1
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightPointerRadiusLocalPx",
+        "paramName": "__node_label",
+        "value": "IntelligentLightPointerRadiusLocalPx"
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightPointerRadiusLocalPx",
+        "paramName": "label",
+        "value": "IntelligentLightPointerRadiusLocalPx"
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightPointerRadiusLocalPx",
+        "paramName": "value",
+        "value": 42
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightPointerTintGain",
+        "paramName": "__node_label",
+        "value": "IntelligentLightPointerTintGain"
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightPointerTintGain",
+        "paramName": "label",
+        "value": "IntelligentLightPointerTintGain"
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightPointerTintGain",
+        "paramName": "value",
+        "value": 1.55
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightPointerTintOpacityResolved",
+        "paramName": "__node_label",
+        "value": "IntelligentLightPointerTintOpacityResolved"
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightPointerTintOpacityResolved",
+        "paramName": "label",
+        "value": "IntelligentLightPointerTintOpacityResolved"
+      },
+      {
+        "nodeId": "FloatInput_IntelligentLightPointerTintOpacityResolved",
+        "paramName": "value",
+        "value": 1
+      },
+      {
+        "nodeId": "FloatInput_LightBloomMinSigmaPx",
+        "paramName": "__node_label",
+        "value": "LightBloomMinSigmaPx"
+      },
+      {
+        "nodeId": "FloatInput_LightBloomMinSigmaPx",
+        "paramName": "label",
+        "value": "LightBloomMinSigmaPx"
+      },
+      {
+        "nodeId": "FloatInput_LightBloomMinSigmaPx",
+        "paramName": "value",
+        "value": 2.916666666666667
+      },
+      {
+        "nodeId": "FloatInput_LightClipBloomProgress",
+        "paramName": "__node_label",
+        "value": "LightClipBloomProgress"
+      },
+      {
+        "nodeId": "FloatInput_LightClipBloomProgress",
+        "paramName": "label",
+        "value": "LightClipBloomProgress"
+      },
+      {
+        "nodeId": "FloatInput_LightClipBloomProgress",
+        "paramName": "value",
+        "value": 1
+      },
+      {
+        "nodeId": "FloatInput_LightHardClipFeatherPx",
+        "paramName": "__node_label",
+        "value": "LightHardClipFeatherPx"
+      },
+      {
+        "nodeId": "FloatInput_LightHardClipFeatherPx",
+        "paramName": "label",
+        "value": "LightHardClipFeatherPx"
+      },
+      {
+        "nodeId": "FloatInput_LightHardClipFeatherPx",
+        "paramName": "value",
+        "value": 2.916666666666667
+      },
+      {
+        "nodeId": "FloatInput_ParticleEdgeSigmaPx",
+        "paramName": "__node_label",
+        "value": "ParticleEdgeSigmaPx"
+      },
+      {
+        "nodeId": "FloatInput_ParticleEdgeSigmaPx",
+        "paramName": "label",
+        "value": "ParticleEdgeSigmaPx"
+      },
+      {
+        "nodeId": "FloatInput_ParticleEdgeSigmaPx",
+        "paramName": "value",
+        "value": 105
+      },
+      {
+        "nodeId": "FloatInput_ParticleInnerSizePx",
+        "paramName": "__node_label",
+        "value": "ParticleInnerSizePx"
+      },
+      {
+        "nodeId": "FloatInput_ParticleInnerSizePx",
+        "paramName": "label",
+        "value": "ParticleInnerSizePx"
+      },
+      {
+        "nodeId": "FloatInput_ParticleInnerSizePx",
+        "paramName": "value",
+        "value": 4.2
+      },
+      {
+        "nodeId": "FloatInput_ParticleMinSizePx",
+        "paramName": "__node_label",
+        "value": "ParticleMinSizePx"
+      },
+      {
+        "nodeId": "FloatInput_ParticleMinSizePx",
+        "paramName": "label",
+        "value": "ParticleMinSizePx"
+      },
+      {
+        "nodeId": "FloatInput_ParticleMinSizePx",
+        "paramName": "value",
+        "value": 0.5833333333333333
+      },
+      {
+        "nodeId": "FloatInput_ParticleOriginYPx",
+        "paramName": "__node_label",
+        "value": "ParticleOriginYPx"
+      },
+      {
+        "nodeId": "FloatInput_ParticleOriginYPx",
+        "paramName": "label",
+        "value": "ParticleOriginYPx"
+      },
+      {
+        "nodeId": "FloatInput_ParticleOriginYPx",
+        "paramName": "value",
+        "value": 28
+      },
+      {
+        "nodeId": "FloatInput_ParticleOuterSizePx",
+        "paramName": "__node_label",
+        "value": "ParticleOuterSizePx"
+      },
+      {
+        "nodeId": "FloatInput_ParticleOuterSizePx",
+        "paramName": "label",
+        "value": "ParticleOuterSizePx"
+      },
+      {
+        "nodeId": "FloatInput_ParticleOuterSizePx",
+        "paramName": "value",
+        "value": 2.1
+      },
+      {
+        "nodeId": "FloatInput_ParticleWarpPx",
+        "paramName": "__node_label",
+        "value": "ParticleWarpPx"
+      },
+      {
+        "nodeId": "FloatInput_ParticleWarpPx",
+        "paramName": "label",
+        "value": "ParticleWarpPx"
+      },
+      {
+        "nodeId": "FloatInput_ParticleWarpPx",
+        "paramName": "value",
+        "value": 420
+      },
+      {
+        "nodeId": "FloatInput_ParticleWarpRadiusPx",
+        "paramName": "__node_label",
+        "value": "ParticleWarpRadiusPx"
+      },
+      {
+        "nodeId": "FloatInput_ParticleWarpRadiusPx",
+        "paramName": "label",
+        "value": "ParticleWarpRadiusPx"
+      },
+      {
+        "nodeId": "FloatInput_ParticleWarpRadiusPx",
+        "paramName": "value",
+        "value": 840
+      },
+      {
+        "nodeId": "FloatInput_PttPromptCancel",
+        "paramName": "__node_label",
+        "value": "PttPromptCancel"
+      },
+      {
+        "nodeId": "FloatInput_PttPromptCancel",
+        "paramName": "label",
+        "value": "PttPromptCancel"
+      },
+      {
+        "nodeId": "FloatInput_PttPromptCancel",
+        "paramName": "value",
+        "value": 0
+      },
+      {
+        "nodeId": "FloatInput_PttPromptOpacity",
+        "paramName": "__node_label",
+        "value": "PttPromptOpacity"
+      },
+      {
+        "nodeId": "FloatInput_PttPromptOpacity",
+        "paramName": "label",
+        "value": "PttPromptOpacity"
+      },
+      {
+        "nodeId": "FloatInput_PttPromptOpacity",
+        "paramName": "value",
+        "value": 1
+      },
+      {
+        "nodeId": "FloatInput_RenderHalf",
+        "paramName": "__node_label",
+        "value": "Render Half"
+      },
+      {
+        "nodeId": "FloatInput_RenderHalf",
+        "paramName": "label",
+        "value": "Render Half"
+      },
+      {
+        "nodeId": "FloatInput_RenderHalf",
+        "paramName": "value",
+        "value": 0.5
+      },
+      {
+        "nodeId": "FloatInput_RenderPxPerDp",
+        "paramName": "__node_label",
+        "value": "RenderPxPerDp"
+      },
+      {
+        "nodeId": "FloatInput_RenderPxPerDp",
+        "paramName": "label",
+        "value": "RenderPxPerDp"
+      },
+      {
+        "nodeId": "FloatInput_RenderPxPerDp",
+        "paramName": "value",
+        "value": 3.5
+      },
+      {
+        "nodeId": "FloatInput_RenderViewportHeightDp",
+        "paramName": "__node_label",
+        "value": "RenderViewportHeightDp"
+      },
+      {
+        "nodeId": "FloatInput_RenderViewportHeightDp",
+        "paramName": "label",
+        "value": "RenderViewportHeightDp"
+      },
+      {
+        "nodeId": "FloatInput_RenderViewportHeightDp",
+        "paramName": "value",
+        "value": 800
+      },
+      {
+        "nodeId": "FloatInput_RenderViewportWidthDp",
+        "paramName": "__node_label",
+        "value": "RenderViewportWidthDp"
+      },
+      {
+        "nodeId": "FloatInput_RenderViewportWidthDp",
+        "paramName": "label",
+        "value": "RenderViewportWidthDp"
+      },
+      {
+        "nodeId": "FloatInput_RenderViewportWidthDp",
+        "paramName": "value",
+        "value": 360
+      },
+      {
+        "nodeId": "FloatInput_SoundBarInnerFalloffPx",
+        "paramName": "__node_label",
+        "value": "SoundBarInnerFalloffPx"
+      },
+      {
+        "nodeId": "FloatInput_SoundBarInnerFalloffPx",
+        "paramName": "label",
+        "value": "SoundBarInnerFalloffPx"
+      },
+      {
+        "nodeId": "FloatInput_SoundBarInnerFalloffPx",
+        "paramName": "value",
+        "value": 58.333333333333336
+      },
+      {
+        "nodeId": "FloatInput_SoundBarOffsetPx",
+        "paramName": "__node_label",
+        "value": "SoundBarOffsetPx"
+      },
+      {
+        "nodeId": "FloatInput_SoundBarOffsetPx",
+        "paramName": "label",
+        "value": "SoundBarOffsetPx"
+      },
+      {
+        "nodeId": "FloatInput_SoundBarOffsetPx",
+        "paramName": "value",
+        "value": 11.666666666666668
+      },
+      {
+        "nodeId": "FloatInput_SoundBarOuterFalloffPx",
+        "paramName": "__node_label",
+        "value": "SoundBarOuterFalloffPx"
+      },
+      {
+        "nodeId": "FloatInput_SoundBarOuterFalloffPx",
+        "paramName": "label",
+        "value": "SoundBarOuterFalloffPx"
+      },
+      {
+        "nodeId": "FloatInput_SoundBarOuterFalloffPx",
+        "paramName": "value",
+        "value": 116.66666666666669
+      },
+      {
+        "nodeId": "FloatInput_SoundBarRadiusPx",
+        "paramName": "__node_label",
+        "value": "SoundBarRadiusPx"
+      },
+      {
+        "nodeId": "FloatInput_SoundBarRadiusPx",
+        "paramName": "label",
+        "value": "SoundBarRadiusPx"
+      },
+      {
+        "nodeId": "FloatInput_SoundBarRadiusPx",
+        "paramName": "value",
+        "value": 35
+      },
+      {
+        "nodeId": "FloatInput_TotalEnergy",
+        "paramName": "__node_label",
+        "value": "TotalEnergy"
+      },
+      {
+        "nodeId": "FloatInput_TotalEnergy",
+        "paramName": "label",
+        "value": "TotalEnergy"
+      },
+      {
+        "nodeId": "FloatInput_TotalEnergy",
+        "paramName": "value",
+        "value": 0
+      },
+      {
+        "nodeId": "FloatInput_VoiceDotMaxHeightPx",
+        "paramName": "__node_label",
+        "value": "VoiceDotMaxHeightPx"
+      },
+      {
+        "nodeId": "FloatInput_VoiceDotMaxHeightPx",
+        "paramName": "label",
+        "value": "VoiceDotMaxHeightPx"
+      },
+      {
+        "nodeId": "FloatInput_VoiceDotMaxHeightPx",
+        "paramName": "value",
+        "value": 84
+      },
+      {
+        "nodeId": "FloatInput_VoiceDotMinHeightPx",
+        "paramName": "__node_label",
+        "value": "VoiceDotMinHeightPx"
+      },
+      {
+        "nodeId": "FloatInput_VoiceDotMinHeightPx",
+        "paramName": "label",
+        "value": "VoiceDotMinHeightPx"
+      },
+      {
+        "nodeId": "FloatInput_VoiceDotMinHeightPx",
+        "paramName": "value",
+        "value": 25.2
+      },
+      {
+        "nodeId": "FloatInput_VoiceDotSdfFeatherPx",
+        "paramName": "__node_label",
+        "value": "VoiceDotSdfFeatherPx"
+      },
+      {
+        "nodeId": "FloatInput_VoiceDotSdfFeatherPx",
+        "paramName": "label",
+        "value": "VoiceDotSdfFeatherPx"
+      },
+      {
+        "nodeId": "FloatInput_VoiceDotSdfFeatherPx",
+        "paramName": "value",
+        "value": 1.1666666666666663
+      },
+      {
+        "nodeId": "FloatInput_VoiceDotSpacingPx",
+        "paramName": "__node_label",
+        "value": "VoiceDotSpacingPx"
+      },
+      {
+        "nodeId": "FloatInput_VoiceDotSpacingPx",
+        "paramName": "label",
+        "value": "VoiceDotSpacingPx"
+      },
+      {
+        "nodeId": "FloatInput_VoiceDotSpacingPx",
+        "paramName": "value",
+        "value": 21
+      },
+      {
+        "nodeId": "FloatInput_VoiceDotWidthPx",
+        "paramName": "__node_label",
+        "value": "VoiceDotWidthPx"
+      },
+      {
+        "nodeId": "FloatInput_VoiceDotWidthPx",
+        "paramName": "label",
+        "value": "VoiceDotWidthPx"
+      },
+      {
+        "nodeId": "FloatInput_VoiceDotWidthPx",
+        "paramName": "value",
+        "value": 8.4
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "__dedup_group_id",
+        "value": "LightEffect"
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "__dedup_original_id",
+        "value": "IntelligentLight_30"
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "__group_id",
+        "value": "LightEffect"
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "__group_input_name",
+        "value": "IntelligentLightSourceCanvasSizePx"
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "__group_instance_label",
+        "value": "Light Effect"
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "__group_name",
+        "value": "Light Effect"
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "__group_output_name",
+        "value": "IntelligentLightPass"
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "__node_label",
+        "value": "Intelligent Light"
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "_uiCollapsed",
+        "value": false
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "_uiCollapsedFields",
+        "value": []
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "baseColor",
+        "value": [
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "blobRadius",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "camera",
+        "value": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "canvasSizePx",
+        "value": [
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "color0",
+        "value": [
+          0.2158605001138993,
+          0.238397573812271,
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "color1",
+        "value": [
+          1,
+          0.6514056374198242,
+          0.45078578283822346,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "color10",
+        "value": [
+          0.23074004852434915,
+          0.20863687014525575,
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "color2",
+        "value": [
+          1,
+          0.238397573812271,
+          0.03560131487502034,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "color3",
+        "value": [
+          0.23074004852434915,
+          0.20863687014525575,
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "color4",
+        "value": [
+          0.006048833022857054,
+          0.14126329114027164,
+          0.8879231178819663,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "color5",
+        "value": [
+          0.2158605001138993,
+          0.238397573812271,
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "color6",
+        "value": [
+          1,
+          0.6514056374198242,
+          0.45078578283822346,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "color7",
+        "value": [
+          0.03560131487502034,
+          0.2764457305977609,
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "color8",
+        "value": [
+          1,
+          0.238397573812271,
+          0.03560131487502034,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "color9",
+        "value": [
+          0.006048833022857054,
+          0.14126329114027164,
+          0.8879231178819663,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "downsampleFactor",
+        "value": 30
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "label",
+        "value": "Intelligent Light"
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "lightness",
+        "value": 0.75
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "opacity",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "pointerTintColor",
+        "value": [
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "pointerTintGain",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "pointerTintOpacity",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "pointerTintPosition",
+        "value": [
+          0,
+          0
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "pointerTintRadius",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "pos0",
+        "value": [
+          0.8,
+          4.3
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "pos1",
+        "value": [
+          29.7,
+          23.2
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "pos10",
+        "value": [
+          10.5,
+          12.6
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "pos2",
+        "value": [
+          19.6,
+          23.9
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "pos3",
+        "value": [
+          16.8,
+          16.4
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "pos4",
+        "value": [
+          30.3,
+          7.7
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "pos8",
+        "value": [
+          18.7,
+          5.2
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "pos9",
+        "value": [
+          9.4,
+          3.3
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "power",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "presentationColorCenter",
+        "value": [
+          0,
+          0.01520851442291271,
+          0.17788841598362912,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "presentationColorLeft",
+        "value": [
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/IntelligentLight_30",
+        "paramName": "presentationColorRight",
+        "value": [
+          0.019382360956935723,
+          0.27467731206038465,
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/Rect2DGeometry_27",
+        "paramName": "__dedup_group_id",
+        "value": "LightEffect"
+      },
+      {
+        "nodeId": "GroupInstance_32/Rect2DGeometry_27",
+        "paramName": "__dedup_original_id",
+        "value": "Rect2DGeometry_27"
+      },
+      {
+        "nodeId": "GroupInstance_32/Rect2DGeometry_27",
+        "paramName": "__group_id",
+        "value": "LightEffect"
+      },
+      {
+        "nodeId": "GroupInstance_32/Rect2DGeometry_27",
+        "paramName": "__group_input_name",
+        "value": "LightEffectCanvasSizePx"
+      },
+      {
+        "nodeId": "GroupInstance_32/Rect2DGeometry_27",
+        "paramName": "__group_instance_label",
+        "value": "Light Effect"
+      },
+      {
+        "nodeId": "GroupInstance_32/Rect2DGeometry_27",
+        "paramName": "__group_name",
+        "value": "Light Effect"
+      },
+      {
+        "nodeId": "GroupInstance_32/Rect2DGeometry_27",
+        "paramName": "__node_label",
+        "value": "2D Rect"
+      },
+      {
+        "nodeId": "GroupInstance_32/Rect2DGeometry_27",
+        "paramName": "label",
+        "value": "2D Rect"
+      },
+      {
+        "nodeId": "GroupInstance_32/Rect2DGeometry_27",
+        "paramName": "radius",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_32/Rect2DGeometry_27",
+        "paramName": "size",
+        "value": [
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/Rect2DGeometry_27",
+        "paramName": "smooth",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_26",
+        "paramName": "__dedup_group_id",
+        "value": "LightEffect"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_26",
+        "paramName": "__dedup_original_id",
+        "value": "RenderPass_26"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_26",
+        "paramName": "__group_id",
+        "value": "LightEffect"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_26",
+        "paramName": "__group_instance_label",
+        "value": "Light Effect"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_26",
+        "paramName": "__group_name",
+        "value": "Light Effect"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_26",
+        "paramName": "__group_output_name",
+        "value": "Pass"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_26",
+        "paramName": "__node_label",
+        "value": "Render Pass"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_26",
+        "paramName": "blend_preset",
+        "value": "add"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_26",
+        "paramName": "blendfunc",
+        "value": "add"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_26",
+        "paramName": "camera",
+        "value": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_26",
+        "paramName": "clearColor",
+        "value": [
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_26",
+        "paramName": "culling",
+        "value": "none"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_26",
+        "paramName": "depthTest",
+        "value": false
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_26",
+        "paramName": "dst_alpha_factor",
+        "value": "one-minus-src-alpha"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_26",
+        "paramName": "dst_factor",
+        "value": "one"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_26",
+        "paramName": "label",
+        "value": "Render Pass"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_26",
+        "paramName": "loadOp",
+        "value": "none"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_26",
+        "paramName": "msaaSampleCount",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_26",
+        "paramName": "name",
+        "value": "Render Pass"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_26",
+        "paramName": "src_alpha_factor",
+        "value": "one"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_26",
+        "paramName": "src_factor",
+        "value": "one"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_voice_dots",
+        "paramName": "__dedup_group_id",
+        "value": "LightEffect"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_voice_dots",
+        "paramName": "__dedup_original_id",
+        "value": "RenderPass_voice_dots"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_voice_dots",
+        "paramName": "__group_id",
+        "value": "LightEffect"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_voice_dots",
+        "paramName": "__group_instance_label",
+        "value": "Light Effect"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_voice_dots",
+        "paramName": "__group_name",
+        "value": "Light Effect"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_voice_dots",
+        "paramName": "__group_output_name",
+        "value": "VoiceDotsPass"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_voice_dots",
+        "paramName": "__node_label",
+        "value": "VoiceDotsPass"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_voice_dots",
+        "paramName": "blend_preset",
+        "value": "premul_alpha"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_voice_dots",
+        "paramName": "blendfunc",
+        "value": "add"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_voice_dots",
+        "paramName": "camera",
+        "value": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_voice_dots",
+        "paramName": "clearColor",
+        "value": [
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_voice_dots",
+        "paramName": "culling",
+        "value": "none"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_voice_dots",
+        "paramName": "depthTest",
+        "value": false
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_voice_dots",
+        "paramName": "dst_alpha_factor",
+        "value": "one-minus-src-alpha"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_voice_dots",
+        "paramName": "dst_factor",
+        "value": "one-minus-src-alpha"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_voice_dots",
+        "paramName": "label",
+        "value": "VoiceDotsPass"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_voice_dots",
+        "paramName": "loadOp",
+        "value": "none"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_voice_dots",
+        "paramName": "msaaSampleCount",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_voice_dots",
+        "paramName": "name",
+        "value": "Render Pass"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_voice_dots",
+        "paramName": "src_alpha_factor",
+        "value": "one"
+      },
+      {
+        "nodeId": "GroupInstance_32/RenderPass_voice_dots",
+        "paramName": "src_factor",
+        "value": "one"
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "__dedup_group_id",
+        "value": "LightEffect"
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "__dedup_original_id",
+        "value": "ShaderMaterial_32"
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "__group_id",
+        "value": "LightEffect"
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "__group_input_name",
+        "value": "ParticleOriginYPx"
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "__group_instance_label",
+        "value": "Light Effect"
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "__group_name",
+        "value": "Light Effect"
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "__node_label",
+        "value": "SdfBased"
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "label",
+        "value": "SdfBased"
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:core_glow_opacity",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:corner_radius_px",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:frame_size_px",
+        "value": [
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:glow_bloom_sigma_px",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:glow_core_sigma_px",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:glow_mask_morph",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:glow_mid_sigma_px",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:glow_wide_sigma_px",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:light_bloom_min_sigma_px",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:light_bloom_size_px",
+        "value": [
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:light_clip_bloom_progress",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:light_hard_clip_feather_px",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:particle_color",
+        "value": [
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:particle_edge_sigma_px",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:particle_gain",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:particle_inner_size_px",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:particle_min_size_px",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:particle_noise_color",
+        "value": [
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:particle_opacity",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:particle_origin_y_px",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:particle_outer_size_px",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:particle_pointer_position_px",
+        "value": [
+          0,
+          0
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:particle_pointer_warp_progress",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:particle_warp_px",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:particle_warp_radius_px",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:sound_bar_inner_falloff_px",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:sound_bar_offset_px",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:sound_bar_outer_falloff_px",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:sound_bar_radius_px",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:time",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:total_energy",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_32",
+        "paramName": "param:voice_opacity",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_voice_dots",
+        "paramName": "__dedup_group_id",
+        "value": "LightEffect"
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_voice_dots",
+        "paramName": "__dedup_original_id",
+        "value": "ShaderMaterial_voice_dots"
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_voice_dots",
+        "paramName": "__group_id",
+        "value": "LightEffect"
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_voice_dots",
+        "paramName": "__group_input_name",
+        "value": "LightHardClipFeatherPx"
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_voice_dots",
+        "paramName": "__group_instance_label",
+        "value": "Light Effect"
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_voice_dots",
+        "paramName": "__group_name",
+        "value": "Light Effect"
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_voice_dots",
+        "paramName": "__node_label",
+        "value": "VoiceDots"
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_voice_dots",
+        "paramName": "label",
+        "value": "VoiceDots"
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_voice_dots",
+        "paramName": "param:corner_radius_px",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_voice_dots",
+        "paramName": "param:dot_max_height_px",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_voice_dots",
+        "paramName": "param:dot_min_height_px",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_voice_dots",
+        "paramName": "param:dot_sdf_feather_px",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_voice_dots",
+        "paramName": "param:dot_spacing_px",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_voice_dots",
+        "paramName": "param:dot_width_px",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_voice_dots",
+        "paramName": "param:frame_size_px",
+        "value": [
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_voice_dots",
+        "paramName": "param:hard_clip_feather_px",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_voice_dots",
+        "paramName": "param:human_voice_energies",
+        "value": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_voice_dots",
+        "paramName": "param:voice_dot_color",
+        "value": [
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_voice_dots",
+        "paramName": "param:voice_dot_opacity",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_voice_dots",
+        "paramName": "param:voice_dot_progress",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_32/ShaderMaterial_voice_dots",
+        "paramName": "param:voice_dot_response",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_33/FragCoord_14",
+        "paramName": "__dedup_group_id",
+        "value": "Background"
+      },
+      {
+        "nodeId": "GroupInstance_33/FragCoord_14",
+        "paramName": "__dedup_original_id",
+        "value": "FragCoord_14"
+      },
+      {
+        "nodeId": "GroupInstance_33/FragCoord_14",
+        "paramName": "__group_id",
+        "value": "Background"
+      },
+      {
+        "nodeId": "GroupInstance_33/FragCoord_14",
+        "paramName": "__group_instance_label",
+        "value": "Group 3"
+      },
+      {
+        "nodeId": "GroupInstance_33/FragCoord_14",
+        "paramName": "__group_name",
+        "value": "Group 3"
+      },
+      {
+        "nodeId": "GroupInstance_33/FragCoord_14",
+        "paramName": "__node_label",
+        "value": "FragCoord"
+      },
+      {
+        "nodeId": "GroupInstance_33/FragCoord_14",
+        "paramName": "label",
+        "value": "FragCoord"
+      },
+      {
+        "nodeId": "GroupInstance_33/GradientBlur_11",
+        "paramName": "__dedup_group_id",
+        "value": "Background"
+      },
+      {
+        "nodeId": "GroupInstance_33/GradientBlur_11",
+        "paramName": "__dedup_original_id",
+        "value": "GradientBlur_11"
+      },
+      {
+        "nodeId": "GroupInstance_33/GradientBlur_11",
+        "paramName": "__group_id",
+        "value": "Background"
+      },
+      {
+        "nodeId": "GroupInstance_33/GradientBlur_11",
+        "paramName": "__group_instance_label",
+        "value": "Group 3"
+      },
+      {
+        "nodeId": "GroupInstance_33/GradientBlur_11",
+        "paramName": "__group_name",
+        "value": "Group 3"
+      },
+      {
+        "nodeId": "GroupInstance_33/GradientBlur_11",
+        "paramName": "__node_label",
+        "value": "Gradient Blur"
+      },
+      {
+        "nodeId": "GroupInstance_33/GradientBlur_11",
+        "paramName": "blend_preset",
+        "value": "premul_alpha"
+      },
+      {
+        "nodeId": "GroupInstance_33/GradientBlur_11",
+        "paramName": "blendfunc",
+        "value": "add"
+      },
+      {
+        "nodeId": "GroupInstance_33/GradientBlur_11",
+        "paramName": "camera",
+        "value": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_33/GradientBlur_11",
+        "paramName": "dst_alpha_factor",
+        "value": "one-minus-src-alpha"
+      },
+      {
+        "nodeId": "GroupInstance_33/GradientBlur_11",
+        "paramName": "dst_factor",
+        "value": "one-minus-src-alpha"
+      },
+      {
+        "nodeId": "GroupInstance_33/GradientBlur_11",
+        "paramName": "label",
+        "value": "Gradient Blur"
+      },
+      {
+        "nodeId": "GroupInstance_33/GradientBlur_11",
+        "paramName": "src_alpha_factor",
+        "value": "one"
+      },
+      {
+        "nodeId": "GroupInstance_33/GradientBlur_11",
+        "paramName": "src_factor",
+        "value": "one"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_2",
+        "paramName": "__dedup_group_id",
+        "value": "BackgroundTexture"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_2",
+        "paramName": "__dedup_original_id",
+        "value": "ImageTexture_2"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_2",
+        "paramName": "__group_id",
+        "value": "BackgroundTexture"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_2",
+        "paramName": "__group_instance_label",
+        "value": "Group"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_2",
+        "paramName": "__group_name",
+        "value": "Group"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_2",
+        "paramName": "__node_label",
+        "value": "Image Texture"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_2",
+        "paramName": "_uiCollapsed",
+        "value": true
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_2",
+        "paramName": "_uiCollapsedFields",
+        "value": []
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_2",
+        "paramName": "addressModeU",
+        "value": "repeat"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_2",
+        "paramName": "addressModeV",
+        "value": "repeat"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_2",
+        "paramName": "alphaMode",
+        "value": "straight"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_2",
+        "paramName": "aspectCorrection",
+        "value": "fill"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_2",
+        "paramName": "assetId",
+        "value": "2ed590c9f2c5"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_2",
+        "paramName": "encoderSpace",
+        "value": "srgb"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_2",
+        "paramName": "extension",
+        "value": "repeat"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_2",
+        "paramName": "interpolation",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_2",
+        "paramName": "label",
+        "value": "Image Texture"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_2",
+        "paramName": "magFilter",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_2",
+        "paramName": "minFilter",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_2",
+        "paramName": "mipmapFilter",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_6",
+        "paramName": "__dedup_group_id",
+        "value": "BackgroundTexture"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_6",
+        "paramName": "__dedup_original_id",
+        "value": "ImageTexture_6"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_6",
+        "paramName": "__group_id",
+        "value": "BackgroundTexture"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_6",
+        "paramName": "__group_instance_label",
+        "value": "Group"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_6",
+        "paramName": "__group_name",
+        "value": "Group"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_6",
+        "paramName": "__node_label",
+        "value": "Image Texture"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_6",
+        "paramName": "_uiCollapsed",
+        "value": true
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_6",
+        "paramName": "addressModeU",
+        "value": "repeat"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_6",
+        "paramName": "addressModeV",
+        "value": "repeat"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_6",
+        "paramName": "alphaMode",
+        "value": "straight"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_6",
+        "paramName": "aspectCorrection",
+        "value": "fill"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_6",
+        "paramName": "assetId",
+        "value": "0a00dc1303fe"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_6",
+        "paramName": "encoderSpace",
+        "value": "srgb"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_6",
+        "paramName": "extension",
+        "value": "repeat"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_6",
+        "paramName": "interpolation",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_6",
+        "paramName": "label",
+        "value": "Image Texture"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_6",
+        "paramName": "magFilter",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_6",
+        "paramName": "minFilter",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_6",
+        "paramName": "mipmapFilter",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_8",
+        "paramName": "__dedup_group_id",
+        "value": "BackgroundTexture"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_8",
+        "paramName": "__dedup_original_id",
+        "value": "ImageTexture_8"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_8",
+        "paramName": "__group_id",
+        "value": "BackgroundTexture"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_8",
+        "paramName": "__group_instance_label",
+        "value": "Group"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_8",
+        "paramName": "__group_name",
+        "value": "Group"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_8",
+        "paramName": "__node_label",
+        "value": "Image Texture"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_8",
+        "paramName": "_uiCollapsed",
+        "value": true
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_8",
+        "paramName": "addressModeU",
+        "value": "repeat"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_8",
+        "paramName": "addressModeV",
+        "value": "repeat"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_8",
+        "paramName": "alphaMode",
+        "value": "straight"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_8",
+        "paramName": "aspectCorrection",
+        "value": "fill"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_8",
+        "paramName": "assetId",
+        "value": "62fb14427cc7"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_8",
+        "paramName": "encoderSpace",
+        "value": "srgb"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_8",
+        "paramName": "extension",
+        "value": "repeat"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_8",
+        "paramName": "interpolation",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_8",
+        "paramName": "label",
+        "value": "Image Texture"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_8",
+        "paramName": "magFilter",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_8",
+        "paramName": "minFilter",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_8",
+        "paramName": "mipmapFilter",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_DefaultWallpaper",
+        "paramName": "__dedup_group_id",
+        "value": "BackgroundTexture"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_DefaultWallpaper",
+        "paramName": "__dedup_original_id",
+        "value": "ImageTexture_DefaultWallpaper"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_DefaultWallpaper",
+        "paramName": "__group_id",
+        "value": "BackgroundTexture"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_DefaultWallpaper",
+        "paramName": "__group_instance_label",
+        "value": "Group"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_DefaultWallpaper",
+        "paramName": "__group_name",
+        "value": "Group"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_DefaultWallpaper",
+        "paramName": "__node_label",
+        "value": "Default Wallpaper"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_DefaultWallpaper",
+        "paramName": "_uiCollapsed",
+        "value": true
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_DefaultWallpaper",
+        "paramName": "addressModeU",
+        "value": "repeat"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_DefaultWallpaper",
+        "paramName": "addressModeV",
+        "value": "repeat"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_DefaultWallpaper",
+        "paramName": "alphaMode",
+        "value": "straight"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_DefaultWallpaper",
+        "paramName": "aspectCorrection",
+        "value": "fill"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_DefaultWallpaper",
+        "paramName": "assetId",
+        "value": "20747d2c0d4d"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_DefaultWallpaper",
+        "paramName": "encoderSpace",
+        "value": "srgb"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_DefaultWallpaper",
+        "paramName": "extension",
+        "value": "repeat"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_DefaultWallpaper",
+        "paramName": "interpolation",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_DefaultWallpaper",
+        "paramName": "label",
+        "value": "Default Wallpaper"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_DefaultWallpaper",
+        "paramName": "magFilter",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_DefaultWallpaper",
+        "paramName": "minFilter",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_DefaultWallpaper",
+        "paramName": "mipmapFilter",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_ee08ac29_17",
+        "paramName": "__dedup_group_id",
+        "value": "BackgroundTexture"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_ee08ac29_17",
+        "paramName": "__dedup_original_id",
+        "value": "ImageTexture_ee08ac29_17"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_ee08ac29_17",
+        "paramName": "__group_id",
+        "value": "BackgroundTexture"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_ee08ac29_17",
+        "paramName": "__group_instance_label",
+        "value": "Group"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_ee08ac29_17",
+        "paramName": "__group_name",
+        "value": "Group"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_ee08ac29_17",
+        "paramName": "__node_label",
+        "value": "Image Texture"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_ee08ac29_17",
+        "paramName": "_uiCollapsed",
+        "value": true
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_ee08ac29_17",
+        "paramName": "addressModeU",
+        "value": "repeat"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_ee08ac29_17",
+        "paramName": "addressModeV",
+        "value": "repeat"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_ee08ac29_17",
+        "paramName": "alphaMode",
+        "value": "straight"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_ee08ac29_17",
+        "paramName": "aspectCorrection",
+        "value": "fill"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_ee08ac29_17",
+        "paramName": "assetId",
+        "value": "825ac63beda7"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_ee08ac29_17",
+        "paramName": "encoderSpace",
+        "value": "srgb"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_ee08ac29_17",
+        "paramName": "extension",
+        "value": "repeat"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_ee08ac29_17",
+        "paramName": "interpolation",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_ee08ac29_17",
+        "paramName": "label",
+        "value": "Image Texture"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_ee08ac29_17",
+        "paramName": "magFilter",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_ee08ac29_17",
+        "paramName": "minFilter",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ImageTexture_ee08ac29_17",
+        "paramName": "mipmapFilter",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ResourcePool_1",
+        "paramName": "__dedup_group_id",
+        "value": "BackgroundTexture"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ResourcePool_1",
+        "paramName": "__dedup_original_id",
+        "value": "ResourcePool_1"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ResourcePool_1",
+        "paramName": "__group_id",
+        "value": "BackgroundTexture"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ResourcePool_1",
+        "paramName": "__group_instance_label",
+        "value": "Group"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ResourcePool_1",
+        "paramName": "__group_name",
+        "value": "Group"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ResourcePool_1",
+        "paramName": "__group_output_name",
+        "value": "Output 1"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ResourcePool_1",
+        "paramName": "__node_label",
+        "value": "Resource Pool"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ResourcePool_1",
+        "paramName": "label",
+        "value": "Resource Pool"
+      },
+      {
+        "nodeId": "GroupInstance_33/GroupInstance_10/ResourcePool_1",
+        "paramName": "selectedIndex",
+        "value": 4
+      },
+      {
+        "nodeId": "GroupInstance_33/MathClosure_15",
+        "paramName": "__dedup_group_id",
+        "value": "Background"
+      },
+      {
+        "nodeId": "GroupInstance_33/MathClosure_15",
+        "paramName": "__dedup_original_id",
+        "value": "MathClosure_15"
+      },
+      {
+        "nodeId": "GroupInstance_33/MathClosure_15",
+        "paramName": "__group_id",
+        "value": "Background"
+      },
+      {
+        "nodeId": "GroupInstance_33/MathClosure_15",
+        "paramName": "__group_input_name",
+        "value": "GradientBlurStartY"
+      },
+      {
+        "nodeId": "GroupInstance_33/MathClosure_15",
+        "paramName": "__group_instance_label",
+        "value": "Group 3"
+      },
+      {
+        "nodeId": "GroupInstance_33/MathClosure_15",
+        "paramName": "__group_name",
+        "value": "Group 3"
+      },
+      {
+        "nodeId": "GroupInstance_33/MathClosure_15",
+        "paramName": "__node_label",
+        "value": "Math Closure"
+      },
+      {
+        "nodeId": "GroupInstance_33/MathClosure_15",
+        "paramName": "_uiCollapsedFields",
+        "value": [
+          "sec:source"
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_33/MathClosure_15",
+        "paramName": "label",
+        "value": "Math Closure"
+      },
+      {
+        "nodeId": "GroupInstance_33/MathClosure_15",
+        "paramName": "source",
+        "value": "output = mix(\n  startSigma,\n  endSigma,\n  smoothstep(start, end, xy.y)\n);"
+      },
+      {
+        "nodeId": "GroupInstance_33/PassTexture_BackgroundBlur",
+        "paramName": "__dedup_group_id",
+        "value": "Background"
+      },
+      {
+        "nodeId": "GroupInstance_33/PassTexture_BackgroundBlur",
+        "paramName": "__dedup_original_id",
+        "value": "PassTexture_BackgroundBlur"
+      },
+      {
+        "nodeId": "GroupInstance_33/PassTexture_BackgroundBlur",
+        "paramName": "__group_id",
+        "value": "Background"
+      },
+      {
+        "nodeId": "GroupInstance_33/PassTexture_BackgroundBlur",
+        "paramName": "__group_instance_label",
+        "value": "Group 3"
+      },
+      {
+        "nodeId": "GroupInstance_33/PassTexture_BackgroundBlur",
+        "paramName": "__group_name",
+        "value": "Group 3"
+      },
+      {
+        "nodeId": "GroupInstance_33/PassTexture_BackgroundBlur",
+        "paramName": "__node_label",
+        "value": "Background Blur Texture"
+      },
+      {
+        "nodeId": "GroupInstance_33/PassTexture_BackgroundBlur",
+        "paramName": "addressModeU",
+        "value": "clamp-to-edge"
+      },
+      {
+        "nodeId": "GroupInstance_33/PassTexture_BackgroundBlur",
+        "paramName": "addressModeV",
+        "value": "clamp-to-edge"
+      },
+      {
+        "nodeId": "GroupInstance_33/PassTexture_BackgroundBlur",
+        "paramName": "label",
+        "value": "Background Blur Texture"
+      },
+      {
+        "nodeId": "GroupInstance_33/PassTexture_BackgroundBlur",
+        "paramName": "magFilter",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_33/PassTexture_BackgroundBlur",
+        "paramName": "minFilter",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_33/PassTexture_BackgroundBlur",
+        "paramName": "mipmapFilter",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_33/Rect2DGeometry_BackgroundDarken",
+        "paramName": "__dedup_group_id",
+        "value": "Background"
+      },
+      {
+        "nodeId": "GroupInstance_33/Rect2DGeometry_BackgroundDarken",
+        "paramName": "__dedup_original_id",
+        "value": "Rect2DGeometry_BackgroundDarken"
+      },
+      {
+        "nodeId": "GroupInstance_33/Rect2DGeometry_BackgroundDarken",
+        "paramName": "__group_id",
+        "value": "Background"
+      },
+      {
+        "nodeId": "GroupInstance_33/Rect2DGeometry_BackgroundDarken",
+        "paramName": "__group_input_name",
+        "value": "BackgroundSizePx"
+      },
+      {
+        "nodeId": "GroupInstance_33/Rect2DGeometry_BackgroundDarken",
+        "paramName": "__group_instance_label",
+        "value": "Group 3"
+      },
+      {
+        "nodeId": "GroupInstance_33/Rect2DGeometry_BackgroundDarken",
+        "paramName": "__group_name",
+        "value": "Group 3"
+      },
+      {
+        "nodeId": "GroupInstance_33/Rect2DGeometry_BackgroundDarken",
+        "paramName": "__node_label",
+        "value": "Background Darken Geometry"
+      },
+      {
+        "nodeId": "GroupInstance_33/Rect2DGeometry_BackgroundDarken",
+        "paramName": "label",
+        "value": "Background Darken Geometry"
+      },
+      {
+        "nodeId": "GroupInstance_33/Rect2DGeometry_BackgroundDarken",
+        "paramName": "position",
+        "value": [
+          0,
+          0
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_33/Rect2DGeometry_BackgroundDarken",
+        "paramName": "radius",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_33/Rect2DGeometry_BackgroundDarken",
+        "paramName": "size",
+        "value": [
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_33/Rect2DGeometry_BackgroundDarken",
+        "paramName": "smooth",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_33/RenderPass_BackgroundDarken",
+        "paramName": "__dedup_group_id",
+        "value": "Background"
+      },
+      {
+        "nodeId": "GroupInstance_33/RenderPass_BackgroundDarken",
+        "paramName": "__dedup_original_id",
+        "value": "RenderPass_BackgroundDarken"
+      },
+      {
+        "nodeId": "GroupInstance_33/RenderPass_BackgroundDarken",
+        "paramName": "__group_id",
+        "value": "Background"
+      },
+      {
+        "nodeId": "GroupInstance_33/RenderPass_BackgroundDarken",
+        "paramName": "__group_instance_label",
+        "value": "Group 3"
+      },
+      {
+        "nodeId": "GroupInstance_33/RenderPass_BackgroundDarken",
+        "paramName": "__group_name",
+        "value": "Group 3"
+      },
+      {
+        "nodeId": "GroupInstance_33/RenderPass_BackgroundDarken",
+        "paramName": "__group_output_name",
+        "value": "Output"
+      },
+      {
+        "nodeId": "GroupInstance_33/RenderPass_BackgroundDarken",
+        "paramName": "__node_label",
+        "value": "Background Darken Pass"
+      },
+      {
+        "nodeId": "GroupInstance_33/RenderPass_BackgroundDarken",
+        "paramName": "blend_preset",
+        "value": "premul_alpha"
+      },
+      {
+        "nodeId": "GroupInstance_33/RenderPass_BackgroundDarken",
+        "paramName": "blendfunc",
+        "value": "add"
+      },
+      {
+        "nodeId": "GroupInstance_33/RenderPass_BackgroundDarken",
+        "paramName": "camera",
+        "value": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_33/RenderPass_BackgroundDarken",
+        "paramName": "clearColor",
+        "value": [
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_33/RenderPass_BackgroundDarken",
+        "paramName": "culling",
+        "value": "none"
+      },
+      {
+        "nodeId": "GroupInstance_33/RenderPass_BackgroundDarken",
+        "paramName": "depthTest",
+        "value": false
+      },
+      {
+        "nodeId": "GroupInstance_33/RenderPass_BackgroundDarken",
+        "paramName": "dst_alpha_factor",
+        "value": "one-minus-src-alpha"
+      },
+      {
+        "nodeId": "GroupInstance_33/RenderPass_BackgroundDarken",
+        "paramName": "dst_factor",
+        "value": "one-minus-src-alpha"
+      },
+      {
+        "nodeId": "GroupInstance_33/RenderPass_BackgroundDarken",
+        "paramName": "label",
+        "value": "Background Darken Pass"
+      },
+      {
+        "nodeId": "GroupInstance_33/RenderPass_BackgroundDarken",
+        "paramName": "loadOp",
+        "value": "none"
+      },
+      {
+        "nodeId": "GroupInstance_33/RenderPass_BackgroundDarken",
+        "paramName": "msaaSampleCount",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_33/RenderPass_BackgroundDarken",
+        "paramName": "name",
+        "value": "Render Pass"
+      },
+      {
+        "nodeId": "GroupInstance_33/RenderPass_BackgroundDarken",
+        "paramName": "src_alpha_factor",
+        "value": "one"
+      },
+      {
+        "nodeId": "GroupInstance_33/RenderPass_BackgroundDarken",
+        "paramName": "src_factor",
+        "value": "one"
+      },
+      {
+        "nodeId": "GroupInstance_33/ShaderMaterial_BackgroundDarken",
+        "paramName": "__dedup_group_id",
+        "value": "Background"
+      },
+      {
+        "nodeId": "GroupInstance_33/ShaderMaterial_BackgroundDarken",
+        "paramName": "__dedup_original_id",
+        "value": "ShaderMaterial_BackgroundDarken"
+      },
+      {
+        "nodeId": "GroupInstance_33/ShaderMaterial_BackgroundDarken",
+        "paramName": "__group_id",
+        "value": "Background"
+      },
+      {
+        "nodeId": "GroupInstance_33/ShaderMaterial_BackgroundDarken",
+        "paramName": "__group_input_name",
+        "value": "BackgroundDarkenAlpha"
+      },
+      {
+        "nodeId": "GroupInstance_33/ShaderMaterial_BackgroundDarken",
+        "paramName": "__group_instance_label",
+        "value": "Group 3"
+      },
+      {
+        "nodeId": "GroupInstance_33/ShaderMaterial_BackgroundDarken",
+        "paramName": "__group_name",
+        "value": "Group 3"
+      },
+      {
+        "nodeId": "GroupInstance_33/ShaderMaterial_BackgroundDarken",
+        "paramName": "__node_label",
+        "value": "Background Darken Material"
+      },
+      {
+        "nodeId": "GroupInstance_33/ShaderMaterial_BackgroundDarken",
+        "paramName": "label",
+        "value": "Background Darken Material"
+      },
+      {
+        "nodeId": "GroupInstance_33/ShaderMaterial_BackgroundDarken",
+        "paramName": "param:darken_alpha",
+        "value": 0.3
+      },
+      {
+        "nodeId": "GroupInstance_33/sys.migrate.processing.geometry.edge_1",
+        "paramName": "__dedup_group_id",
+        "value": "Background"
+      },
+      {
+        "nodeId": "GroupInstance_33/sys.migrate.processing.geometry.edge_1",
+        "paramName": "__dedup_original_id",
+        "value": "sys.migrate.processing.geometry.edge_1"
+      },
+      {
+        "nodeId": "GroupInstance_33/sys.migrate.processing.geometry.edge_1",
+        "paramName": "__group_id",
+        "value": "Background"
+      },
+      {
+        "nodeId": "GroupInstance_33/sys.migrate.processing.geometry.edge_1",
+        "paramName": "__group_input_name",
+        "value": "BackgroundSizePx"
+      },
+      {
+        "nodeId": "GroupInstance_33/sys.migrate.processing.geometry.edge_1",
+        "paramName": "__group_instance_label",
+        "value": "Group 3"
+      },
+      {
+        "nodeId": "GroupInstance_33/sys.migrate.processing.geometry.edge_1",
+        "paramName": "__group_name",
+        "value": "Group 3"
+      },
+      {
+        "nodeId": "GroupInstance_33/sys.migrate.processing.geometry.edge_1",
+        "paramName": "__node_label",
+        "value": "2D Rect"
+      },
+      {
+        "nodeId": "GroupInstance_33/sys.migrate.processing.geometry.edge_1",
+        "paramName": "label",
+        "value": "2D Rect"
+      },
+      {
+        "nodeId": "GroupInstance_33/sys.migrate.processing.geometry.edge_1",
+        "paramName": "radius",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_33/sys.migrate.processing.geometry.edge_1",
+        "paramName": "smooth",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_33/sys.migrate.processing.pass.edge_1",
+        "paramName": "__dedup_group_id",
+        "value": "Background"
+      },
+      {
+        "nodeId": "GroupInstance_33/sys.migrate.processing.pass.edge_1",
+        "paramName": "__dedup_original_id",
+        "value": "sys.migrate.processing.pass.edge_1"
+      },
+      {
+        "nodeId": "GroupInstance_33/sys.migrate.processing.pass.edge_1",
+        "paramName": "__group_id",
+        "value": "Background"
+      },
+      {
+        "nodeId": "GroupInstance_33/sys.migrate.processing.pass.edge_1",
+        "paramName": "__group_instance_label",
+        "value": "Group 3"
+      },
+      {
+        "nodeId": "GroupInstance_33/sys.migrate.processing.pass.edge_1",
+        "paramName": "__group_name",
+        "value": "Group 3"
+      },
+      {
+        "nodeId": "GroupInstance_33/sys.migrate.processing.pass.edge_1",
+        "paramName": "__node_label",
+        "value": "Render Pass"
+      },
+      {
+        "nodeId": "GroupInstance_33/sys.migrate.processing.pass.edge_1",
+        "paramName": "blend_preset",
+        "value": "premul_alpha"
+      },
+      {
+        "nodeId": "GroupInstance_33/sys.migrate.processing.pass.edge_1",
+        "paramName": "blendfunc",
+        "value": "add"
+      },
+      {
+        "nodeId": "GroupInstance_33/sys.migrate.processing.pass.edge_1",
+        "paramName": "camera",
+        "value": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_33/sys.migrate.processing.pass.edge_1",
+        "paramName": "clearColor",
+        "value": [
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_33/sys.migrate.processing.pass.edge_1",
+        "paramName": "culling",
+        "value": "none"
+      },
+      {
+        "nodeId": "GroupInstance_33/sys.migrate.processing.pass.edge_1",
+        "paramName": "depthTest",
+        "value": false
+      },
+      {
+        "nodeId": "GroupInstance_33/sys.migrate.processing.pass.edge_1",
+        "paramName": "dst_alpha_factor",
+        "value": "one-minus-src-alpha"
+      },
+      {
+        "nodeId": "GroupInstance_33/sys.migrate.processing.pass.edge_1",
+        "paramName": "dst_factor",
+        "value": "one-minus-src-alpha"
+      },
+      {
+        "nodeId": "GroupInstance_33/sys.migrate.processing.pass.edge_1",
+        "paramName": "label",
+        "value": "Render Pass"
+      },
+      {
+        "nodeId": "GroupInstance_33/sys.migrate.processing.pass.edge_1",
+        "paramName": "loadOp",
+        "value": "clear"
+      },
+      {
+        "nodeId": "GroupInstance_33/sys.migrate.processing.pass.edge_1",
+        "paramName": "msaaSampleCount",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_33/sys.migrate.processing.pass.edge_1",
+        "paramName": "name",
+        "value": "Render Pass"
+      },
+      {
+        "nodeId": "GroupInstance_33/sys.migrate.processing.pass.edge_1",
+        "paramName": "src_alpha_factor",
+        "value": "one"
+      },
+      {
+        "nodeId": "GroupInstance_33/sys.migrate.processing.pass.edge_1",
+        "paramName": "src_factor",
+        "value": "one"
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "__dedup_group_id",
+        "value": "GlassComponent"
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "__dedup_original_id",
+        "value": "GlassMaterial_20"
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "__group_id",
+        "value": "GlassComponent"
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "__group_input_name",
+        "value": "GlassShapeThicknessPx"
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "__group_instance_label",
+        "value": "Group 4"
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "__group_name",
+        "value": "Group 4"
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "__node_label",
+        "value": "Glass Material"
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "_uiCollapsedFields",
+        "value": []
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "label",
+        "value": "Glass Material"
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "uAlpha",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "uBgColorBrightness",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "uBgColorSaturation",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "uBionicBurn",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "uBlendLuminanceAmount",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "uBlendLuminanceValues",
+        "value": [
+          0,
+          0.3333,
+          0.667,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "uBlendSaturation",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "uDirectionalLightAngleRange",
+        "value": 0.4
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "uDirectionalLightDirection",
+        "value": {
+          "x": -0.3,
+          "y": -0.6,
+          "z": -0.1
+        }
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "uDirectionalLightIntensity",
+        "value": 0.8
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "uDirectionalLightOppositeIntensity",
+        "value": 0.6
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "uGeoPxRadius",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "uInnerBottom",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "uInnerColorMix",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "uInnerColorPow",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "uInnerColorWhite",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "uInnerGlassColor",
+        "value": [
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "uPressLightCenterFall",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "uPressLightCenterPeak",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "uPressLightCenterStrength",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "uPressRingStrength",
+        "value": [
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "uReflectLighten",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "uReflectStrength",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "uReflectionExtend",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "uReflectionExtendColor",
+        "value": [
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "uRefractBlurScale",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "uRefractIorIOR",
+        "value": 1.5
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "uShapeEdgePow",
+        "value": 2
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "uShapeEdgePx",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "uShapeReflectOffsetPx",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_34/GlassMaterial_20",
+        "paramName": "uShapeThicknessPx",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_34/GuassianBlurPass_01206f1b_23",
+        "paramName": "__dedup_group_id",
+        "value": "GlassComponent"
+      },
+      {
+        "nodeId": "GroupInstance_34/GuassianBlurPass_01206f1b_23",
+        "paramName": "__dedup_original_id",
+        "value": "GuassianBlurPass_01206f1b_23"
+      },
+      {
+        "nodeId": "GroupInstance_34/GuassianBlurPass_01206f1b_23",
+        "paramName": "__group_id",
+        "value": "GlassComponent"
+      },
+      {
+        "nodeId": "GroupInstance_34/GuassianBlurPass_01206f1b_23",
+        "paramName": "__group_input_name",
+        "value": "GlassBlurRadiusPx"
+      },
+      {
+        "nodeId": "GroupInstance_34/GuassianBlurPass_01206f1b_23",
+        "paramName": "__group_instance_label",
+        "value": "Group 4"
+      },
+      {
+        "nodeId": "GroupInstance_34/GuassianBlurPass_01206f1b_23",
+        "paramName": "__group_name",
+        "value": "Group 4"
+      },
+      {
+        "nodeId": "GroupInstance_34/GuassianBlurPass_01206f1b_23",
+        "paramName": "__node_label",
+        "value": "Gaussian Blur Pass"
+      },
+      {
+        "nodeId": "GroupInstance_34/GuassianBlurPass_01206f1b_23",
+        "paramName": "blend_preset",
+        "value": "premul_alpha"
+      },
+      {
+        "nodeId": "GroupInstance_34/GuassianBlurPass_01206f1b_23",
+        "paramName": "blendfunc",
+        "value": "add"
+      },
+      {
+        "nodeId": "GroupInstance_34/GuassianBlurPass_01206f1b_23",
+        "paramName": "camera",
+        "value": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_34/GuassianBlurPass_01206f1b_23",
+        "paramName": "dst_alpha_factor",
+        "value": "one-minus-src-alpha"
+      },
+      {
+        "nodeId": "GroupInstance_34/GuassianBlurPass_01206f1b_23",
+        "paramName": "dst_factor",
+        "value": "one-minus-src-alpha"
+      },
+      {
+        "nodeId": "GroupInstance_34/GuassianBlurPass_01206f1b_23",
+        "paramName": "extend",
+        "value": false
+      },
+      {
+        "nodeId": "GroupInstance_34/GuassianBlurPass_01206f1b_23",
+        "paramName": "label",
+        "value": "Gaussian Blur Pass"
+      },
+      {
+        "nodeId": "GroupInstance_34/GuassianBlurPass_01206f1b_23",
+        "paramName": "mode",
+        "value": "standard"
+      },
+      {
+        "nodeId": "GroupInstance_34/GuassianBlurPass_01206f1b_23",
+        "paramName": "radius",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_34/GuassianBlurPass_01206f1b_23",
+        "paramName": "src_alpha_factor",
+        "value": "one"
+      },
+      {
+        "nodeId": "GroupInstance_34/GuassianBlurPass_01206f1b_23",
+        "paramName": "src_factor",
+        "value": "one"
+      },
+      {
+        "nodeId": "GroupInstance_34/Rect2DGeometry_22",
+        "paramName": "__dedup_group_id",
+        "value": "GlassComponent"
+      },
+      {
+        "nodeId": "GroupInstance_34/Rect2DGeometry_22",
+        "paramName": "__dedup_original_id",
+        "value": "Rect2DGeometry_22"
+      },
+      {
+        "nodeId": "GroupInstance_34/Rect2DGeometry_22",
+        "paramName": "__group_id",
+        "value": "GlassComponent"
+      },
+      {
+        "nodeId": "GroupInstance_34/Rect2DGeometry_22",
+        "paramName": "__group_input_name",
+        "value": "Position"
+      },
+      {
+        "nodeId": "GroupInstance_34/Rect2DGeometry_22",
+        "paramName": "__group_instance_label",
+        "value": "Group 4"
+      },
+      {
+        "nodeId": "GroupInstance_34/Rect2DGeometry_22",
+        "paramName": "__group_name",
+        "value": "Group 4"
+      },
+      {
+        "nodeId": "GroupInstance_34/Rect2DGeometry_22",
+        "paramName": "__node_label",
+        "value": "2D Rect"
+      },
+      {
+        "nodeId": "GroupInstance_34/Rect2DGeometry_22",
+        "paramName": "label",
+        "value": "2D Rect"
+      },
+      {
+        "nodeId": "GroupInstance_34/Rect2DGeometry_22",
+        "paramName": "radius",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_34/Rect2DGeometry_22",
+        "paramName": "smooth",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_34/RenderPass_21",
+        "paramName": "__dedup_group_id",
+        "value": "GlassComponent"
+      },
+      {
+        "nodeId": "GroupInstance_34/RenderPass_21",
+        "paramName": "__dedup_original_id",
+        "value": "RenderPass_21"
+      },
+      {
+        "nodeId": "GroupInstance_34/RenderPass_21",
+        "paramName": "__group_id",
+        "value": "GlassComponent"
+      },
+      {
+        "nodeId": "GroupInstance_34/RenderPass_21",
+        "paramName": "__group_instance_label",
+        "value": "Group 4"
+      },
+      {
+        "nodeId": "GroupInstance_34/RenderPass_21",
+        "paramName": "__group_name",
+        "value": "Group 4"
+      },
+      {
+        "nodeId": "GroupInstance_34/RenderPass_21",
+        "paramName": "__group_output_name",
+        "value": "Pass"
+      },
+      {
+        "nodeId": "GroupInstance_34/RenderPass_21",
+        "paramName": "__node_label",
+        "value": "Render Pass"
+      },
+      {
+        "nodeId": "GroupInstance_34/RenderPass_21",
+        "paramName": "blend_preset",
+        "value": "premul_alpha"
+      },
+      {
+        "nodeId": "GroupInstance_34/RenderPass_21",
+        "paramName": "blendfunc",
+        "value": "add"
+      },
+      {
+        "nodeId": "GroupInstance_34/RenderPass_21",
+        "paramName": "camera",
+        "value": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_34/RenderPass_21",
+        "paramName": "clearColor",
+        "value": [
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_34/RenderPass_21",
+        "paramName": "culling",
+        "value": "none"
+      },
+      {
+        "nodeId": "GroupInstance_34/RenderPass_21",
+        "paramName": "depthTest",
+        "value": false
+      },
+      {
+        "nodeId": "GroupInstance_34/RenderPass_21",
+        "paramName": "dst_alpha_factor",
+        "value": "one-minus-src-alpha"
+      },
+      {
+        "nodeId": "GroupInstance_34/RenderPass_21",
+        "paramName": "dst_factor",
+        "value": "one-minus-src-alpha"
+      },
+      {
+        "nodeId": "GroupInstance_34/RenderPass_21",
+        "paramName": "label",
+        "value": "Render Pass"
+      },
+      {
+        "nodeId": "GroupInstance_34/RenderPass_21",
+        "paramName": "loadOp",
+        "value": "none"
+      },
+      {
+        "nodeId": "GroupInstance_34/RenderPass_21",
+        "paramName": "msaaSampleCount",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_34/RenderPass_21",
+        "paramName": "name",
+        "value": "Render Pass"
+      },
+      {
+        "nodeId": "GroupInstance_34/RenderPass_21",
+        "paramName": "src_alpha_factor",
+        "value": "one"
+      },
+      {
+        "nodeId": "GroupInstance_34/RenderPass_21",
+        "paramName": "src_factor",
+        "value": "one"
+      },
+      {
+        "nodeId": "GroupInstance_51/ImageTexture_InputBarUI",
+        "paramName": "__dedup_group_id",
+        "value": "InputBarUI"
+      },
+      {
+        "nodeId": "GroupInstance_51/ImageTexture_InputBarUI",
+        "paramName": "__dedup_original_id",
+        "value": "ImageTexture_InputBarUI"
+      },
+      {
+        "nodeId": "GroupInstance_51/ImageTexture_InputBarUI",
+        "paramName": "__group_id",
+        "value": "InputBarUI"
+      },
+      {
+        "nodeId": "GroupInstance_51/ImageTexture_InputBarUI",
+        "paramName": "__group_instance_label",
+        "value": "Group 2"
+      },
+      {
+        "nodeId": "GroupInstance_51/ImageTexture_InputBarUI",
+        "paramName": "__group_name",
+        "value": "Group 2"
+      },
+      {
+        "nodeId": "GroupInstance_51/ImageTexture_InputBarUI",
+        "paramName": "__node_label",
+        "value": "Input Bar UI Texture"
+      },
+      {
+        "nodeId": "GroupInstance_51/ImageTexture_InputBarUI",
+        "paramName": "addressModeU",
+        "value": "clamp-to-edge"
+      },
+      {
+        "nodeId": "GroupInstance_51/ImageTexture_InputBarUI",
+        "paramName": "addressModeV",
+        "value": "clamp-to-edge"
+      },
+      {
+        "nodeId": "GroupInstance_51/ImageTexture_InputBarUI",
+        "paramName": "alphaMode",
+        "value": "straight"
+      },
+      {
+        "nodeId": "GroupInstance_51/ImageTexture_InputBarUI",
+        "paramName": "aspectCorrection",
+        "value": "off"
+      },
+      {
+        "nodeId": "GroupInstance_51/ImageTexture_InputBarUI",
+        "paramName": "assetId",
+        "value": "9d8125d0f6eb"
+      },
+      {
+        "nodeId": "GroupInstance_51/ImageTexture_InputBarUI",
+        "paramName": "encoderSpace",
+        "value": "srgb"
+      },
+      {
+        "nodeId": "GroupInstance_51/ImageTexture_InputBarUI",
+        "paramName": "extension",
+        "value": "repeat"
+      },
+      {
+        "nodeId": "GroupInstance_51/ImageTexture_InputBarUI",
+        "paramName": "interpolation",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_51/ImageTexture_InputBarUI",
+        "paramName": "label",
+        "value": "Input Bar UI Texture"
+      },
+      {
+        "nodeId": "GroupInstance_51/ImageTexture_InputBarUI",
+        "paramName": "magFilter",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_51/ImageTexture_InputBarUI",
+        "paramName": "minFilter",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_51/ImageTexture_InputBarUI",
+        "paramName": "mipmapFilter",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_51/Rect2DGeometry_InputBarUI",
+        "paramName": "__dedup_group_id",
+        "value": "InputBarUI"
+      },
+      {
+        "nodeId": "GroupInstance_51/Rect2DGeometry_InputBarUI",
+        "paramName": "__dedup_original_id",
+        "value": "Rect2DGeometry_InputBarUI"
+      },
+      {
+        "nodeId": "GroupInstance_51/Rect2DGeometry_InputBarUI",
+        "paramName": "__group_id",
+        "value": "InputBarUI"
+      },
+      {
+        "nodeId": "GroupInstance_51/Rect2DGeometry_InputBarUI",
+        "paramName": "__group_input_name",
+        "value": "Size"
+      },
+      {
+        "nodeId": "GroupInstance_51/Rect2DGeometry_InputBarUI",
+        "paramName": "__group_instance_label",
+        "value": "Group 2"
+      },
+      {
+        "nodeId": "GroupInstance_51/Rect2DGeometry_InputBarUI",
+        "paramName": "__group_name",
+        "value": "Group 2"
+      },
+      {
+        "nodeId": "GroupInstance_51/Rect2DGeometry_InputBarUI",
+        "paramName": "__node_label",
+        "value": "Input Bar UI Geometry"
+      },
+      {
+        "nodeId": "GroupInstance_51/Rect2DGeometry_InputBarUI",
+        "paramName": "label",
+        "value": "Input Bar UI Geometry"
+      },
+      {
+        "nodeId": "GroupInstance_51/Rect2DGeometry_InputBarUI",
+        "paramName": "radius",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_51/Rect2DGeometry_InputBarUI",
+        "paramName": "smooth",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_51/RenderPass_InputBarUI",
+        "paramName": "__dedup_group_id",
+        "value": "InputBarUI"
+      },
+      {
+        "nodeId": "GroupInstance_51/RenderPass_InputBarUI",
+        "paramName": "__dedup_original_id",
+        "value": "RenderPass_InputBarUI"
+      },
+      {
+        "nodeId": "GroupInstance_51/RenderPass_InputBarUI",
+        "paramName": "__group_id",
+        "value": "InputBarUI"
+      },
+      {
+        "nodeId": "GroupInstance_51/RenderPass_InputBarUI",
+        "paramName": "__group_instance_label",
+        "value": "Group 2"
+      },
+      {
+        "nodeId": "GroupInstance_51/RenderPass_InputBarUI",
+        "paramName": "__group_name",
+        "value": "Group 2"
+      },
+      {
+        "nodeId": "GroupInstance_51/RenderPass_InputBarUI",
+        "paramName": "__group_output_name",
+        "value": "Pass"
+      },
+      {
+        "nodeId": "GroupInstance_51/RenderPass_InputBarUI",
+        "paramName": "__node_label",
+        "value": "Input Bar UI Pass"
+      },
+      {
+        "nodeId": "GroupInstance_51/RenderPass_InputBarUI",
+        "paramName": "blend_preset",
+        "value": "premul_alpha"
+      },
+      {
+        "nodeId": "GroupInstance_51/RenderPass_InputBarUI",
+        "paramName": "blendfunc",
+        "value": "add"
+      },
+      {
+        "nodeId": "GroupInstance_51/RenderPass_InputBarUI",
+        "paramName": "camera",
+        "value": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_51/RenderPass_InputBarUI",
+        "paramName": "clearColor",
+        "value": [
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_51/RenderPass_InputBarUI",
+        "paramName": "culling",
+        "value": "none"
+      },
+      {
+        "nodeId": "GroupInstance_51/RenderPass_InputBarUI",
+        "paramName": "depthTest",
+        "value": false
+      },
+      {
+        "nodeId": "GroupInstance_51/RenderPass_InputBarUI",
+        "paramName": "dst_alpha_factor",
+        "value": "one-minus-src-alpha"
+      },
+      {
+        "nodeId": "GroupInstance_51/RenderPass_InputBarUI",
+        "paramName": "dst_factor",
+        "value": "one-minus-src-alpha"
+      },
+      {
+        "nodeId": "GroupInstance_51/RenderPass_InputBarUI",
+        "paramName": "label",
+        "value": "Input Bar UI Pass"
+      },
+      {
+        "nodeId": "GroupInstance_51/RenderPass_InputBarUI",
+        "paramName": "loadOp",
+        "value": "none"
+      },
+      {
+        "nodeId": "GroupInstance_51/RenderPass_InputBarUI",
+        "paramName": "msaaSampleCount",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_51/RenderPass_InputBarUI",
+        "paramName": "name",
+        "value": "Render Pass"
+      },
+      {
+        "nodeId": "GroupInstance_51/RenderPass_InputBarUI",
+        "paramName": "src_alpha_factor",
+        "value": "one"
+      },
+      {
+        "nodeId": "GroupInstance_51/RenderPass_InputBarUI",
+        "paramName": "src_factor",
+        "value": "one"
+      },
+      {
+        "nodeId": "GroupInstance_51/ShaderMaterial_InputBarUI",
+        "paramName": "__dedup_group_id",
+        "value": "InputBarUI"
+      },
+      {
+        "nodeId": "GroupInstance_51/ShaderMaterial_InputBarUI",
+        "paramName": "__dedup_original_id",
+        "value": "ShaderMaterial_InputBarUI"
+      },
+      {
+        "nodeId": "GroupInstance_51/ShaderMaterial_InputBarUI",
+        "paramName": "__group_id",
+        "value": "InputBarUI"
+      },
+      {
+        "nodeId": "GroupInstance_51/ShaderMaterial_InputBarUI",
+        "paramName": "__group_input_name",
+        "value": "Opacity"
+      },
+      {
+        "nodeId": "GroupInstance_51/ShaderMaterial_InputBarUI",
+        "paramName": "__group_instance_label",
+        "value": "Group 2"
+      },
+      {
+        "nodeId": "GroupInstance_51/ShaderMaterial_InputBarUI",
+        "paramName": "__group_name",
+        "value": "Group 2"
+      },
+      {
+        "nodeId": "GroupInstance_51/ShaderMaterial_InputBarUI",
+        "paramName": "__node_label",
+        "value": "Input Bar UI Material"
+      },
+      {
+        "nodeId": "GroupInstance_51/ShaderMaterial_InputBarUI",
+        "paramName": "label",
+        "value": "Input Bar UI Material"
+      },
+      {
+        "nodeId": "GroupInstance_51/ShaderMaterial_InputBarUI",
+        "paramName": "param:opacity",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_51/ShaderMaterial_InputBarUI",
+        "paramName": "param:ui_color",
+        "value": [
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptCancel",
+        "paramName": "__dedup_group_id",
+        "value": "PttPrompt"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptCancel",
+        "paramName": "__dedup_original_id",
+        "value": "ImageTexture_PttPromptCancel"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptCancel",
+        "paramName": "__group_id",
+        "value": "PttPrompt"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptCancel",
+        "paramName": "__group_instance_label",
+        "value": "Group 5"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptCancel",
+        "paramName": "__group_name",
+        "value": "Group 5"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptCancel",
+        "paramName": "__node_label",
+        "value": "PTT Prompt Cancel"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptCancel",
+        "paramName": "addressModeU",
+        "value": "clamp-to-edge"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptCancel",
+        "paramName": "addressModeV",
+        "value": "clamp-to-edge"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptCancel",
+        "paramName": "alphaMode",
+        "value": "premultiplied"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptCancel",
+        "paramName": "aspectCorrection",
+        "value": "fill"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptCancel",
+        "paramName": "assetId",
+        "value": "42370eb0f03b"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptCancel",
+        "paramName": "encoderSpace",
+        "value": "srgb"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptCancel",
+        "paramName": "extension",
+        "value": "clamp-to-edge"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptCancel",
+        "paramName": "interpolation",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptCancel",
+        "paramName": "label",
+        "value": "PTT Prompt Cancel"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptCancel",
+        "paramName": "magFilter",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptCancel",
+        "paramName": "minFilter",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptCancel",
+        "paramName": "mipmapFilter",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptSend",
+        "paramName": "__dedup_group_id",
+        "value": "PttPrompt"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptSend",
+        "paramName": "__dedup_original_id",
+        "value": "ImageTexture_PttPromptSend"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptSend",
+        "paramName": "__group_id",
+        "value": "PttPrompt"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptSend",
+        "paramName": "__group_instance_label",
+        "value": "Group 5"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptSend",
+        "paramName": "__group_name",
+        "value": "Group 5"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptSend",
+        "paramName": "__node_label",
+        "value": "PTT Prompt Send"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptSend",
+        "paramName": "addressModeU",
+        "value": "clamp-to-edge"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptSend",
+        "paramName": "addressModeV",
+        "value": "clamp-to-edge"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptSend",
+        "paramName": "alphaMode",
+        "value": "straight"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptSend",
+        "paramName": "aspectCorrection",
+        "value": "fill"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptSend",
+        "paramName": "assetId",
+        "value": "b12f5e0fbc1b"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptSend",
+        "paramName": "encoderSpace",
+        "value": "srgb"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptSend",
+        "paramName": "extension",
+        "value": "clamp-to-edge"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptSend",
+        "paramName": "interpolation",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptSend",
+        "paramName": "label",
+        "value": "PTT Prompt Send"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptSend",
+        "paramName": "magFilter",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptSend",
+        "paramName": "minFilter",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_52/ImageTexture_PttPromptSend",
+        "paramName": "mipmapFilter",
+        "value": "linear"
+      },
+      {
+        "nodeId": "GroupInstance_52/Rect2DGeometry_PttPrompt",
+        "paramName": "__dedup_group_id",
+        "value": "PttPrompt"
+      },
+      {
+        "nodeId": "GroupInstance_52/Rect2DGeometry_PttPrompt",
+        "paramName": "__dedup_original_id",
+        "value": "Rect2DGeometry_PttPrompt"
+      },
+      {
+        "nodeId": "GroupInstance_52/Rect2DGeometry_PttPrompt",
+        "paramName": "__group_id",
+        "value": "PttPrompt"
+      },
+      {
+        "nodeId": "GroupInstance_52/Rect2DGeometry_PttPrompt",
+        "paramName": "__group_input_name",
+        "value": "PttPromptSizePx"
+      },
+      {
+        "nodeId": "GroupInstance_52/Rect2DGeometry_PttPrompt",
+        "paramName": "__group_instance_label",
+        "value": "Group 5"
+      },
+      {
+        "nodeId": "GroupInstance_52/Rect2DGeometry_PttPrompt",
+        "paramName": "__group_name",
+        "value": "Group 5"
+      },
+      {
+        "nodeId": "GroupInstance_52/Rect2DGeometry_PttPrompt",
+        "paramName": "__node_label",
+        "value": "PTT Prompt Geometry"
+      },
+      {
+        "nodeId": "GroupInstance_52/Rect2DGeometry_PttPrompt",
+        "paramName": "label",
+        "value": "PTT Prompt Geometry"
+      },
+      {
+        "nodeId": "GroupInstance_52/Rect2DGeometry_PttPrompt",
+        "paramName": "position",
+        "value": [
+          0,
+          0
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_52/Rect2DGeometry_PttPrompt",
+        "paramName": "radius",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_52/Rect2DGeometry_PttPrompt",
+        "paramName": "size",
+        "value": [
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_52/Rect2DGeometry_PttPrompt",
+        "paramName": "smooth",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_52/RenderPass_PttPrompt",
+        "paramName": "__dedup_group_id",
+        "value": "PttPrompt"
+      },
+      {
+        "nodeId": "GroupInstance_52/RenderPass_PttPrompt",
+        "paramName": "__dedup_original_id",
+        "value": "RenderPass_PttPrompt"
+      },
+      {
+        "nodeId": "GroupInstance_52/RenderPass_PttPrompt",
+        "paramName": "__group_id",
+        "value": "PttPrompt"
+      },
+      {
+        "nodeId": "GroupInstance_52/RenderPass_PttPrompt",
+        "paramName": "__group_instance_label",
+        "value": "Group 5"
+      },
+      {
+        "nodeId": "GroupInstance_52/RenderPass_PttPrompt",
+        "paramName": "__group_name",
+        "value": "Group 5"
+      },
+      {
+        "nodeId": "GroupInstance_52/RenderPass_PttPrompt",
+        "paramName": "__group_output_name",
+        "value": "Pass"
+      },
+      {
+        "nodeId": "GroupInstance_52/RenderPass_PttPrompt",
+        "paramName": "__node_label",
+        "value": "PTT Prompt Pass"
+      },
+      {
+        "nodeId": "GroupInstance_52/RenderPass_PttPrompt",
+        "paramName": "blend_preset",
+        "value": "premul_alpha"
+      },
+      {
+        "nodeId": "GroupInstance_52/RenderPass_PttPrompt",
+        "paramName": "blendfunc",
+        "value": "add"
+      },
+      {
+        "nodeId": "GroupInstance_52/RenderPass_PttPrompt",
+        "paramName": "camera",
+        "value": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_52/RenderPass_PttPrompt",
+        "paramName": "clearColor",
+        "value": [
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_52/RenderPass_PttPrompt",
+        "paramName": "culling",
+        "value": "none"
+      },
+      {
+        "nodeId": "GroupInstance_52/RenderPass_PttPrompt",
+        "paramName": "depthTest",
+        "value": false
+      },
+      {
+        "nodeId": "GroupInstance_52/RenderPass_PttPrompt",
+        "paramName": "dst_alpha_factor",
+        "value": "one-minus-src-alpha"
+      },
+      {
+        "nodeId": "GroupInstance_52/RenderPass_PttPrompt",
+        "paramName": "dst_factor",
+        "value": "one-minus-src-alpha"
+      },
+      {
+        "nodeId": "GroupInstance_52/RenderPass_PttPrompt",
+        "paramName": "label",
+        "value": "PTT Prompt Pass"
+      },
+      {
+        "nodeId": "GroupInstance_52/RenderPass_PttPrompt",
+        "paramName": "loadOp",
+        "value": "none"
+      },
+      {
+        "nodeId": "GroupInstance_52/RenderPass_PttPrompt",
+        "paramName": "msaaSampleCount",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_52/RenderPass_PttPrompt",
+        "paramName": "name",
+        "value": "PTT Prompt Pass"
+      },
+      {
+        "nodeId": "GroupInstance_52/RenderPass_PttPrompt",
+        "paramName": "src_alpha_factor",
+        "value": "one"
+      },
+      {
+        "nodeId": "GroupInstance_52/RenderPass_PttPrompt",
+        "paramName": "src_factor",
+        "value": "one"
+      },
+      {
+        "nodeId": "GroupInstance_52/ShaderMaterial_PttPrompt",
+        "paramName": "__dedup_group_id",
+        "value": "PttPrompt"
+      },
+      {
+        "nodeId": "GroupInstance_52/ShaderMaterial_PttPrompt",
+        "paramName": "__dedup_original_id",
+        "value": "ShaderMaterial_PttPrompt"
+      },
+      {
+        "nodeId": "GroupInstance_52/ShaderMaterial_PttPrompt",
+        "paramName": "__group_id",
+        "value": "PttPrompt"
+      },
+      {
+        "nodeId": "GroupInstance_52/ShaderMaterial_PttPrompt",
+        "paramName": "__group_input_name",
+        "value": "prompt_opacity"
+      },
+      {
+        "nodeId": "GroupInstance_52/ShaderMaterial_PttPrompt",
+        "paramName": "__group_instance_label",
+        "value": "Group 5"
+      },
+      {
+        "nodeId": "GroupInstance_52/ShaderMaterial_PttPrompt",
+        "paramName": "__group_name",
+        "value": "Group 5"
+      },
+      {
+        "nodeId": "GroupInstance_52/ShaderMaterial_PttPrompt",
+        "paramName": "__node_label",
+        "value": "PTT Prompt Material"
+      },
+      {
+        "nodeId": "GroupInstance_52/ShaderMaterial_PttPrompt",
+        "paramName": "label",
+        "value": "PTT Prompt Material"
+      },
+      {
+        "nodeId": "GroupInstance_52/ShaderMaterial_PttPrompt",
+        "paramName": "param:cancel_color",
+        "value": [
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_52/ShaderMaterial_PttPrompt",
+        "paramName": "param:cancel_mix",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_52/ShaderMaterial_PttPrompt",
+        "paramName": "param:prompt_color",
+        "value": [
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_52/ShaderMaterial_PttPrompt",
+        "paramName": "param:prompt_opacity",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_52/ShaderMaterial_PttPrompt",
+        "paramName": "param:send_color",
+        "value": [
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_60/GuassianBlurPass_b9da1676_59",
+        "paramName": "__dedup_group_id",
+        "value": "Caustic"
+      },
+      {
+        "nodeId": "GroupInstance_60/GuassianBlurPass_b9da1676_59",
+        "paramName": "__dedup_original_id",
+        "value": "GuassianBlurPass_b9da1676_59"
+      },
+      {
+        "nodeId": "GroupInstance_60/GuassianBlurPass_b9da1676_59",
+        "paramName": "__group_id",
+        "value": "Caustic"
+      },
+      {
+        "nodeId": "GroupInstance_60/GuassianBlurPass_b9da1676_59",
+        "paramName": "__group_input_name",
+        "value": "CausticBlurRadiusPx"
+      },
+      {
+        "nodeId": "GroupInstance_60/GuassianBlurPass_b9da1676_59",
+        "paramName": "__group_instance_label",
+        "value": "Group 6"
+      },
+      {
+        "nodeId": "GroupInstance_60/GuassianBlurPass_b9da1676_59",
+        "paramName": "__group_name",
+        "value": "Group 6"
+      },
+      {
+        "nodeId": "GroupInstance_60/GuassianBlurPass_b9da1676_59",
+        "paramName": "__group_output_name",
+        "value": "Pass"
+      },
+      {
+        "nodeId": "GroupInstance_60/GuassianBlurPass_b9da1676_59",
+        "paramName": "__node_label",
+        "value": "Gaussian Blur Pass"
+      },
+      {
+        "nodeId": "GroupInstance_60/GuassianBlurPass_b9da1676_59",
+        "paramName": "blend_preset",
+        "value": "premul_alpha"
+      },
+      {
+        "nodeId": "GroupInstance_60/GuassianBlurPass_b9da1676_59",
+        "paramName": "blendfunc",
+        "value": "add"
+      },
+      {
+        "nodeId": "GroupInstance_60/GuassianBlurPass_b9da1676_59",
+        "paramName": "camera",
+        "value": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_60/GuassianBlurPass_b9da1676_59",
+        "paramName": "dst_alpha_factor",
+        "value": "one-minus-src-alpha"
+      },
+      {
+        "nodeId": "GroupInstance_60/GuassianBlurPass_b9da1676_59",
+        "paramName": "dst_factor",
+        "value": "one-minus-src-alpha"
+      },
+      {
+        "nodeId": "GroupInstance_60/GuassianBlurPass_b9da1676_59",
+        "paramName": "extend",
+        "value": true
+      },
+      {
+        "nodeId": "GroupInstance_60/GuassianBlurPass_b9da1676_59",
+        "paramName": "label",
+        "value": "Gaussian Blur Pass"
+      },
+      {
+        "nodeId": "GroupInstance_60/GuassianBlurPass_b9da1676_59",
+        "paramName": "mode",
+        "value": "standard"
+      },
+      {
+        "nodeId": "GroupInstance_60/GuassianBlurPass_b9da1676_59",
+        "paramName": "radius",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_60/GuassianBlurPass_b9da1676_59",
+        "paramName": "src_alpha_factor",
+        "value": "one"
+      },
+      {
+        "nodeId": "GroupInstance_60/GuassianBlurPass_b9da1676_59",
+        "paramName": "src_factor",
+        "value": "one"
+      },
+      {
+        "nodeId": "GroupInstance_60/MathAdd_9a874ffe_57",
+        "paramName": "__dedup_group_id",
+        "value": "Caustic"
+      },
+      {
+        "nodeId": "GroupInstance_60/MathAdd_9a874ffe_57",
+        "paramName": "__dedup_original_id",
+        "value": "MathAdd_9a874ffe_57"
+      },
+      {
+        "nodeId": "GroupInstance_60/MathAdd_9a874ffe_57",
+        "paramName": "__group_id",
+        "value": "Caustic"
+      },
+      {
+        "nodeId": "GroupInstance_60/MathAdd_9a874ffe_57",
+        "paramName": "__group_input_name",
+        "value": "CausticSizeOffsetPx"
+      },
+      {
+        "nodeId": "GroupInstance_60/MathAdd_9a874ffe_57",
+        "paramName": "__group_instance_label",
+        "value": "Group 6"
+      },
+      {
+        "nodeId": "GroupInstance_60/MathAdd_9a874ffe_57",
+        "paramName": "__group_name",
+        "value": "Group 6"
+      },
+      {
+        "nodeId": "GroupInstance_60/MathAdd_9a874ffe_57",
+        "paramName": "__node_label",
+        "value": "Add"
+      },
+      {
+        "nodeId": "GroupInstance_60/MathAdd_9a874ffe_57",
+        "paramName": "label",
+        "value": "Add"
+      },
+      {
+        "nodeId": "GroupInstance_60/Rect2DGeometry_9a874ffe_55",
+        "paramName": "__dedup_group_id",
+        "value": "Caustic"
+      },
+      {
+        "nodeId": "GroupInstance_60/Rect2DGeometry_9a874ffe_55",
+        "paramName": "__dedup_original_id",
+        "value": "Rect2DGeometry_9a874ffe_55"
+      },
+      {
+        "nodeId": "GroupInstance_60/Rect2DGeometry_9a874ffe_55",
+        "paramName": "__group_id",
+        "value": "Caustic"
+      },
+      {
+        "nodeId": "GroupInstance_60/Rect2DGeometry_9a874ffe_55",
+        "paramName": "__group_input_name",
+        "value": "Position"
+      },
+      {
+        "nodeId": "GroupInstance_60/Rect2DGeometry_9a874ffe_55",
+        "paramName": "__group_instance_label",
+        "value": "Group 6"
+      },
+      {
+        "nodeId": "GroupInstance_60/Rect2DGeometry_9a874ffe_55",
+        "paramName": "__group_name",
+        "value": "Group 6"
+      },
+      {
+        "nodeId": "GroupInstance_60/Rect2DGeometry_9a874ffe_55",
+        "paramName": "__node_label",
+        "value": "2D Rect"
+      },
+      {
+        "nodeId": "GroupInstance_60/Rect2DGeometry_9a874ffe_55",
+        "paramName": "label",
+        "value": "2D Rect"
+      },
+      {
+        "nodeId": "GroupInstance_60/Rect2DGeometry_9a874ffe_55",
+        "paramName": "radius",
+        "value": 0
+      },
+      {
+        "nodeId": "GroupInstance_60/Rect2DGeometry_9a874ffe_55",
+        "paramName": "smooth",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_60/RenderPass_9a874ffe_53",
+        "paramName": "__dedup_group_id",
+        "value": "Caustic"
+      },
+      {
+        "nodeId": "GroupInstance_60/RenderPass_9a874ffe_53",
+        "paramName": "__dedup_original_id",
+        "value": "RenderPass_9a874ffe_53"
+      },
+      {
+        "nodeId": "GroupInstance_60/RenderPass_9a874ffe_53",
+        "paramName": "__group_id",
+        "value": "Caustic"
+      },
+      {
+        "nodeId": "GroupInstance_60/RenderPass_9a874ffe_53",
+        "paramName": "__group_instance_label",
+        "value": "Group 6"
+      },
+      {
+        "nodeId": "GroupInstance_60/RenderPass_9a874ffe_53",
+        "paramName": "__group_name",
+        "value": "Group 6"
+      },
+      {
+        "nodeId": "GroupInstance_60/RenderPass_9a874ffe_53",
+        "paramName": "__node_label",
+        "value": "CausticRenderPass"
+      },
+      {
+        "nodeId": "GroupInstance_60/RenderPass_9a874ffe_53",
+        "paramName": "blend_preset",
+        "value": "premul_alpha"
+      },
+      {
+        "nodeId": "GroupInstance_60/RenderPass_9a874ffe_53",
+        "paramName": "blendfunc",
+        "value": "add"
+      },
+      {
+        "nodeId": "GroupInstance_60/RenderPass_9a874ffe_53",
+        "paramName": "camera",
+        "value": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_60/RenderPass_9a874ffe_53",
+        "paramName": "clearColor",
+        "value": [
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "nodeId": "GroupInstance_60/RenderPass_9a874ffe_53",
+        "paramName": "culling",
+        "value": "none"
+      },
+      {
+        "nodeId": "GroupInstance_60/RenderPass_9a874ffe_53",
+        "paramName": "depthTest",
+        "value": false
+      },
+      {
+        "nodeId": "GroupInstance_60/RenderPass_9a874ffe_53",
+        "paramName": "dst_alpha_factor",
+        "value": "one-minus-src-alpha"
+      },
+      {
+        "nodeId": "GroupInstance_60/RenderPass_9a874ffe_53",
+        "paramName": "dst_factor",
+        "value": "one-minus-src-alpha"
+      },
+      {
+        "nodeId": "GroupInstance_60/RenderPass_9a874ffe_53",
+        "paramName": "label",
+        "value": "CausticRenderPass"
+      },
+      {
+        "nodeId": "GroupInstance_60/RenderPass_9a874ffe_53",
+        "paramName": "loadOp",
+        "value": "none"
+      },
+      {
+        "nodeId": "GroupInstance_60/RenderPass_9a874ffe_53",
+        "paramName": "msaaSampleCount",
+        "value": 1
+      },
+      {
+        "nodeId": "GroupInstance_60/RenderPass_9a874ffe_53",
+        "paramName": "name",
+        "value": "Render Pass"
+      },
+      {
+        "nodeId": "GroupInstance_60/RenderPass_9a874ffe_53",
+        "paramName": "src_alpha_factor",
+        "value": "one"
+      },
+      {
+        "nodeId": "GroupInstance_60/RenderPass_9a874ffe_53",
+        "paramName": "src_factor",
+        "value": "one"
+      },
+      {
+        "nodeId": "GroupInstance_60/ShaderMaterial_9a874ffe_56",
+        "paramName": "__dedup_group_id",
+        "value": "Caustic"
+      },
+      {
+        "nodeId": "GroupInstance_60/ShaderMaterial_9a874ffe_56",
+        "paramName": "__dedup_original_id",
+        "value": "ShaderMaterial_9a874ffe_56"
+      },
+      {
+        "nodeId": "GroupInstance_60/ShaderMaterial_9a874ffe_56",
+        "paramName": "__group_id",
+        "value": "Caustic"
+      },
+      {
+        "nodeId": "GroupInstance_60/ShaderMaterial_9a874ffe_56",
+        "paramName": "__group_input_name",
+        "value": "Opacity"
+      },
+      {
+        "nodeId": "GroupInstance_60/ShaderMaterial_9a874ffe_56",
+        "paramName": "__group_instance_label",
+        "value": "Group 6"
+      },
+      {
+        "nodeId": "GroupInstance_60/ShaderMaterial_9a874ffe_56",
+        "paramName": "__group_name",
+        "value": "Group 6"
+      },
+      {
+        "nodeId": "GroupInstance_60/ShaderMaterial_9a874ffe_56",
+        "paramName": "__node_label",
+        "value": "Shader Material"
+      },
+      {
+        "nodeId": "GroupInstance_60/ShaderMaterial_9a874ffe_56",
+        "paramName": "label",
+        "value": "Shader Material"
+      },
+      {
+        "nodeId": "GroupInstance_60/ShaderMaterial_9a874ffe_56",
+        "paramName": "param:intensity",
+        "value": 0.6
+      },
+      {
+        "nodeId": "GroupInstance_60/ShaderMaterial_9a874ffe_56",
+        "paramName": "param:opacity",
+        "value": 1
+      },
+      {
+        "nodeId": "MathMultiply_RenderCenterXPx",
+        "paramName": "__node_label",
+        "value": "Render Center X Px"
+      },
+      {
+        "nodeId": "MathMultiply_RenderCenterXPx",
+        "paramName": "label",
+        "value": "Render Center X Px"
+      },
+      {
+        "nodeId": "MathMultiply_RenderCenterYPx",
+        "paramName": "__node_label",
+        "value": "Render Center Y Px"
+      },
+      {
+        "nodeId": "MathMultiply_RenderCenterYPx",
+        "paramName": "label",
+        "value": "Render Center Y Px"
+      },
+      {
+        "nodeId": "MathMultiply_RenderHeightPx",
+        "paramName": "__node_label",
+        "value": "Render Height Px"
+      },
+      {
+        "nodeId": "MathMultiply_RenderHeightPx",
+        "paramName": "label",
+        "value": "Render Height Px"
+      },
+      {
+        "nodeId": "MathMultiply_RenderWidthPx",
+        "paramName": "__node_label",
+        "value": "Render Width Px"
+      },
+      {
+        "nodeId": "MathMultiply_RenderWidthPx",
+        "paramName": "label",
+        "value": "Render Width Px"
+      },
+      {
+        "nodeId": "TimeInput_VoiceVisualizer",
+        "paramName": "__node_label",
+        "value": "VoiceVisualizerTime"
+      },
+      {
+        "nodeId": "TimeInput_VoiceVisualizer",
+        "paramName": "label",
+        "value": "VoiceVisualizerTime"
+      },
+      {
+        "nodeId": "Vector2ArrayInput_IntelligentLightPositions",
+        "paramName": "__node_label",
+        "value": "Intelligent Light Positions"
+      },
+      {
+        "nodeId": "Vector2ArrayInput_IntelligentLightPositions",
+        "paramName": "label",
+        "value": "Intelligent Light Positions"
+      },
+      {
+        "nodeId": "Vector2ArrayInput_IntelligentLightPositions",
+        "paramName": "value",
+        "value": [
+          [
+            35.66935124875655,
+            5.600000000000001
+          ],
+          [
+            37.874847008613294,
+            5.600000000000001
+          ],
+          [
+            37.81676923548584,
+            5.600000000000001
+          ],
+          [
+            47.55033283704443,
+            5.600000000000001
+          ],
+          [
+            48.03205897635686,
+            5.600000000000001
+          ],
+          [
+            45.056640693742985,
+            5.600000000000001
+          ],
+          [
+            35.25566071991394,
+            5.600000000000001
+          ],
+          [
+            39.09655011002811,
+            5.600000000000001
+          ],
+          [
+            43.98941549241746,
+            5.600000000000001
+          ],
+          [
+            44.54959131223901,
+            5.600000000000001
+          ],
+          [
+            47.108782365401446,
+            5.600000000000001
+          ]
+        ]
+      },
+      {
+        "nodeId": "Vector2Input_35",
+        "paramName": "__node_label",
+        "value": "InputBarSizePx"
+      },
+      {
+        "nodeId": "Vector2Input_35",
+        "paramName": "label",
+        "value": "InputBarSizePx"
+      },
+      {
+        "nodeId": "Vector2Input_35",
+        "paramName": "x",
+        "value": 1176
+      },
+      {
+        "nodeId": "Vector2Input_35",
+        "paramName": "y",
+        "value": 196
+      },
+      {
+        "nodeId": "Vector2Input_36",
+        "paramName": "__node_label",
+        "value": "InputBarPositionPx"
+      },
+      {
+        "nodeId": "Vector2Input_36",
+        "paramName": "label",
+        "value": "InputBarPositionPx"
+      },
+      {
+        "nodeId": "Vector2Input_36",
+        "paramName": "x",
+        "value": 630
+      },
+      {
+        "nodeId": "Vector2Input_36",
+        "paramName": "y",
+        "value": 168
+      },
+      {
+        "nodeId": "Vector2Input_38",
+        "paramName": "__node_label",
+        "value": "LightBloomSizePx"
+      },
+      {
+        "nodeId": "Vector2Input_38",
+        "paramName": "label",
+        "value": "LightBloomSizePx"
+      },
+      {
+        "nodeId": "Vector2Input_38",
+        "paramName": "x",
+        "value": 1260
+      },
+      {
+        "nodeId": "Vector2Input_38",
+        "paramName": "y",
+        "value": 1260
+      },
+      {
+        "nodeId": "Vector2Input_BackgroundPositionPx",
+        "paramName": "__node_label",
+        "value": "BackgroundPositionPx"
+      },
+      {
+        "nodeId": "Vector2Input_BackgroundPositionPx",
+        "paramName": "label",
+        "value": "BackgroundPositionPx"
+      },
+      {
+        "nodeId": "Vector2Input_BackgroundPositionPx",
+        "paramName": "x",
+        "value": 0
+      },
+      {
+        "nodeId": "Vector2Input_BackgroundPositionPx",
+        "paramName": "y",
+        "value": 0
+      },
+      {
+        "nodeId": "Vector2Input_BackgroundSizePx",
+        "paramName": "__node_label",
+        "value": "BackgroundSizePx"
+      },
+      {
+        "nodeId": "Vector2Input_BackgroundSizePx",
+        "paramName": "label",
+        "value": "BackgroundSizePx"
+      },
+      {
+        "nodeId": "Vector2Input_BackgroundSizePx",
+        "paramName": "x",
+        "value": 0
+      },
+      {
+        "nodeId": "Vector2Input_BackgroundSizePx",
+        "paramName": "y",
+        "value": 0
+      },
+      {
+        "nodeId": "Vector2Input_CausticOffsetPx",
+        "paramName": "__node_label",
+        "value": "CausticOffsetPx"
+      },
+      {
+        "nodeId": "Vector2Input_CausticOffsetPx",
+        "paramName": "label",
+        "value": "CausticOffsetPx"
+      },
+      {
+        "nodeId": "Vector2Input_CausticOffsetPx",
+        "paramName": "x",
+        "value": 0
+      },
+      {
+        "nodeId": "Vector2Input_CausticOffsetPx",
+        "paramName": "y",
+        "value": 46.66666666666667
+      },
+      {
+        "nodeId": "Vector2Input_IntelligentLightSourceCanvasSizePx",
+        "paramName": "__node_label",
+        "value": "IntelligentLightSourceCanvasSizePx"
+      },
+      {
+        "nodeId": "Vector2Input_IntelligentLightSourceCanvasSizePx",
+        "paramName": "label",
+        "value": "IntelligentLightSourceCanvasSizePx"
+      },
+      {
+        "nodeId": "Vector2Input_IntelligentLightSourceCanvasSizePx",
+        "paramName": "x",
+        "value": 1260
+      },
+      {
+        "nodeId": "Vector2Input_IntelligentLightSourceCanvasSizePx",
+        "paramName": "y",
+        "value": 1260
+      },
+      {
+        "nodeId": "Vector2Input_LightEffectCanvasSizePx",
+        "paramName": "__node_label",
+        "value": "LightEffectCanvasSizePx"
+      },
+      {
+        "nodeId": "Vector2Input_LightEffectCanvasSizePx",
+        "paramName": "label",
+        "value": "LightEffectCanvasSizePx"
+      },
+      {
+        "nodeId": "Vector2Input_LightEffectCanvasSizePx",
+        "paramName": "x",
+        "value": 1260
+      },
+      {
+        "nodeId": "Vector2Input_LightEffectCanvasSizePx",
+        "paramName": "y",
+        "value": 1260
+      },
+      {
+        "nodeId": "Vector2Input_LightEffectFrameSizePx",
+        "paramName": "__node_label",
+        "value": "LightEffectFrameSizePx"
+      },
+      {
+        "nodeId": "Vector2Input_LightEffectFrameSizePx",
+        "paramName": "label",
+        "value": "LightEffectFrameSizePx"
+      },
+      {
+        "nodeId": "Vector2Input_LightEffectFrameSizePx",
+        "paramName": "x",
+        "value": 1176
+      },
+      {
+        "nodeId": "Vector2Input_LightEffectFrameSizePx",
+        "paramName": "y",
+        "value": 196
+      },
+      {
+        "nodeId": "Vector2Input_LightEffectPositionPx",
+        "paramName": "__node_label",
+        "value": "LightEffectPositionPx"
+      },
+      {
+        "nodeId": "Vector2Input_LightEffectPositionPx",
+        "paramName": "label",
+        "value": "LightEffectPositionPx"
+      },
+      {
+        "nodeId": "Vector2Input_LightEffectPositionPx",
+        "paramName": "x",
+        "value": 630
+      },
+      {
+        "nodeId": "Vector2Input_LightEffectPositionPx",
+        "paramName": "y",
+        "value": 168
+      },
+      {
+        "nodeId": "Vector2Input_PointerIntelligentLightLocalPx",
+        "paramName": "__node_label",
+        "value": "PointerIntelligentLightLocalPx"
+      },
+      {
+        "nodeId": "Vector2Input_PointerIntelligentLightLocalPx",
+        "paramName": "label",
+        "value": "PointerIntelligentLightLocalPx"
+      },
+      {
+        "nodeId": "Vector2Input_PointerIntelligentLightLocalPx",
+        "paramName": "x",
+        "value": 42.58604927969978
+      },
+      {
+        "nodeId": "Vector2Input_PointerIntelligentLightLocalPx",
+        "paramName": "y",
+        "value": 37.82387240906376
+      },
+      {
+        "nodeId": "Vector2Input_PointerLightEffectLocalPx",
+        "paramName": "__node_label",
+        "value": "PointerLightEffectLocalPx"
+      },
+      {
+        "nodeId": "Vector2Input_PointerLightEffectLocalPx",
+        "paramName": "label",
+        "value": "PointerLightEffectLocalPx"
+      },
+      {
+        "nodeId": "Vector2Input_PointerLightEffectLocalPx",
+        "paramName": "x",
+        "value": 638.7907391954967
+      },
+      {
+        "nodeId": "Vector2Input_PointerLightEffectLocalPx",
+        "paramName": "y",
+        "value": 567.3580861359565
+      },
+      {
+        "nodeId": "Vector2Input_PttPromptPositionPx",
+        "paramName": "__node_label",
+        "value": "PttPromptPositionPx"
+      },
+      {
+        "nodeId": "Vector2Input_PttPromptPositionPx",
+        "paramName": "label",
+        "value": "PttPromptPositionPx"
+      },
+      {
+        "nodeId": "Vector2Input_PttPromptPositionPx",
+        "paramName": "x",
+        "value": 630
+      },
+      {
+        "nodeId": "Vector2Input_PttPromptPositionPx",
+        "paramName": "y",
+        "value": 350
+      },
+      {
+        "nodeId": "Vector2Input_PttPromptSizePx",
+        "paramName": "__node_label",
+        "value": "PttPromptSizePx"
+      },
+      {
+        "nodeId": "Vector2Input_PttPromptSizePx",
+        "paramName": "label",
+        "value": "PttPromptSizePx"
+      },
+      {
+        "nodeId": "Vector2Input_PttPromptSizePx",
+        "paramName": "x",
+        "value": 1260
+      },
+      {
+        "nodeId": "Vector2Input_PttPromptSizePx",
+        "paramName": "y",
+        "value": 63
+      },
+      {
+        "nodeId": "node_default_composite",
+        "paramName": "__node_label",
+        "value": "Composite"
+      },
+      {
+        "nodeId": "node_default_composite",
+        "paramName": "alpha",
+        "value": 0
+      },
+      {
+        "nodeId": "node_default_composite",
+        "paramName": "blend_preset",
+        "value": "premul_alpha"
+      },
+      {
+        "nodeId": "node_default_composite",
+        "paramName": "blendfunc",
+        "value": "add"
+      },
+      {
+        "nodeId": "node_default_composite",
+        "paramName": "camera",
+        "value": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      {
+        "nodeId": "node_default_composite",
+        "paramName": "dst_alpha_factor",
+        "value": "one-minus-src-alpha"
+      },
+      {
+        "nodeId": "node_default_composite",
+        "paramName": "dst_factor",
+        "value": "one-minus-src-alpha"
+      },
+      {
+        "nodeId": "node_default_composite",
+        "paramName": "label",
+        "value": "Composite"
+      },
+      {
+        "nodeId": "node_default_composite",
+        "paramName": "src_alpha_factor",
+        "value": "one"
+      },
+      {
+        "nodeId": "node_default_composite",
+        "paramName": "src_factor",
+        "value": "one"
+      },
+      {
+        "nodeId": "node_default_render_texture",
+        "paramName": "__node_label",
+        "value": "Render Texture"
+      },
+      {
+        "nodeId": "node_default_render_texture",
+        "paramName": "_uiCollapsed",
+        "value": true
+      },
+      {
+        "nodeId": "node_default_render_texture",
+        "paramName": "format",
+        "value": "rgba16float"
+      },
+      {
+        "nodeId": "node_default_render_texture",
+        "paramName": "height",
+        "value": 2400
+      },
+      {
+        "nodeId": "node_default_render_texture",
+        "paramName": "label",
+        "value": "Render Texture"
+      },
+      {
+        "nodeId": "node_default_render_texture",
+        "paramName": "width",
+        "value": 1080
+      },
+      {
+        "nodeId": "node_default_screen",
+        "paramName": "__node_label",
+        "value": "Screen"
+      },
+      {
+        "nodeId": "node_default_screen",
+        "paramName": "height",
+        "value": 2400
+      },
+      {
+        "nodeId": "node_default_screen",
+        "paramName": "label",
+        "value": "Screen"
+      },
+      {
+        "nodeId": "node_default_screen",
+        "paramName": "width",
+        "value": 1080
+      }
+    ]
+  }
+}

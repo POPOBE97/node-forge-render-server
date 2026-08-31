@@ -1,0 +1,125 @@
+{
+  "input": "/Users/bytedance/Desktop/Projects/node-forge/node-forge-render-server/out/freeze-1787822441687-hwc-input-comparison/android-hwc-input_1280x2816_RGBA_8888_frame0.raw",
+  "contentDimensions": [
+    1260,
+    2800
+  ],
+  "contentRgba8Sha256": "89ee2e3b852d273aa6f8c8b4f3ca02350e83f50f99dcdedfb09721b702dddd01",
+  "headroom": 3.0,
+  "encoding": "RGBA8 sRGB-transfer Display-P3, headroom-normalized",
+  "reconstructed": {
+    "peak": {
+      "value": 1.957287311553955,
+      "x": 474,
+      "y": 2654,
+      "channel": "B",
+      "rgb": [
+        1.0321235656738281,
+        0.9961608052253723,
+        1.957287311553955
+      ],
+      "perChannel": {
+        "r": {
+          "value": 1.5126738548278809,
+          "x": 420,
+          "y": 2429
+        },
+        "g": {
+          "value": 1.508659839630127,
+          "x": 419,
+          "y": 2429
+        },
+        "b": {
+          "value": 1.957287311553955,
+          "x": 474,
+          "y": 2654
+        }
+      }
+    }
+  },
+  "comparison": {
+    "reference": "/Users/bytedance/Desktop/Projects/node-forge/node-forge-render-server/out/freeze-1787822441687-hwc-input-comparison/node-forge.exr",
+    "referenceKind": "exr",
+    "referenceScale": 1.0,
+    "referencePeak": {
+      "value": 1.5,
+      "x": 419,
+      "y": 2428,
+      "channel": "R",
+      "rgb": [
+        1.5,
+        1.5,
+        1.5
+      ],
+      "perChannel": {
+        "r": {
+          "value": 1.5,
+          "x": 419,
+          "y": 2428
+        },
+        "g": {
+          "value": 1.5,
+          "x": 419,
+          "y": 2428
+        },
+        "b": {
+          "value": 1.5,
+          "x": 419,
+          "y": 2428
+        }
+      }
+    },
+    "absolutePeakValueDelta": 0.4572873115539551,
+    "atReferencePeak": {
+      "x": 419,
+      "y": 2428,
+      "channel": "R",
+      "reconstructed": 1.4907991886138916,
+      "reference": 1.5,
+      "absoluteError": 0.009200811386108398
+    },
+    "maxRgbAe": 1.3979229927062988,
+    "maxRgbAeSample": {
+      "x": 472,
+      "y": 2657,
+      "channel": "B",
+      "reconstructed": 1.9570050239562988,
+      "reference": 0.55908203125
+    },
+    "perChannelMaxAe": {
+      "r": 1.302983283996582,
+      "g": 1.2957937717437744,
+      "b": 1.3979229927062988
+    },
+    "perChannelMae": {
+      "r": 0.0021347040310502052,
+      "g": 0.0022125679533928633,
+      "b": 0.0189820546656847
+    },
+    "rgbRmse": 0.03489024564623833,
+    "rgbAePercentiles": {
+      "p50": 0.0008084102300927043,
+      "p95": 0.02929084561765194,
+      "p99": 0.1850883960723877,
+      "p99_9": 0.3432198762893677
+    },
+    "pixelsAnyRgbAeGreaterThan": {
+      "0.01": {
+        "count": 722871,
+        "percent": 20.48954081632653
+      },
+      "0.02": {
+        "count": 576340,
+        "percent": 16.336167800453516
+      },
+      "0.03": {
+        "count": 494459,
+        "percent": 14.015277777777776
+      },
+      "0.05": {
+        "count": 393057,
+        "percent": 11.141071428571427
+      }
+    }
+  }
+}
