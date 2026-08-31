@@ -78,7 +78,7 @@ struct PlayerApp {
     context: egui::Context,
     diagnostic: js_sys::Function,
     device_lost: Arc<Mutex<Option<String>>>,
-    viewport: [u32; 4],
+    viewport: [i32; 4],
     sequence: u64,
 }
 
@@ -153,7 +153,12 @@ impl PlayerApp {
             context: cc.egui_ctx.clone(),
             diagnostic,
             device_lost,
-            viewport: [0, 0, resolution[0], resolution[1]],
+            viewport: [
+                0,
+                0,
+                i32::try_from(resolution[0])?,
+                i32::try_from(resolution[1])?,
+            ],
             sequence: 0,
         })
     }
@@ -211,10 +216,15 @@ impl PlayerApp {
         self.advance(0.0).map(|_| ())
     }
 
-    fn set_viewport(&mut self, viewport: [u32; 4]) -> Result<(), JsValue> {
-        let resolution = self.runtime.resolution();
-        validate_viewport(viewport, resolution).map_err(|message| JsValue::from_str(&message))?;
+    fn set_viewport(&mut self, viewport: [i32; 4]) -> Result<(), JsValue> {
+        validate_viewport(viewport).map_err(|message| JsValue::from_str(&message))?;
         self.viewport = viewport;
+        self.context.request_repaint();
+        Ok(())
+    }
+
+    fn set_state(&mut self, state_id: &str) -> Result<(), JsValue> {
+        self.runtime.force_state(state_id).map_err(to_js_error)?;
         self.context.request_repaint();
         Ok(())
     }
@@ -223,15 +233,16 @@ impl PlayerApp {
 impl eframe::App for PlayerApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let available = ui.max_rect();
-        ui.painter()
-            .rect_filled(available, 0.0, egui::Color32::BLACK);
         let resolution = self.runtime.resolution();
-        ui.painter().image(
-            self.texture_id,
-            available,
-            viewport_uv_rect(self.viewport, resolution),
-            egui::Color32::WHITE,
-        );
+        if let Some((destination, uv)) = viewport_image_rects(self.viewport, resolution, available)
+        {
+            ui.painter()
+                .image(self.texture_id, destination, uv, egui::Color32::WHITE);
+        }
+    }
+
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        [0.0; 4]
     }
 
     fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
@@ -239,37 +250,70 @@ impl eframe::App for PlayerApp {
     }
 }
 
-fn validate_viewport(viewport: [u32; 4], resolution: [u32; 2]) -> Result<(), String> {
-    let [x, y, width, height] = viewport;
-    let right = x.checked_add(width);
-    let top = y.checked_add(height);
-    if width == 0
-        || height == 0
-        || right.is_none_or(|right| right > resolution[0])
-        || top.is_none_or(|top| top > resolution[1])
-    {
+fn validate_viewport(viewport: [i32; 4]) -> Result<(), String> {
+    let [_, _, width, height] = viewport;
+    if width <= 0 || height <= 0 {
         return Err(format!(
-            "viewport [{x}, {y}, {width}, {height}] exceeds scene bounds {}x{}",
-            resolution[0], resolution[1]
+            "viewport [{}, {}, {width}, {height}] must have positive width and height",
+            viewport[0], viewport[1]
         ));
     }
     Ok(())
 }
 
-fn viewport_uv_rect(viewport: [u32; 4], resolution: [u32; 2]) -> egui::Rect {
+fn viewport_image_rects(
+    viewport: [i32; 4],
+    resolution: [u32; 2],
+    destination: egui::Rect,
+) -> Option<(egui::Rect, egui::Rect)> {
     let [x, y, width, height] = viewport;
-    let scene_width = resolution[0].max(1) as f32;
-    let scene_height = resolution[1].max(1) as f32;
-    egui::Rect::from_min_max(
+    if width <= 0 || height <= 0 || resolution[0] == 0 || resolution[1] == 0 {
+        return None;
+    }
+
+    let viewport_left = i64::from(x);
+    let viewport_bottom = i64::from(y);
+    let viewport_right = viewport_left + i64::from(width);
+    let viewport_top = viewport_bottom + i64::from(height);
+    let intersection_left = viewport_left.max(0);
+    let intersection_bottom = viewport_bottom.max(0);
+    let intersection_right = viewport_right.min(i64::from(resolution[0]));
+    let intersection_top = viewport_top.min(i64::from(resolution[1]));
+    if intersection_left >= intersection_right || intersection_bottom >= intersection_top {
+        return None;
+    }
+
+    let viewport_width = width as f32;
+    let viewport_height = height as f32;
+    let image_destination = egui::Rect::from_min_max(
         egui::pos2(
-            x as f32 / scene_width,
-            1.0 - (y + height) as f32 / scene_height,
+            destination.left()
+                + (intersection_left - viewport_left) as f32 / viewport_width * destination.width(),
+            destination.top()
+                + (viewport_top - intersection_top) as f32 / viewport_height * destination.height(),
         ),
         egui::pos2(
-            (x + width) as f32 / scene_width,
-            1.0 - y as f32 / scene_height,
+            destination.left()
+                + (intersection_right - viewport_left) as f32 / viewport_width
+                    * destination.width(),
+            destination.top()
+                + (viewport_top - intersection_bottom) as f32 / viewport_height
+                    * destination.height(),
         ),
-    )
+    );
+    let scene_width = resolution[0] as f32;
+    let scene_height = resolution[1] as f32;
+    let uv = egui::Rect::from_min_max(
+        egui::pos2(
+            intersection_left as f32 / scene_width,
+            1.0 - intersection_top as f32 / scene_height,
+        ),
+        egui::pos2(
+            intersection_right as f32 / scene_width,
+            1.0 - intersection_bottom as f32 / scene_height,
+        ),
+    );
+    Some((image_destination, uv))
 }
 
 #[wasm_bindgen]
@@ -301,10 +345,13 @@ impl WebPlayerBackend {
             .dyn_into::<HtmlCanvasElement>()?;
         let mut options = eframe::WebOptions::default();
         options.renderer = eframe::Renderer::Wgpu;
+        options.transparent = true;
+        options.fixed_canvas_pixels = true;
         if let eframe::egui_wgpu::WgpuSetup::CreateNew(setup) = &mut options.wgpu_options.wgpu_setup
         {
             setup.instance_descriptor.backends = wgpu::Backends::BROWSER_WEBGPU;
         }
+        options.wgpu_options.preferred_surface_color_space = Some(wgpu::SurfaceColorSpace::Srgb);
         let diagnostic = self.diagnostic.clone();
         self.runner
             .start(
@@ -383,6 +430,14 @@ impl WebPlayerBackend {
             .and_then(|app| app.runtime.current_state_id().map(str::to_owned))
     }
 
+    #[wasm_bindgen(js_name = setState)]
+    pub fn set_state(&self, state_id: String) -> Result<(), JsValue> {
+        self.runner
+            .app_mut::<PlayerApp>()
+            .map(|mut app| app.set_state(&state_id))
+            .unwrap_or_else(|| Err(JsValue::from_str("player runtime is unavailable")))
+    }
+
     pub fn resize(&self, _width: f64, _height: f64, _device_pixel_ratio: f64) {}
 
     pub fn destroy(&self) {
@@ -408,21 +463,47 @@ fn to_js_error(error: anyhow::Error) -> JsValue {
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_viewport, viewport_uv_rect};
+    use rust_wgpu_fiber::eframe::egui;
+
+    use super::{validate_viewport, viewport_image_rects};
 
     #[test]
-    fn viewport_is_bounded_by_authored_scene() {
-        assert!(validate_viewport([0, 2080, 1260, 720], [1260, 2800]).is_ok());
-        assert!(validate_viewport([0, 0, 1260, 2801], [1260, 2800]).is_err());
-        assert!(validate_viewport([0, 0, 0, 100], [1260, 2800]).is_err());
+    fn viewport_allows_scene_overflow_but_requires_positive_dimensions() {
+        assert!(validate_viewport([-200, 2080, 1660, 1000]).is_ok());
+        assert!(validate_viewport([0, 0, 0, 100]).is_err());
+        assert!(validate_viewport([0, 0, 100, -1]).is_err());
     }
 
     #[test]
-    fn viewport_scene_y_up_maps_to_raster_uv() {
-        let uv = viewport_uv_rect([20, 100, 80, 200], [200, 400]);
+    fn bounded_viewport_maps_to_the_full_destination() {
+        let destination = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 400.0));
+        let (image_destination, uv) =
+            viewport_image_rects([20, 100, 80, 200], [200, 400], destination).unwrap();
+        assert_eq!(image_destination, destination);
         assert!((uv.min.x - 0.1).abs() < f32::EPSILON);
         assert!((uv.max.x - 0.5).abs() < f32::EPSILON);
         assert!((uv.min.y - 0.25).abs() < f32::EPSILON);
         assert!((uv.max.y - 0.75).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn overflow_is_left_transparent_and_only_the_scene_intersection_is_drawn() {
+        let destination = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 400.0));
+        let (image_destination, uv) =
+            viewport_image_rects([-20, 100, 80, 200], [200, 400], destination).unwrap();
+        assert!((image_destination.min.x - 200.0).abs() < f32::EPSILON);
+        assert!((image_destination.max.x - 800.0).abs() < f32::EPSILON);
+        assert_eq!(image_destination.min.y, 0.0);
+        assert_eq!(image_destination.max.y, 400.0);
+        assert_eq!(uv.min.x, 0.0);
+        assert!((uv.max.x - 0.3).abs() < f32::EPSILON);
+        assert!((uv.min.y - 0.25).abs() < f32::EPSILON);
+        assert!((uv.max.y - 0.75).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn fully_outside_viewport_draws_no_image() {
+        let destination = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 400.0));
+        assert!(viewport_image_rects([-300, 0, 100, 100], [200, 400], destination).is_none());
     }
 }

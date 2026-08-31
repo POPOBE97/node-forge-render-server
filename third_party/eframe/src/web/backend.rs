@@ -25,7 +25,11 @@ pub(crate) struct WebInput {
 }
 
 impl WebInput {
-    pub fn new_frame(&mut self, canvas_size: egui::Vec2) -> egui::RawInput {
+    pub fn new_frame(
+        &mut self,
+        canvas_size: egui::Vec2,
+        native_pixels_per_point: f32,
+    ) -> egui::RawInput {
         let mut raw_input = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(Default::default(), canvas_size)),
             time: Some(super::now_sec()),
@@ -35,7 +39,7 @@ impl WebInput {
             .viewports
             .entry(egui::ViewportId::ROOT)
             .or_default();
-        viewport.native_pixels_per_point = Some(super::native_pixels_per_point());
+        viewport.native_pixels_per_point = Some(native_pixels_per_point);
 
         // A hidden browser tab is effectively occluded.
         let hidden = web_sys::window()

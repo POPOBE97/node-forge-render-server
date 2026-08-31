@@ -127,6 +127,9 @@ impl Painter {
         if let Some(desired_maximum_frame_latency) = config.desired_maximum_frame_latency {
             surf_config.desired_maximum_frame_latency = desired_maximum_frame_latency;
         }
+        if let Some(color_space) = config.preferred_surface_color_space {
+            surf_config.color_space = color_space;
+        }
 
         surface_state
             .surface
@@ -757,7 +760,7 @@ impl Painter {
             profiling::scope!("present");
             // wgpu doesn't document where vsync can happen. Maybe here?
             let start = web_time::Instant::now();
-            output_frame.present();
+            render_state.queue.present(output_frame);
             vsync_sec += start.elapsed().as_secs_f32();
         }
 

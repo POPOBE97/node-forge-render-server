@@ -210,12 +210,16 @@ impl CaptureState {
                 return;
             }
             let buffer_slice = buffer.slice(..);
+            let mapped_range = match buffer_slice.get_mapped_range() {
+                Ok(mapped_range) => mapped_range,
+                Err(err) => {
+                    log::error!("Failed to access mapped capture buffer: {err}");
+                    return;
+                }
+            };
 
             let mut pixels = Vec::with_capacity((tex_extent.width * tex_extent.height) as usize);
-            for padded_row in buffer_slice
-                .get_mapped_range()
-                .chunks(padding.padded_bytes_per_row as usize)
-            {
+            for padded_row in mapped_range.chunks(padding.padded_bytes_per_row as usize) {
                 let row = &padded_row[..padding.unpadded_bytes_per_row as usize];
                 for color in row.chunks(4) {
                     pixels.push(epaint::Color32::from_rgba_premultiplied(

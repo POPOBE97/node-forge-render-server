@@ -120,6 +120,16 @@ impl PlaybackRuntime {
         }
     }
 
+    /// Force playback to a selectable authored State and render its initial frame.
+    pub fn force_state(&mut self, state_id: &str) -> Result<PlaybackFrame> {
+        self.animation
+            .as_mut()
+            .context("scene has no State Machine")?
+            .force_state(state_id)?;
+        self.dirty = true;
+        self.advance(0.0)
+    }
+
     pub fn reset(&mut self) -> Result<PlaybackFrame> {
         self.playing = false;
         self.static_time_seconds = 0.0;

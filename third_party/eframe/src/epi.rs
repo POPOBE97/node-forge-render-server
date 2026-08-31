@@ -547,6 +547,17 @@ pub struct WebOptions {
     /// Defaults to true.
     pub dithering: bool,
 
+    /// Whether the canvas surface should preserve alpha for page compositing.
+    ///
+    /// Defaults to false.
+    pub transparent: bool,
+
+    /// Keep the canvas backing dimensions fixed and interpret one egui point as one canvas pixel.
+    /// CSS may still scale the canvas element.
+    ///
+    /// Defaults to false.
+    pub fixed_canvas_pixels: bool,
+
     /// If the web event corresponding to an egui event should be propagated
     /// to the rest of the web page.
     ///
@@ -582,6 +593,10 @@ impl Default for WebOptions {
             wgpu_options: egui_wgpu::WgpuConfiguration::default(),
 
             dithering: true,
+
+            transparent: false,
+
+            fixed_canvas_pixels: false,
 
             should_stop_propagation: Box::new(|_| true),
             should_prevent_default: Box::new(|_| true),

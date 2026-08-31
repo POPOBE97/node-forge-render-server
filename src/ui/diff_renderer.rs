@@ -453,7 +453,13 @@ impl DiffRenderer {
             return None;
         }
 
-        let mapped = slice.get_mapped_range();
+        let mapped = match slice.get_mapped_range() {
+            Ok(mapped) => mapped,
+            Err(_) => {
+                buffer.unmap();
+                return None;
+            }
+        };
         let bytes = mapped.to_vec();
         drop(mapped);
         buffer.unmap();

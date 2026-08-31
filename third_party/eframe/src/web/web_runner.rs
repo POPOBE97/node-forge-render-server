@@ -61,6 +61,7 @@ impl WebRunner {
         app_creator: epi::AppCreator<'static>,
     ) -> Result<(), JsValue> {
         self.destroy();
+        let fixed_canvas_pixels = web_options.fixed_canvas_pixels;
 
         {
             // Make sure the canvas can be given focus.
@@ -79,7 +80,9 @@ impl WebRunner {
             self.app_runner.replace(Some(app_runner));
         }
 
-        {
+        if fixed_canvas_pixels {
+            self.request_animation_frame()?;
+        } else {
             let resize_observer = events::ResizeObserverContext::new(self)?;
 
             // Properly size the canvas. Will also call `self.request_animation_frame()` (eventually)

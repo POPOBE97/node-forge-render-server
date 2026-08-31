@@ -21,6 +21,10 @@ wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = ["Document", "Element", "HtmlCanvasElement", "Window"] }
 
+[patch.crates-io]
+eframe = { path = "../../third_party/eframe" }
+egui-wgpu = { path = "../../third_party/egui-wgpu" }
+
 [profile.release]
 opt-level = "z"
 lto = true

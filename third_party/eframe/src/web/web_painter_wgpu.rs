@@ -116,12 +116,21 @@ impl WebPainterWgpu {
             .get_default_config(&render_state.adapter, 0, 0) // Width/height is set later.
             .ok_or("The surface isn't supported by this adapter")?;
 
-        let surface_configuration = wgpu::SurfaceConfiguration {
+        let mut surface_configuration = wgpu::SurfaceConfiguration {
             format: render_state.target_format,
             present_mode: wgpu_options.present_mode,
             view_formats: vec![render_state.target_format],
             ..default_configuration
         };
+        if options.transparent {
+            // wgpu's WebGPU backend currently reports only Opaque in surface capabilities,
+            // while its canvas configure path explicitly supports PreMultiplied and maps it
+            // to GPUCanvasAlphaMode::Premultiplied. Request it directly for page compositing.
+            surface_configuration.alpha_mode = wgpu::CompositeAlphaMode::PreMultiplied;
+        }
+        if let Some(color_space) = wgpu_options.preferred_surface_color_space {
+            surface_configuration.color_space = color_space;
+        }
 
         log::debug!("wgpu painter initialized.");
 
@@ -350,7 +359,7 @@ impl WebPainter for WebPainterWgpu {
                 );
             }
 
-            frame.present();
+            render_state.queue.present(frame);
         }
 
         // Free textures marked for destruction **after** queue submit since they might still be used in the current frame.

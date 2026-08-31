@@ -47,6 +47,11 @@ impl AppRunner {
         text_agent: TextAgent,
     ) -> Result<Self, String> {
         let egui_ctx = egui::Context::default();
+        let native_pixels_per_point = if web_options.fixed_canvas_pixels {
+            1.0
+        } else {
+            super::native_pixels_per_point()
+        };
 
         #[allow(clippy::allow_attributes, unused_assignments)]
         #[cfg(feature = "glow")]
@@ -109,8 +114,8 @@ impl AppRunner {
         // so that the app knows about it during app creation:
         egui_ctx.input_mut(|i| {
             let viewport_info = i.raw.viewports.entry(egui::ViewportId::ROOT).or_default();
-            viewport_info.native_pixels_per_point = Some(super::native_pixels_per_point());
-            i.pixels_per_point = super::native_pixels_per_point();
+            viewport_info.native_pixels_per_point = Some(native_pixels_per_point);
+            i.pixels_per_point = native_pixels_per_point;
         });
 
         let cc = epi::CreationContext {
@@ -170,7 +175,7 @@ impl AppRunner {
             .viewports
             .entry(egui::ViewportId::ROOT)
             .or_default()
-            .native_pixels_per_point = Some(super::native_pixels_per_point());
+            .native_pixels_per_point = Some(native_pixels_per_point);
         runner.input.raw.system_theme = super::system_theme();
 
         Ok(runner)
@@ -257,8 +262,17 @@ impl AppRunner {
         // We might have received a screenshot
         self.painter.handle_screenshots(&mut self.input.raw.events);
 
-        let canvas_size = super::canvas_size_in_points(self.canvas(), self.egui_ctx());
-        let mut raw_input = self.input.new_frame(canvas_size);
+        let native_pixels_per_point = if self.web_options.fixed_canvas_pixels {
+            1.0
+        } else {
+            super::native_pixels_per_point()
+        };
+        let canvas_size = if self.web_options.fixed_canvas_pixels {
+            egui::vec2(self.canvas().width() as f32, self.canvas().height() as f32)
+        } else {
+            super::canvas_size_in_points(self.canvas(), self.egui_ctx())
+        };
+        let mut raw_input = self.input.new_frame(canvas_size, native_pixels_per_point);
 
         if super::DEBUG_RESIZE {
             log::info!(

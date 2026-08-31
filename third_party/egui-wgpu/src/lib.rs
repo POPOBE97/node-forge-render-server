@@ -107,6 +107,7 @@ async fn request_adapter(
             // * fails if there's no software rasterizer available
             // * can achieve the same with `native_adapter_selector`
             force_fallback_adapter: false,
+            apply_limit_buckets: false,
         })
         .await
         .inspect_err(|_err| {
@@ -225,7 +226,24 @@ impl RenderState {
             profiling::scope!("get_capabilities");
             compatible_surface.map_or_else(
                 || vec![wgpu::TextureFormat::Rgba8Unorm],
-                |s| s.get_capabilities(&adapter).formats,
+                |surface| {
+                    let capabilities = surface.get_capabilities(&adapter);
+                    config
+                        .preferred_surface_color_space
+                        .and_then(wgpu::SurfaceColorSpace::to_color_spaces)
+                        .map_or(capabilities.formats, |requested| {
+                            capabilities
+                                .format_capabilities
+                                .into_iter()
+                                .filter_map(|capability| {
+                                    capability
+                                        .color_spaces
+                                        .contains(requested)
+                                        .then_some(capability.format)
+                                })
+                                .collect()
+                        })
+                },
             )
         };
         let target_format = if let Some(preferred) = config.preferred_surface_format {
@@ -322,6 +340,14 @@ pub struct WgpuConfiguration {
     ///
     /// `None` = use the default heuristic (`preferred_framebuffer_format`).
     pub preferred_surface_format: Option<wgpu::TextureFormat>,
+
+    /// Override the presentation color space.
+    ///
+    /// The renderer must write values encoded for the selected color space. Wide-gamut and HDR
+    /// output still require an application-owned final present pass.
+    ///
+    /// `None` = [`wgpu::SurfaceColorSpace::Auto`].
+    pub preferred_surface_color_space: Option<wgpu::SurfaceColorSpace>,
 }
 
 #[test]
@@ -338,6 +364,7 @@ impl std::fmt::Debug for WgpuConfiguration {
             wgpu_setup,
             on_surface_status: _,
             preferred_surface_format,
+            preferred_surface_color_space,
         } = self;
         f.debug_struct("WgpuConfiguration")
             .field("present_mode", &present_mode)
@@ -347,6 +374,10 @@ impl std::fmt::Debug for WgpuConfiguration {
             )
             .field("wgpu_setup", &wgpu_setup)
             .field("preferred_surface_format", &preferred_surface_format)
+            .field(
+                "preferred_surface_color_space",
+                &preferred_surface_color_space,
+            )
             .finish_non_exhaustive()
     }
 }
@@ -360,6 +391,7 @@ impl Default for WgpuConfiguration {
             // `WgpuSetup::from_display_handle(...)` before creating the instance if one is available.
             wgpu_setup: WgpuSetup::without_display_handle(),
             preferred_surface_format: None,
+            preferred_surface_color_space: None,
             on_surface_status: Arc::new(|status| match status {
                 wgpu::CurrentSurfaceTexture::Outdated => {
                     // The compositor changed the surface (resize, scale, output, …). wgpu
@@ -450,6 +482,7 @@ pub fn adapter_info_summary(info: &wgpu::AdapterInfo) -> String {
         subgroup_min_size,
         subgroup_max_size,
         transient_saves_memory,
+        ..
     } = &info;
 
     // Example values:
@@ -487,7 +520,7 @@ pub fn adapter_info_summary(info: &wgpu::AdapterInfo) -> String {
     if *subgroup_min_size != 0 || *subgroup_max_size != 0 {
         summary += &format!(", subgroup_size: {subgroup_min_size}..={subgroup_max_size}");
     }
-    summary += &format!(", transient_saves_memory: {transient_saves_memory}");
+    summary += &format!(", transient_saves_memory: {transient_saves_memory:?}");
 
     summary
 }

@@ -310,6 +310,7 @@ impl RenderPlanner {
                         | TextureFormat::Bgra8UnormSrgb
                         | TextureFormat::Rgba8Unorm
                         | TextureFormat::Bgra8Unorm
+                        | TextureFormat::Rgba16Float
                 )
             };
             if needs_sdr {
@@ -2079,6 +2080,33 @@ mod tests {
                 .map(|name| name.as_str()),
             Some("node_5.present.sdr.srgb.pass")
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn sdr_ui_encodes_float_scene_output_before_presentation() -> Result<()> {
+        let (scene, assets) = load_case("hdr-bloom-nodes")?;
+        let plan = planner_for_mode(ShaderSpacePresentationMode::UiSdrDisplayEncode).plan(
+            &scene,
+            assets.as_ref(),
+            None,
+        )?;
+
+        assert_eq!(
+            plan.present_output_texture.as_str(),
+            "RenderTexture_6.present.sdr.srgb"
+        );
+        assert!(
+            plan.resources
+                .composite_passes
+                .iter()
+                .any(|name| { name.as_str() == "RenderTexture_6.present.sdr.srgb.pass" })
+        );
+        assert!(plan.resources.textures.iter().any(|texture| {
+            texture.name.as_str() == "RenderTexture_6.present.sdr.srgb"
+                && texture.format == TextureFormat::Rgba8Unorm
+        }));
 
         Ok(())
     }

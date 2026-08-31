@@ -460,6 +460,13 @@ fn install_window_events(runner_ref: &WebRunner, window: &EventTarget) -> Result
 }
 
 fn install_dpr_change_event(web_runner: &WebRunner) -> Result<(), JsValue> {
+    if web_runner
+        .try_lock()
+        .is_some_and(|runner| runner.web_options.fixed_canvas_pixels)
+    {
+        return Ok(());
+    }
+
     let original_dpr = native_pixels_per_point();
 
     let window = web_sys::window().unwrap();
