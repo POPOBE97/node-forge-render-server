@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{Result, anyhow};
-use rust_wgpu_fiber::{ResourceName, eframe::wgpu};
+use rust_wgpu_fiber::{ResourceName, wgpu};
 
 use crate::{
     asset_store::AssetStore,
@@ -301,7 +301,9 @@ impl GaussianBlurBundleTemplate {
             device: &self.planning_device,
             adapter: None,
         };
+        let mut image_textures = Vec::new();
         let mut builder_state = BuilderState {
+            image_textures: &mut image_textures,
             target_texture_name: &self.target_texture_name,
             target_format: self.target_format,
             sampled_pass_format: self.sampled_pass_format,

@@ -4,9 +4,9 @@ use std::hash::Hash;
 
 use crate::android_reference::AndroidReferenceStatus;
 use crate::app::{
-    AnalysisTab, ClippingSettings, DiffMetricMode, DiffStats, PlaybackRate, QualifierChannel,
-    QualifierSettings, RefImageMode, ResourcePoolInfo, StateControlSelection, TestMode,
-    display_metrics,
+    AnalysisTab, ClippingMode, ClippingSettings, DiffMetricMode, DiffStats, PlaybackRate,
+    QualifierChannel, QualifierSettings, RefImageMode, ResourcePoolInfo, StateControlSelection,
+    TestMode, display_metrics,
 };
 
 use super::button::{
@@ -281,6 +281,8 @@ pub enum SidebarAction {
     SetPlaybackRate(PlaybackRate),
     /// Open or focus the standalone animation curve window.
     OpenAnimationCurves,
+    OpenPixelPerfecto,
+    OpenCameraStudio,
     /// User clicked a readable texture — preview it in the canvas.
     PreviewTexture(String),
     /// Capture and preview one render pass independently of later target writers.
@@ -311,6 +313,8 @@ pub enum SidebarAction {
     SetAnalysisTab(AnalysisTab),
     /// Enable/disable clipping overlay.
     SetClipEnabled(bool),
+    /// Select threshold warnings or out-of-range linear-sRGB pixels.
+    SetClippingMode(ClippingMode),
     /// Set clipping shadow threshold.
     SetClippingShadowThreshold(f32),
     /// Set clipping highlight threshold.
@@ -482,6 +486,13 @@ pub fn show_in_rect(
                     .show(ui, |ui| {
                         egui::ScrollArea::vertical().show(ui, |ui| {
                             with_sidebar_content_padding(ui, |ui| {
+                                if button::button(ui, ButtonOptions::new("Pixel Perfecto")).clicked() {
+                                    sidebar_action = Some(SidebarAction::OpenPixelPerfecto);
+                                }
+                                if button::button(ui, ButtonOptions::new("Camera Studio")).clicked() {
+                                    sidebar_action = Some(SidebarAction::OpenCameraStudio);
+                                }
+                                ui.add_space(SIDEBAR_GRID_ROW_GAP);
                                 show_state_section(ui, &state_control, &mut sidebar_action);
                             });
                             section_divider(ui);
@@ -990,6 +1001,39 @@ fn show_clip_section(
         |ui| {
             let row_action = RefCell::new(None);
             ui.add_enabled_ui(analysis.clip_enabled, |ui| {
+                sidebar_grid_row(ui, |row| {
+                    row.place(1, 4, |ui| {
+                        sidebar_group_cell(ui, "Mode", |ui| {
+                            let mut mode = analysis.clipping.mode;
+                            let options = [ClippingMode::Threshold, ClippingMode::LinearSrgb]
+                                .map(|value| RadioButtonOption {
+                                    value,
+                                    label: value.label(),
+                                });
+                            if radio_button_group::radio_button_group(
+                                ui,
+                                "ui.debug_sidebar.clip.mode",
+                                &mut mode,
+                                &options,
+                            ) {
+                                *row_action.borrow_mut() =
+                                    Some(SidebarAction::SetClippingMode(mode));
+                            }
+                        });
+                    });
+                });
+                if analysis.clipping.mode == ClippingMode::LinearSrgb {
+                    ui.label(design_tokens::rich_text(
+                        "RGB < 0: blue · RGB > 1: orange · both: magenta",
+                        TextRole::AttributeTitle,
+                    ))
+                    .on_hover_text(concat!(
+                        "Checks the scene or preview texture in linear sRGB before display ",
+                        "encoding and clamping, including while viewing Diff. ",
+                        "Alpha is excluded; 0 and 1 are in range.",
+                    ));
+                    return;
+                }
                 sidebar_grid_row(ui, |row| {
                     row.place(1, 2, |ui| {
                         sidebar_group_cell(ui, "Shadow", |ui| {

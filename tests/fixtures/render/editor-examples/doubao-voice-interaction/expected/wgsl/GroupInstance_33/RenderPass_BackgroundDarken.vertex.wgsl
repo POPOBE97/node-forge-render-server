@@ -33,8 +33,14 @@ var<uniform> params: Params;
 
 
 struct GraphInputs {
-    // Node: FloatInput_44
-    node_FloatInput_44_1413f420: vec4f,
+    // Node: FloatInput_BackgroundDarkenAlphaEnd
+    node_FloatInput_BackgroundDarkenAlphaEnd_bee5d8a6: vec4f,
+    // Node: FloatInput_BackgroundDarkenAlphaEndY
+    node_FloatInput_BackgroundDarkenAlphaEndY_85a78e82: vec4f,
+    // Node: FloatInput_BackgroundDarkenAlphaStart
+    node_FloatInput_BackgroundDarkenAlphaStart_db1c26b4: vec4f,
+    // Node: FloatInput_BackgroundDarkenAlphaStartY
+    node_FloatInput_BackgroundDarkenAlphaStartY_e670c21c: vec4f,
     // Node: Vector2Input_BackgroundPositionPx
     node_Vector2Input_BackgroundPositionPx_5e1cdc88: vec4f,
     // Node: Vector2Input_BackgroundSizePx
@@ -81,10 +87,17 @@ fn shader_material_GroupInstance_33_ShaderMaterial_BackgroundDarken(
     in: ShaderMaterialInput,
     content_tex: texture_2d<f32>,
     content_sampler: sampler,
-    darken_alpha: f32,
+    darken_alpha_start_y_px: f32,
+    darken_alpha_start: f32,
+    darken_alpha_end_y_px: f32,
+    darken_alpha_end: f32,
 ) -> vec4f {
     let content = sample_texture_local_uv(content_tex, content_sampler, in.uv);
-    let a = clamp(darken_alpha, 0.0, 1.0);
+    let a = mix(
+        darken_alpha_start,
+        darken_alpha_end,
+        smoothstep(darken_alpha_start_y_px, darken_alpha_end_y_px, in.local_position.y)
+    );
     return vec4f(content.rgb * (1.0 - a), a + content.a * (1.0 - a));
 }
 

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use anyhow::{Context, Result, anyhow, bail};
-use rust_wgpu_fiber::eframe::wgpu::{self, BlendState};
+use rust_wgpu_fiber::wgpu::{self, BlendState};
 
 use crate::dsl::parse_str;
 

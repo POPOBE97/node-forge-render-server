@@ -177,57 +177,80 @@ pub fn build_gradient_blur_composite_wgsl_bundle_with_graph_binding(
 ) -> Result<WgslShaderBundle> {
     assert_eq!(mip_pass_ids.len(), GB_MIP_LEVELS as usize);
 
-    // --- 1. Compile the mask expression ----------------------------------
-    let mask_conn = incoming_connection(scene, gb_node_id, "mask").ok_or_else(|| {
-        anyhow::anyhow!("GradientBlur {gb_node_id}: 'mask' input is not connected")
-    })?;
-
-    let mask_upstream = nodes_by_id.get(&mask_conn.from.node_id).ok_or_else(|| {
-        anyhow::anyhow!(
-            "GradientBlur: mask upstream node not found: {}",
-            mask_conn.from.node_id
-        )
-    })?;
-
-    // Validate mask is a material expression, not a pass.
-    if matches!(
-        mask_upstream.node_type.as_str(),
-        "RenderPass"
-            | "BloomNode"
-            | "ImagePass"
-            | "GuassianBlurPass"
-            | "Downsample"
-            | "Convolution"
-            | "Upsample"
-            | "GradientBlur"
-            | "MeshGradient"
-            | "Composite"
-    ) {
-        bail!(
-            "GradientBlur: unsupported capability — mask must be a material expression, got pass node {} ({})",
-            mask_conn.from.node_id,
-            mask_upstream.node_type
-        );
-    }
-
     let mut material_ctx = MaterialCompileContext::default();
     let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
-    let mask_expr = compile_material_expr(
-        scene,
-        nodes_by_id,
-        &mask_conn.from.node_id,
-        Some(&mask_conn.from.port_id),
-        &mut material_ctx,
-        &mut cache,
-    )?;
+    let node = nodes_by_id.get(gb_node_id)
+        .ok_or_else(|| anyhow::anyhow!("missing blur node {gb_node_id}"))?;
+    let mask_f32 = if node.node_type == "ChromaticBlur" {
+        super::wgsl_chromatic_blur::compile_sigma(
+            scene, nodes_by_id, node, &mut material_ctx, &mut cache,
+        )?
+    } else {
+        // --- 1. Compile the mask expression ----------------------------------
+        let mask_conn = incoming_connection(scene, gb_node_id, "mask").ok_or_else(|| {
+            anyhow::anyhow!("GradientBlur {gb_node_id}: 'mask' input is not connected")
+        })?;
 
-    // Coerce mask to f32 (clamp to safe range in WGSL, not here).
-    let mask_f32 = coerce_to_type(mask_expr, ValueType::F32)?;
+        let mask_upstream = nodes_by_id.get(&mask_conn.from.node_id).ok_or_else(|| {
+            anyhow::anyhow!(
+                "GradientBlur: mask upstream node not found: {}",
+                mask_conn.from.node_id
+            )
+        })?;
+
+        // Validate mask is a material expression, not a pass.
+        if matches!(
+            mask_upstream.node_type.as_str(),
+            "RenderPass"
+                | "BloomNode"
+                | "ImagePass"
+                | "GuassianBlurPass"
+                | "Downsample"
+                | "Convolution"
+                | "Upsample"
+                | "GradientBlur"
+                | "ChromaticBlur"
+                | "MeshGradient"
+                | "TextPass"
+                | "Composite"
+        ) {
+            bail!(
+                "GradientBlur: unsupported capability — mask must be a material expression, got pass node {} ({})",
+                mask_conn.from.node_id,
+                mask_upstream.node_type
+            );
+        }
+
+        let mask_expr = compile_material_expr(
+            scene,
+            nodes_by_id,
+            &mask_conn.from.node_id,
+            Some(&mask_conn.from.port_id),
+            &mut material_ctx,
+            &mut cache,
+        )?;
+
+        // Coerce mask to f32 (clamp to safe range in WGSL, not here).
+        coerce_to_type(mask_expr, ValueType::F32)?
+    };
 
     // --- 2. Register mip pass textures -----------------------------------
     for mip_id in mip_pass_ids {
         material_ctx.register_pass_texture(mip_id);
     }
+
+    // Padding can introduce a half-pixel phase on odd-sized sources. Preserve
+    // ChromaticBlur's unfiltered pixels when the Gaussian stage is disabled or
+    // its local mask is zero; do not round-trip those pixels through padding.
+    let zero_sigma_sample = if node.node_type == "ChromaticBlur" {
+        let source_id = format!("sys.cb.{gb_node_id}.rgb");
+        material_ctx.register_pass_texture(&source_id);
+        let texture = MaterialCompileContext::pass_tex_var_name(&source_id);
+        let sampler = MaterialCompileContext::pass_sampler_var_name(&source_id);
+        format!("    if (gb_sigma <= 0.0) {{ return textureSampleLevel({texture}, {sampler}, in.uv, 0.0); }}\n")
+    } else {
+        String::new()
+    };
 
     // --- 3. Build graph schema -------------------------------------------
     let graph_schema = merge_graph_input_kinds(&material_ctx, &std::collections::BTreeMap::new());
@@ -263,7 +286,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {{
     // NOTE: The mask expression sees user coordinates (in.local_px),
     // i.e. (0,0) = bottom-left of the original source image.
     let gb_sigma = max({mask_expr}, 0.0);
-
+{zero_sigma_sample}
     // Sigma → mip level (clamped to safe range).
     var gb_m: f32 = 0.0;
     if (gb_sigma > 0.0) {{
@@ -392,7 +415,7 @@ fn build_composite_helpers(mip_pass_ids: &[String], _padded_size: [f32; 2]) -> S
 // Shared WGSL snippets.
 // ---------------------------------------------------------------------------
 
-const PARAMS_AND_VSOUT: &str = r#"
+pub(crate) const PARAMS_AND_VSOUT: &str = r#"
 struct Params {
     target_size: vec2f,
     geo_size: vec2f,
@@ -427,7 +450,7 @@ struct VSOut {
 
 "#;
 
-const FULLSCREEN_VERTEX: &str = r#"
+pub(crate) const FULLSCREEN_VERTEX: &str = r#"
 @vertex
 fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
     var out: VSOut;

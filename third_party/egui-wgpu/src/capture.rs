@@ -230,6 +230,8 @@ impl CaptureState {
                     ));
                 }
             }
+            // wgpu 30 requires every mapped view to be released before unmapping.
+            drop(mapped_range);
             buffer.unmap();
 
             tx.send((

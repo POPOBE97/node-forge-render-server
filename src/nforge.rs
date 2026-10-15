@@ -612,6 +612,15 @@ pub fn load(path: &Path) -> Result<LoadedNforge> {
     })
 }
 
+/// Read the document's material sources for deployment to a remote renderer.
+pub fn load_material_sources(path: &Path) -> Result<Vec<(String, String)>> {
+    let connection = open_readonly(path)?;
+    validate_container(&connection)?;
+    let mut statement = connection.prepare("SELECT node_id, content FROM materials ORDER BY node_id")?;
+    Ok(statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
 pub fn load_frame_freezes(path: &Path) -> Result<Vec<FrameFreezeCase>> {
     let connection = open_readonly(path)?;
     let mut statement = connection.prepare(

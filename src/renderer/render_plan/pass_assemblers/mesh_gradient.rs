@@ -8,7 +8,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result, anyhow, bail};
 use rust_wgpu_fiber::{
     ResourceName,
-    eframe::wgpu::{self, Color},
+    wgpu::{self, Color},
 };
 use serde_json::Value;
 
@@ -742,7 +742,7 @@ fn parse_color_from_params(
     parse_color_value(value)
 }
 
-fn parse_color_value(value: &Value) -> Option<[f32; 4]> {
+pub(super) fn parse_color_value(value: &Value) -> Option<[f32; 4]> {
     if let Some(s) = value.as_str() {
         return parse_hex_color(s);
     }

@@ -6,7 +6,7 @@
 use anyhow::{Context, Result, bail};
 use rust_wgpu_fiber::{
     ResourceName,
-    eframe::wgpu::{self, BlendState, Color},
+    wgpu::{self, BlendState, Color},
 };
 
 use crate::{

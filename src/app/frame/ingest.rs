@@ -332,7 +332,7 @@ pub(super) fn run(
     }
 
     let mut did_rebuild_shader_space = false;
-    if let Some(update) = scene_runtime::drain_latest_scene_update(app) {
+    if let Some(update) = scene_runtime::next_scene_update(app) {
         let perf_trace = update.perf_trace().cloned();
         let perf_update_kind = update.perf_update_kind();
         let renderer_queue_ms = perf_trace

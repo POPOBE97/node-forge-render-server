@@ -43,6 +43,10 @@ struct GraphInputs {
     node_Vector2Input_PttPromptPositionPx_0e4ab36d: vec4f,
     // Node: Vector2Input_PttPromptSizePx
     node_Vector2Input_PttPromptSizePx_2821c809: vec4f,
+    // Node: ui.prompt.continuous
+    node_ui_prompt_continuous_f64d8b1c: vec4f,
+    // Node: ui.prompt.hardware
+    node_ui_prompt_hardware_2db38719: vec4f,
 };
 
 @group(0) @binding(2)
@@ -61,6 +65,18 @@ var img_tex_GroupInstance_52_ImageTexture_PttPromptCancel: texture_2d<f32>;
 
 @group(1) @binding(3)
 var img_samp_GroupInstance_52_ImageTexture_PttPromptCancel: sampler;
+
+@group(1) @binding(4)
+var img_tex_GroupInstance_52_ui_prompt_continuous_texture: texture_2d<f32>;
+
+@group(1) @binding(5)
+var img_samp_GroupInstance_52_ui_prompt_continuous_texture: sampler;
+
+@group(1) @binding(6)
+var img_tex_GroupInstance_52_ui_prompt_hardware_texture: texture_2d<f32>;
+
+@group(1) @binding(7)
+var img_samp_GroupInstance_52_ui_prompt_hardware_texture: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---
@@ -87,17 +103,13 @@ fn sample_texture_local_uv(
     return textureSample(source, source_sampler, vec2f(local_uv.x, 1.0 - local_uv.y));
 }
 
-fn shader_material_GroupInstance_52_ShaderMaterial_PttPrompt(
-    in: ShaderMaterialInput,
-    send_color: vec4f,
-    cancel_color: vec4f,
-    prompt_color: vec4f,
-    prompt_opacity: f32,
-    cancel_mix: f32,
-) -> vec4f {
-    let mask_alpha = mix(send_color.a, cancel_color.a, clamp(cancel_mix, 0.0, 1.0));
-    let coverage = clamp(mask_alpha * prompt_color.a * prompt_opacity, 0.0, 1.0);
-    return vec4f(prompt_color.rgb * 1.5 * coverage, coverage);
+fn shader_material_GroupInstance_52_ShaderMaterial_PttPrompt(in: ShaderMaterialInput, send_color: vec4f, cancel_color: vec4f, prompt_color: vec4f, prompt_opacity: f32, cancel_mix: f32, continuous_color: vec4f, hardware_color: vec4f, continuous_weight: f32, hardware_weight: f32) -> vec4f {
+ let hold = mix(send_color.a, cancel_color.a, clamp(cancel_mix, 0.0, 1.0));
+ let continuous = clamp(continuous_weight, 0.0, 1.0);
+ let hardware = clamp(hardware_weight, 0.0, 1.0);
+ let mask = mix(mix(hold, continuous_color.a, continuous), hardware_color.a, hardware);
+ let coverage = clamp(mask * prompt_color.a * prompt_opacity, 0.0, 1.0);
+ return vec4f(prompt_color.rgb * 1.5 * coverage, coverage);
 }
 
 

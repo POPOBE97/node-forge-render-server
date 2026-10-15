@@ -342,7 +342,7 @@ fn shader_material_GroupInstance_32_ShaderMaterial_voice_dots(
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
     // Shader Material GroupInstance_32/ShaderMaterial_voice_dots.material
-    let light_hard_clip_feather_px_material = shader_material_GroupInstance_32_ShaderMaterial_voice_dots(
+    let voice_dot_width_px_material = shader_material_GroupInstance_32_ShaderMaterial_voice_dots(
         ShaderMaterialInput(vec2f(in.uv.x, 1.0 - in.uv.y), in.frag_coord_gl, in.local_px, in.geo_size_px, params.target_size, params.time),
         (graph_inputs.node_Vector2Input_LightEffectFrameSizePx_0e8bf3b1).xy,
         (graph_inputs.node_FloatInput_37_0eaa0821).x,
@@ -360,6 +360,6 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         vec4f((graph_inputs.node_ColorInput_VoiceDotColor_dfa3c7da).rgb * (graph_inputs.node_ColorInput_VoiceDotColor_dfa3c7da).a, (graph_inputs.node_ColorInput_VoiceDotColor_dfa3c7da).a),
     );
     // Final composite
-    let _frag_out = light_hard_clip_feather_px_material;
+    let _frag_out = voice_dot_width_px_material;
     return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

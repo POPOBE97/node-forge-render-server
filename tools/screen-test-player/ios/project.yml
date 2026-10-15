@@ -1,0 +1,26 @@
+name: NodeForgeScreenTest
+options:
+  bundleIdPrefix: com.nodeforge
+  deploymentTarget:
+    iOS: '18.0'
+targets:
+  ScreenTest:
+    type: application
+    platform: iOS
+    sources: [Sources]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nodeforge.screentest
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: NO
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_UIRequiresFullScreen: YES
+        SWIFT_VERSION: '5.0'
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: '1'
+schemes:
+  ScreenTest:
+    build:
+      targets:
+        ScreenTest: all

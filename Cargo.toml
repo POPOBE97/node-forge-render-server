@@ -3,6 +3,7 @@ name = "node-forge-render-server"
 version = "0.1.0"
 edition = "2024"
 build = "build.rs"
+default-run = "node-forge-render-server"
 
 [features]
 default = ["native"]
@@ -18,7 +19,11 @@ native = [
     "dep:rusqlite",
     "dep:similar",
     "dep:tungstenite",
+    "dep:libloading",
+    "dep:libc",
 ]
+portable-js = ["dep:rquickjs"]
+android-core = ["rust-wgpu-fiber/android-core", "portable-js", "dep:tungstenite"]
 web-core = [
     "rust-wgpu-fiber/web-core",
     "dep:js-sys",
@@ -27,13 +32,19 @@ web-core = [
 ]
 
 [dependencies]
+node-forge-resource-store = { path = "../node-forge-editor/packages/document/native" }
 rust-wgpu-fiber = { version = "*", path = "../rust-wgpu-fiber", default-features = false }
+rquickjs = { package = "rquickjs-core", version = "0.14", features = ["bindgen"], optional = true }
 anyhow = "1"
 base64 = "0.22"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
+cosmic-text = { version = "0.19", default-features = false, features = ["std", "swash"] }
+unicode-script = "0.5"
 crossbeam-channel = { version = "0.5", optional = true }
+libloading = { version = "0.8", optional = true }
+libc = { version = "0.2", optional = true }
 tungstenite = { version = "0.21", optional = true }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "exr"] }
 png = "0.18"
@@ -64,6 +75,21 @@ web-time = "1"
 [[bin]]
 name = "node-forge-render-server"
 path = "src/main.rs"
+required-features = ["native"]
+
+[[bin]]
+name = "pixel-perfecto"
+path = "src/bin/pixel-perfecto.rs"
+required-features = ["native"]
+
+[[bin]]
+name = "camera-studio"
+path = "src/bin/camera-studio.rs"
+required-features = ["native"]
+
+[[bin]]
+name = "android-player-check"
+path = "src/bin/android-player-check.rs"
 required-features = ["native"]
 
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -99,3 +125,8 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+
+[[bin]]
+name = "screen-test"
+path = "src/bin/screen-test.rs"
+required-features = ["native"]

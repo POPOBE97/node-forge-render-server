@@ -86,6 +86,19 @@ fn shader_material_GroupInstance_51_ShaderMaterial_InputBarUI(
 }
 
 
+fn aspect_correct_uv_fit(uv: vec2f, img_dim: vec2f, geo_dim: vec2f) -> vec2f {
+    // r = image_aspect / geo_aspect; r > 1 means image is relatively wider than geometry.
+    let r = (img_dim.x * geo_dim.y) / (img_dim.y * geo_dim.x);
+    let s = vec2f(max(1.0 / r, 1.0), max(r, 1.0));
+    return (uv - vec2f(0.5)) * s + vec2f(0.5);
+}
+fn aspect_correct_uv_fill(uv: vec2f, img_dim: vec2f, geo_dim: vec2f) -> vec2f {
+    let r = (img_dim.x * geo_dim.y) / (img_dim.y * geo_dim.x);
+    let s = vec2f(min(1.0 / r, 1.0), min(r, 1.0));
+    return (uv - vec2f(0.5)) * s + vec2f(0.5);
+}
+
+
  @vertex
  fn vs_main(
      @location(0) position: vec3f,
@@ -123,11 +136,17 @@ fn shader_material_GroupInstance_51_ShaderMaterial_InputBarUI(
  }
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
+    // ImageTexture GroupInstance_51/ImageTexture_InputBarUI aspect-correct uv
+    let image_texture_uv = aspect_correct_uv_fill(
+        (in.uv),
+        vec2f(textureDimensions(img_tex_GroupInstance_51_ImageTexture_InputBarUI)),
+        in.geo_size_px,
+    );
     // ImageTexture GroupInstance_51/ImageTexture_InputBarUI.color
     let image_texture_sample = textureSample(
         img_tex_GroupInstance_51_ImageTexture_InputBarUI,
         img_samp_GroupInstance_51_ImageTexture_InputBarUI,
-        (in.uv),
+        image_texture_uv,
     );
     // Shader Material GroupInstance_51/ShaderMaterial_InputBarUI.material
     let opacity_material = shader_material_GroupInstance_51_ShaderMaterial_InputBarUI(

@@ -1,0 +1,38 @@
+[package]
+name = "node-forge-android-player"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+anyhow = "1"
+node-forge-render-server = { path = "../..", default-features = false, features = ["android-core"] }
+rust-wgpu-fiber = { path = "../../../rust-wgpu-fiber", default-features = false, features = ["android-core"] }
+jni = "0.21"
+ndk-sys = "0.6"
+raw-window-handle = "0.6"
+pollster = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = "0.4"
+android_logger = "0.15"
+half = "2"
+bytemuck = "1"
+
+[profile.dev]
+opt-level = 1
+debug = 0
+
+[profile.dev.package."*"]
+opt-level = 2
+debug-assertions = false
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true
+
+[workspace]

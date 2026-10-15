@@ -149,8 +149,32 @@ impl AnalysisTab {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum ClippingMode {
+    #[default]
+    Threshold,
+    LinearSrgb,
+}
+
+impl ClippingMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Threshold => "Threshold",
+            Self::LinearSrgb => "Linear sRGB",
+        }
+    }
+
+    pub fn shader_code(self) -> u32 {
+        match self {
+            Self::Threshold => 0,
+            Self::LinearSrgb => 1,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ClippingSettings {
+    pub mode: ClippingMode,
     pub shadow_threshold: f32,
     pub highlight_threshold: f32,
 }
@@ -158,6 +182,7 @@ pub struct ClippingSettings {
 impl Default for ClippingSettings {
     fn default() -> Self {
         Self {
+            mode: ClippingMode::Threshold,
             shadow_threshold: 0.02,
             highlight_threshold: 0.98,
         }
@@ -310,7 +335,7 @@ pub struct AppInit {
     pub export_encode_pass_name: Option<ResourceName>,
     pub start: Instant,
     pub passes: Vec<renderer::PassBindings>,
-    pub scene_rx: Receiver<ws::SceneUpdate>,
+    pub scene_rx: ws::SceneUpdateReceiver,
     pub capture_state_rx: Option<Receiver<bool>>,
     pub ws_hub: ws::WsHub,
     pub last_good: Arc<Mutex<Option<crate::dsl::SceneDSL>>>,
@@ -347,7 +372,7 @@ pub(super) struct AppCore {
 
 pub(super) struct AppRuntime {
     pub start: Instant,
-    pub scene_rx: Receiver<ws::SceneUpdate>,
+    pub scene_rx: ws::SceneUpdateReceiver,
     pub capture_state_rx: Option<Receiver<bool>>,
     pub last_good: Arc<Mutex<Option<crate::dsl::SceneDSL>>>,
     pub uniform_scene: Option<crate::dsl::SceneDSL>,
@@ -532,6 +557,8 @@ pub(super) struct AppShell {
     pub resource_snapshot_broadcast_generation: u64,
     pub pass_debug_sources: std::collections::HashMap<String, renderer::PassDebugSource>,
     pub pass_debug_sources_revision: u64,
+    pub pixel_perfecto_window: Option<crate::pixel_perfecto::ToolWindow>,
+    pub camera_studio_window: Option<crate::camera_studio::ToolWindow>,
     pub pass_debug_windows: crate::ui::pass_debug_window::PassDebugWindowMap,
     pub animation_curve_window:
         Option<crate::ui::animation_curve_window::AnimationCurveWindowState>,
@@ -824,6 +851,8 @@ impl App {
                 pass_debug_sources_revision: 0,
                 pass_debug_windows: crate::ui::pass_debug_window::PassDebugWindowMap::default(),
                 animation_curve_window: None,
+                pixel_perfecto_window: None,
+                camera_studio_window: None,
                 pass_shader_overrides: std::collections::HashMap::new(),
                 pending_shortwire_diff_capture: None,
                 debug_artifacts,
@@ -890,7 +919,7 @@ impl App {
 mod tests {
     use std::collections::HashMap;
 
-    use super::{AnalysisTab, ClippingSettings, RenderTextureFpsTracker};
+    use super::{AnalysisTab, ClippingMode, ClippingSettings, RenderTextureFpsTracker};
     use crate::dsl::{Metadata, Node, SceneDSL};
 
     #[test]
@@ -903,6 +932,7 @@ mod tests {
     #[test]
     fn clipping_settings_defaults_are_in_expected_ranges() {
         let settings = ClippingSettings::default();
+        assert_eq!(settings.mode, ClippingMode::Threshold);
         assert!((0.0..=0.25).contains(&settings.shadow_threshold));
         assert!((0.75..=1.0).contains(&settings.highlight_threshold));
     }

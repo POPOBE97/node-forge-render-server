@@ -353,6 +353,12 @@ pub fn apply_action(
                 app.canvas.invalidation.analysis_tab_changed();
             }
         }
+        CanvasAction::SetClippingMode(mode) => {
+            if app.canvas.analysis.clipping_settings.mode != mode {
+                app.canvas.analysis.clipping_settings.mode = mode;
+                app.canvas.invalidation.clipping_controls_changed();
+            }
+        }
         CanvasAction::SetClippingShadowThreshold(threshold) => {
             let threshold = threshold.clamp(0.0, 1.0);
             if (app.canvas.analysis.clipping_settings.shadow_threshold - threshold).abs()

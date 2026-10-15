@@ -66,7 +66,9 @@ pub fn compile_glsl_snippet(spec: GlslSnippetSpec) -> Result<CompiledGlslSnippet
         ValueType::F32 => "float",
         ValueType::I32 => "int",
         ValueType::U32 => "uint",
-        ValueType::Bool => "bool",
+        // As with boolean inputs, only the synthetic stage IO is lowered.
+        // The helper itself must continue to return bool.
+        ValueType::Bool => "int",
         ValueType::Texture2D => "sampler2D",
         ValueType::Vec2 => "vec2",
         ValueType::Vec3 => "vec3",
@@ -77,14 +79,20 @@ pub fn compile_glsl_snippet(spec: GlslSnippetSpec) -> Result<CompiledGlslSnippet
         _ => unreachable!(),
     };
 
+    let entry_call = format!("{}({})", spec.fn_name, arg_forward.join(", "));
+    let entry_result = if spec.return_type == ValueType::Bool {
+        format!("int({entry_call})")
+    } else {
+        entry_call
+    };
+
     let glsl = format!(
-        "#version 450\n\n{helper_prefix}{ret_glsl} {fn_name}({params}) {{\n    {ret_glsl} output = {ret_glsl}(0.0);\n{body}\n    return output;\n}}\n\n{entry_inputs}\nlayout(location=0) out {entry_ret} _sn_out;\nvoid main() {{\n    _sn_out = {fn_name}({arg_forward});\n}}\n",
+        "#version 450\n\n{helper_prefix}{ret_glsl} {fn_name}({params}) {{\n    {ret_glsl} output = {ret_glsl}(0.0);\n{body}\n    return output;\n}}\n\n{entry_inputs}\nlayout(location=0) out {entry_ret} _sn_out;\nvoid main() {{\n    _sn_out = {entry_result};\n}}\n",
         fn_name = spec.fn_name,
         helper_prefix = spec.helper_prefix.as_deref().unwrap_or(""),
         params = glsl_params.join(", "),
         body = indent_glsl_body(&spec.body, 1),
         entry_inputs = entry_inputs.join("\n"),
-        arg_forward = arg_forward.join(", "),
     );
 
     let wgsl = glsl_to_wgsl(&glsl, spec.stage)

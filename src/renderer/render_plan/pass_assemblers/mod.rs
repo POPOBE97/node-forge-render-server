@@ -7,6 +7,7 @@
 pub(crate) mod args;
 pub(crate) mod bloom;
 pub(crate) mod composite;
+pub(crate) mod chromatic_blur;
 pub(crate) mod downsample;
 pub(crate) mod dynamic_gaussian_blur;
 pub(crate) mod gaussian_blur;
@@ -15,3 +16,5 @@ pub(crate) mod intelligent_light;
 pub(crate) mod mesh_gradient;
 pub(crate) mod render_pass;
 pub(crate) mod upsample;
+
+pub(crate) mod text_pass;

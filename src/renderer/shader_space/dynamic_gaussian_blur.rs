@@ -4,7 +4,7 @@ use anyhow::{Context, Result, anyhow};
 use rust_wgpu_fiber::{
     ResourceName,
     composition::CompositionBuilder,
-    eframe::wgpu::{self, ShaderStages, TextureUsages, vertex_attr_array},
+    wgpu::{self, ShaderStages, TextureUsages, vertex_attr_array},
     pool::{buffer_pool::BufferSpec, texture_pool::TextureSpec as FiberTextureSpec},
     shader_space::ShaderSpace,
 };

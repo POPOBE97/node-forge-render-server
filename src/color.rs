@@ -1,3 +1,4 @@
+#[cfg(any(feature = "native", feature = "web-core"))]
 use rust_wgpu_fiber::eframe::egui::Color32;
 
 fn clamp01(x: f32) -> f32 {
@@ -75,6 +76,7 @@ fn lab_to_xyz_d65([l, a, b]: [f32; 3]) -> [f32; 3] {
 /// use node_forge_render_server::color::lab;
 /// let c = lab(7.78201, -0.0000149, 0.0);
 /// ```
+#[cfg(any(feature = "native", feature = "web-core"))]
 pub fn lab(l: f32, a: f32, b: f32) -> Color32 {
     let xyz = lab_to_xyz_d65([l, a, b]);
     let rgb_linear = xyz_to_linear_srgb(xyz);
@@ -89,7 +91,7 @@ pub fn lab(l: f32, a: f32, b: f32) -> Color32 {
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(feature = "native", feature = "web-core")))]
 mod tests {
     use super::*;
 
@@ -108,3 +110,18 @@ mod tests {
         assert!(r >= 250 && g >= 250 && b >= 250, "got rgb=({r},{g},{b})");
     }
 }
+
+const DISPLAY_P3_TO_LINEAR_SRGB: [[f32; 3]; 3] = [
+    [1.224_940_2, -0.224_940_18, 0.0],
+    [-0.042_056_955, 1.042_057, 0.0],
+    [-0.019_637_555, -0.078_636_04, 1.098_273_6],
+];
+pub fn linear_p3_to_linear_srgb([r, g, b]: [f32; 3]) -> [f32; 3] {
+    let m = DISPLAY_P3_TO_LINEAR_SRGB;
+    [
+        m[0][0] * r + m[0][1] * g + m[0][2] * b,
+        m[1][0] * r + m[1][1] * g + m[1][2] * b,
+        m[2][0] * r + m[2][1] * g + m[2][2] * b,
+    ]
+}
+

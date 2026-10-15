@@ -91,6 +91,10 @@ pub(super) fn run(app: &mut App, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
     finalize::run(app, &ctx, &advance, &present);
     let finalize_ms = t4.elapsed().as_secs_f64() * 1000.0;
 
+    drop(renderer_guard);
+    crate::pixel_perfecto::show_tool_window(&ctx, &mut app.shell.pixel_perfecto_window);
+    crate::camera_studio::show_tool_window(&ctx, &mut app.shell.camera_studio_window);
+
     let total_ms = timer.elapsed_ms();
     metric_log!(
         "[frame] #{} total={:.2}ms | ingest={:.2}ms advance={:.2}ms analysis={:.2}ms present={:.2}ms finalize={:.2}ms",

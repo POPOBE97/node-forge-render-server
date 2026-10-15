@@ -7,7 +7,7 @@
 use anyhow::{Context, Result, anyhow};
 use rust_wgpu_fiber::{
     ResourceName,
-    eframe::wgpu::{self, BlendState, Color},
+    wgpu::{self, BlendState, Color},
 };
 
 use crate::{
@@ -48,7 +48,11 @@ pub(crate) fn assemble_gradient_blur(
 
     let target_texture_name = bs.target_texture_name.clone();
     let target_format = bs.target_format;
-    let sampled_pass_format = bs.sampled_pass_format;
+    let sampled_pass_format = if layer_node.node_type == "ChromaticBlur" {
+        wgpu::TextureFormat::Rgba16Float
+    } else {
+        bs.sampled_pass_format
+    };
     let tgt_w = bs.tgt_size[0];
     let tgt_h = bs.tgt_size[1];
     let tgt_w_u = bs.tgt_size_u[0];
@@ -252,6 +256,22 @@ pub(crate) fn assemble_gradient_blur(
         });
         bs.composite_passes.push(src_pass_name);
         src_tex
+    };
+
+    // ChromaticBlur shares this Gaussian backend after its two color stages.
+    let source_texture = if layer_node.node_type == "ChromaticBlur" {
+        super::chromatic_blur::assemble_color_stages(
+            sc,
+            bs,
+            layer_node,
+            source_texture,
+            initial_source_image_node_id.take(),
+            initial_source_sampler_kind.take().unwrap_or(SamplerKind::LinearMirror),
+            gb_src_resolution,
+            &mut gradient_chain_first_camera_consumed,
+        )?
+    } else {
+        source_texture
     };
 
     // ---------- pad pass ----------

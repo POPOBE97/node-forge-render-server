@@ -375,10 +375,11 @@ fn glass_process_color(
 }
 
 fn glass_smooth5_map(t_in: f32) -> f32 {
-    var t = mix(0.5, 1.0, t_in);
-    t = clamp(t, 0.0, 1.0);
-    t = t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
-    return (t - 0.5) * 2.0;
+    // Symmetry avoids catastrophic cancellation in finite-difference normals.
+    let t = clamp(0.5 + t_in * 0.5, 0.0, 1.0);
+    let q = min(t, 1.0 - t);
+    let polynomial = q * q * q * (10.0 + q * (-15.0 + 6.0 * q));
+    return select(2.0 * polynomial - 1.0, 1.0 - 2.0 * polynomial, t >= 0.5);
 }
 
 fn glass_smooth5_vertical(x: f32, k: f32) -> f32 {
@@ -628,7 +629,7 @@ fn sdf2d_smooth_round_rect(point: vec2f, center: vec2f, radius: f32, axis_mix: v
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
  // GlassMaterial(GroupInstance_34/GlassMaterial_20)
- var glass_shape_thickness_px_material_out: vec4f;
+ var input_bar_refraction_index_material_out: vec4f;
  {
      let screen_px = in.frag_coord_gl;
      let local_px = in.local_px.xy;
@@ -679,7 +680,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
 
      // --- Mix refraction + reflection ---
      var glass_mat = mix(refraction, reflection, clamp(1.0 + dot(normal, incident_ray) * 1.0, 0.0, 1.0));
-    glass_mat = glass_luminance_curve_lab(glass_mat, vec4f(0.0, 0.333299994, 0.666999996, 1.0), 1.0);
+    glass_mat = glass_luminance_curve_lab(glass_mat, vec4f(0.0, 0.330324799, 0.66256994, 0.999299705), 1.0);
     //  glass_mat = vec4f(glass_add_light(glass_mat.rgb, reflection.rgb, (1.0 - light_normalized_sdf) * 0.0), glass_mat.a);
 
      // --- Background color tinting ---
@@ -732,10 +733,10 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
 
      // --- Premultiply alpha ---
      glass_mat = vec4f(glass_mat.rgb * glass_mat.a, glass_mat.a);
-     glass_shape_thickness_px_material_out = glass_mat;
+     input_bar_refraction_index_material_out = glass_mat;
  }
 
     // Final composite
-    let _frag_out = glass_shape_thickness_px_material_out;
+    let _frag_out = input_bar_refraction_index_material_out;
     return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

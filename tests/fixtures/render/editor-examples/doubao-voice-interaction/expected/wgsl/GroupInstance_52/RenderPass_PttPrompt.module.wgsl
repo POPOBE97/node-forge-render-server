@@ -43,6 +43,10 @@ struct GraphInputs {
     node_Vector2Input_PttPromptPositionPx_0e4ab36d: vec4f,
     // Node: Vector2Input_PttPromptSizePx
     node_Vector2Input_PttPromptSizePx_2821c809: vec4f,
+    // Node: ui.prompt.continuous
+    node_ui_prompt_continuous_f64d8b1c: vec4f,
+    // Node: ui.prompt.hardware
+    node_ui_prompt_hardware_2db38719: vec4f,
 };
 
 @group(0) @binding(2)
@@ -61,6 +65,18 @@ var img_tex_GroupInstance_52_ImageTexture_PttPromptCancel: texture_2d<f32>;
 
 @group(1) @binding(3)
 var img_samp_GroupInstance_52_ImageTexture_PttPromptCancel: sampler;
+
+@group(1) @binding(4)
+var img_tex_GroupInstance_52_ui_prompt_continuous_texture: texture_2d<f32>;
+
+@group(1) @binding(5)
+var img_samp_GroupInstance_52_ui_prompt_continuous_texture: sampler;
+
+@group(1) @binding(6)
+var img_tex_GroupInstance_52_ui_prompt_hardware_texture: texture_2d<f32>;
+
+@group(1) @binding(7)
+var img_samp_GroupInstance_52_ui_prompt_hardware_texture: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---
@@ -87,17 +103,13 @@ fn sample_texture_local_uv(
     return textureSample(source, source_sampler, vec2f(local_uv.x, 1.0 - local_uv.y));
 }
 
-fn shader_material_GroupInstance_52_ShaderMaterial_PttPrompt(
-    in: ShaderMaterialInput,
-    send_color: vec4f,
-    cancel_color: vec4f,
-    prompt_color: vec4f,
-    prompt_opacity: f32,
-    cancel_mix: f32,
-) -> vec4f {
-    let mask_alpha = mix(send_color.a, cancel_color.a, clamp(cancel_mix, 0.0, 1.0));
-    let coverage = clamp(mask_alpha * prompt_color.a * prompt_opacity, 0.0, 1.0);
-    return vec4f(prompt_color.rgb * 1.5 * coverage, coverage);
+fn shader_material_GroupInstance_52_ShaderMaterial_PttPrompt(in: ShaderMaterialInput, send_color: vec4f, cancel_color: vec4f, prompt_color: vec4f, prompt_opacity: f32, cancel_mix: f32, continuous_color: vec4f, hardware_color: vec4f, continuous_weight: f32, hardware_weight: f32) -> vec4f {
+ let hold = mix(send_color.a, cancel_color.a, clamp(cancel_mix, 0.0, 1.0));
+ let continuous = clamp(continuous_weight, 0.0, 1.0);
+ let hardware = clamp(hardware_weight, 0.0, 1.0);
+ let mask = mix(mix(hold, continuous_color.a, continuous), hardware_color.a, hardware);
+ let coverage = clamp(mask * prompt_color.a * prompt_opacity, 0.0, 1.0);
+ return vec4f(prompt_color.rgb * 1.5 * coverage, coverage);
 }
 
 
@@ -175,16 +187,44 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         img_samp_GroupInstance_52_ImageTexture_PttPromptCancel,
         image_texture_uv_6abbb65f,
     );
+    // ImageTexture GroupInstance_52/ui.prompt.continuous.texture aspect-correct uv
+    let image_texture_uv_fd64020c = aspect_correct_uv_fill(
+        (in.uv),
+        vec2f(textureDimensions(img_tex_GroupInstance_52_ui_prompt_continuous_texture)),
+        in.geo_size_px,
+    );
+    // ImageTexture GroupInstance_52/ui.prompt.continuous.texture.color
+    let image_texture_sample_c4a85e1d = textureSample(
+        img_tex_GroupInstance_52_ui_prompt_continuous_texture,
+        img_samp_GroupInstance_52_ui_prompt_continuous_texture,
+        image_texture_uv_fd64020c,
+    );
+    // ImageTexture GroupInstance_52/ui.prompt.hardware.texture aspect-correct uv
+    let image_texture_uv_1c898552 = aspect_correct_uv_fill(
+        (in.uv),
+        vec2f(textureDimensions(img_tex_GroupInstance_52_ui_prompt_hardware_texture)),
+        in.geo_size_px,
+    );
+    // ImageTexture GroupInstance_52/ui.prompt.hardware.texture.color
+    let image_texture_sample_191c58e3 = textureSample(
+        img_tex_GroupInstance_52_ui_prompt_hardware_texture,
+        img_samp_GroupInstance_52_ui_prompt_hardware_texture,
+        image_texture_uv_1c898552,
+    );
     // Shader Material GroupInstance_52/ShaderMaterial_PttPrompt.material
-    let prompt_opacity_material = shader_material_GroupInstance_52_ShaderMaterial_PttPrompt(
+    let hardware_prompt_weight_material = shader_material_GroupInstance_52_ShaderMaterial_PttPrompt(
         ShaderMaterialInput(vec2f(in.uv.x, 1.0 - in.uv.y), in.frag_coord_gl, in.local_px, in.geo_size_px, params.target_size, params.time),
         image_texture_sample,
         image_texture_sample_bf885b77,
         vec4f((graph_inputs.node_ColorInput_PttPromptColor_4cb75d71).rgb * (graph_inputs.node_ColorInput_PttPromptColor_4cb75d71).a, (graph_inputs.node_ColorInput_PttPromptColor_4cb75d71).a),
         (graph_inputs.node_FloatInput_PttPromptOpacity_bb4016c2).x,
         (graph_inputs.node_FloatInput_PttPromptCancel_d83273ce).x,
+        image_texture_sample_c4a85e1d,
+        image_texture_sample_191c58e3,
+        (graph_inputs.node_ui_prompt_continuous_f64d8b1c).x,
+        (graph_inputs.node_ui_prompt_hardware_2db38719).x,
     );
     // Final composite
-    let _frag_out = prompt_opacity_material;
+    let _frag_out = hardware_prompt_weight_material;
     return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

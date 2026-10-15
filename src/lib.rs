@@ -6,6 +6,10 @@ pub mod animation;
 #[cfg(feature = "native")]
 pub mod app;
 pub mod asset_store;
+#[cfg(feature = "native")]
+pub mod camera_studio;
+#[cfg(feature = "native")]
+pub mod screen_test;
 pub mod color;
 #[cfg(feature = "native")]
 pub mod debug_artifacts;
@@ -18,6 +22,8 @@ pub mod nforge;
 pub mod perf_log;
 pub mod playback;
 #[cfg(feature = "native")]
+pub mod pixel_perfecto;
+#[cfg(feature = "native")]
 pub mod profile;
 pub mod protocol;
 #[cfg(feature = "native")]
@@ -29,3 +35,9 @@ pub mod state_machine;
 pub mod ui;
 #[cfg(feature = "native")]
 pub mod ws;
+
+#[cfg(feature = "portable-js")]
+pub(crate) mod portable_js;
+
+#[cfg(feature = "android-core")]
+pub mod mobile_ws;

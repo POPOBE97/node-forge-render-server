@@ -351,7 +351,7 @@ struct VSOut {
     @location(2) local_px: vec3f,
     // Geometry size in pixels after applying geometry/instance transforms.
     @location(3) geo_size_px: vec2f,
-    @location(4) instance_index: u32,
+    @location(4) @interpolate(flat) instance_index: u32,
 };
 
 
@@ -364,7 +364,7 @@ var src_samp: sampler;
     .to_string();
 
     if !uses_instance_index {
-        common = common.replace("    @location(4) instance_index: u32,\n", "");
+        common = common.replace("    @location(4) @interpolate(flat) instance_index: u32,\n", "");
     }
 
     // NOTE: keep common minimal; sampling behavior is controlled via wgpu sampler.
@@ -1130,7 +1130,7 @@ var<uniform> params: Params;
      @location(2) local_px: vec3f,
      // Geometry size in pixels after applying geometry/instance transforms.
      @location(3) geo_size_px: vec2f,
-     @location(4) instance_index: u32,
+     @location(4) @interpolate(flat) instance_index: u32,
      @location(5) normal: vec3f,
      @location(6) world_pos: vec3f,
  };
@@ -1146,7 +1146,7 @@ var<uniform> params: Params;
     }
 
     if !(vertex_uses_instance_index || material_ctx.uses_instance_index) {
-        common = common.replace("    @location(4) instance_index: u32,\n", "");
+        common = common.replace("    @location(4) @interpolate(flat) instance_index: u32,\n", "");
     }
 
     if !has_normals {
@@ -1661,7 +1661,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene_with_assets(
                     ));
                 }
             }
-            "GradientBlur" => {
+            "GradientBlur" | "ChromaticBlur" => {
                 use crate::renderer::wgsl_gradient_blur::*;
 
                 // Resolve source dimensions to compute padding.
@@ -1699,6 +1699,19 @@ pub fn build_all_pass_wgsl_bundles_from_scene_with_assets(
                     &layer_id,
                 )?;
                 out.push((format!("sys.gb.{layer_id}.src.pass"), src_bundle));
+
+                if node.node_type == "ChromaticBlur" {
+                    use crate::renderer::wgsl_chromatic_blur::{ChromaticStage, build_chromatic_stage_bundle};
+                    let mut source = format!("sys.cb.{layer_id}.input");
+                    for stage in [ChromaticStage::Radial, ChromaticStage::Rgb] {
+                        let name = format!("sys.cb.{layer_id}.{}", stage.name());
+                        let bundle = build_chromatic_stage_bundle(
+                            &prepared.scene, nodes_by_id, &layer_id, &source, stage, None,
+                        )?;
+                        out.push((format!("{name}.pass"), bundle));
+                        source = name;
+                    }
+                }
 
                 // 1) Pad pass
                 let pad_bundle = build_gradient_blur_pad_wgsl_bundle(src_w, src_h, pad_w, pad_h);
@@ -1821,6 +1834,10 @@ pub fn build_all_pass_wgsl_bundles_from_scene_with_assets(
                 let wgsl = crate::renderer::render_plan::pass_assemblers::intelligent_light::build_intelligent_light_wgsl(node);
                 let bundle = build_static_vertex_fragment_bundle(wgsl);
                 out.push((format!("sys.ilight.{layer_id}.pass"), bundle));
+            }
+            "TextPass" => {
+                let wgsl = crate::renderer::render_plan::pass_assemblers::text_pass::build_text_wgsl();
+                out.push((format!("sys.text.{layer_id}.pass"), build_static_vertex_fragment_bundle(wgsl)));
             }
             "MeshGradient" => {
                 let wgsl = crate::renderer::render_plan::pass_assemblers::mesh_gradient::build_mesh_gradient_wgsl();

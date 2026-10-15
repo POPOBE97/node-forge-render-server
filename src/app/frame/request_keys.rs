@@ -114,6 +114,7 @@ impl ClippingRequestKey {
         Self(hash_key(&(
             source_key.raw(),
             enabled,
+            settings.mode,
             settings.shadow_threshold.to_bits(),
             settings.highlight_threshold.to_bits(),
         )))

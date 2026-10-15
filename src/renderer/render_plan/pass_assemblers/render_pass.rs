@@ -10,7 +10,7 @@ use std::{collections::HashMap, sync::Arc};
 use anyhow::{Context, Result, anyhow};
 use rust_wgpu_fiber::{
     ResourceName,
-    eframe::wgpu::{self, Color, TextureFormat},
+    wgpu::{self, Color, TextureFormat},
 };
 
 use crate::{

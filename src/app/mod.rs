@@ -12,7 +12,7 @@ mod types;
 mod window_mode;
 
 pub use types::{
-    AnalysisTab, App, AppInit, ClippingSettings, DiffMetricMode, DiffStats, PlaybackRate,
+    AnalysisTab, App, AppInit, ClippingMode, ClippingSettings, DiffMetricMode, DiffStats, PlaybackRate,
     QualifierChannel, QualifierSettings, RefImageAlphaMode, RefImageMode, ResourcePoolInfo,
     SampledPixel, ShortwirePastedReferenceImage, ShortwireReferenceImage, StateControlSelection,
     TestMode,

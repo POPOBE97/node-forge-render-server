@@ -12,6 +12,7 @@ const PROCESSING_NODE_TYPES: &[&str] = &[
     "GuassianBlurPass",
     "BloomNode",
     "GradientBlur",
+    "ChromaticBlur",
     "Downsample",
     "Upsample",
     "Convolution",

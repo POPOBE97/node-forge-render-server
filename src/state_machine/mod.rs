@@ -35,7 +35,11 @@
 
 pub mod easing;
 pub mod graph;
-#[cfg(feature = "native")]
+#[cfg(all(feature = "native", not(feature = "portable-js")))]
+pub mod graph_function;
+mod graph_function_contract;
+#[cfg(feature = "portable-js")]
+#[path = "graph_function_portable.rs"]
 pub mod graph_function;
 #[cfg(feature = "web-core")]
 #[path = "graph_function_web.rs"]

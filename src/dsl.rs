@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use anyhow::{Context, Result, anyhow, bail};
-use rust_wgpu_fiber::eframe::wgpu::TextureFormat;
+use rust_wgpu_fiber::wgpu::TextureFormat;
 use serde::{Deserialize, Serialize};
 
 use crate::schema;
@@ -242,9 +242,9 @@ pub struct Node {
 
     pub input_bindings: Vec<InputBinding>,
 
-    /// Optional WGSL material override. Forward-slash relative path under the
-    /// scene root (e.g. "materials/<nodeId>.wgsl"). When set, node compilers
-    /// read this file in place of the bundled template.
+    /// Optional WGSL material override. `materials/<nodeId>.wgsl` is a logical
+    /// resource reference with an opaque ID; native working-copy paths are
+    /// resolved by node-forge-resource-store. Standalone overrides may be files.
     pub wgsl_override: Option<String>,
 }
 

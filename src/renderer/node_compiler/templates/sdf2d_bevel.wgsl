@@ -4,12 +4,12 @@
 // The Rust compiler wires node inputs into calls to these helpers.
 
 fn sdf2d_bevel_smooth5_map(t_in: f32) -> f32 {
-    // Map t in [0, 1] into a symmetric [-1, 1] curve.
-    var t = 0.5 + t_in * 0.5;
-    t = clamp(t, 0.0, 1.0);
-    // 5th-degree smootherstep: t^3 * (t * (t * 6 - 15) + 10)
-    t = t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
-    return (t - 0.5) * 2.0;
+    // Evaluate the symmetric polynomial in the nearer endpoint's coordinate.
+    // Expanded terms near t=1 lose precision before finite-difference normals.
+    let t = clamp(0.5 + t_in * 0.5, 0.0, 1.0);
+    let q = min(t, 1.0 - t);
+    let polynomial = q * q * q * (10.0 + q * (-15.0 + 6.0 * q));
+    return select(2.0 * polynomial - 1.0, 1.0 - 2.0 * polynomial, t >= 0.5);
 }
 
 fn sdf2d_bevel_smooth5(d_in: f32, edge: f32, cliff: f32) -> f32 {
@@ -31,18 +31,11 @@ fn sdf2d_bevel_smooth5(d_in: f32, edge: f32, cliff: f32) -> f32 {
 }
 
 fn sdf2d_bevel_smooth7_map(t_in: f32) -> f32 {
-    // Map t in [0, 1] into a symmetric [-1, 1] curve.
-    var t = 0.5 + t_in * 0.5;
-    t = clamp(t, 0.0, 1.0);
-    let t2 = t * t;
-    let t3 = t2 * t;
-    let t4 = t3 * t;
-    let t5 = t4 * t;
-    let t6 = t5 * t;
-    let t7 = t6 * t;
-    // 7th-degree smooth polynomial
-    t = -20.0 * t7 + 70.0 * t6 - 84.0 * t5 + 35.0 * t4;
-    return (t - 0.5) * 2.0;
+    let t = clamp(0.5 + t_in * 0.5, 0.0, 1.0);
+    let q = min(t, 1.0 - t);
+    let q2 = q * q;
+    let polynomial = q2 * q2 * (35.0 + q * (-84.0 + q * (70.0 - 20.0 * q)));
+    return select(2.0 * polynomial - 1.0, 1.0 - 2.0 * polynomial, t >= 0.5);
 }
 
 fn sdf2d_bevel_smooth7(d_in: f32, edge: f32, cliff: f32) -> f32 {

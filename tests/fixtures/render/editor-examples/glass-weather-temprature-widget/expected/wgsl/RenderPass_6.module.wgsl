@@ -157,13 +157,19 @@ fn mc_math_closure_351f4b6e(uv: vec2<f32>, c: vec4<f32>) -> vec4<f32> {
 
     uv_1 = uv;
     c_1 = c;
-    let _e7: vec4<f32> = c_1;
+    output = vec4(0f);
     let _e9: vec4<f32> = c_1;
-    let _e12: vec3<f32> = (_e7.xyz / vec3(_e9.w));
-    let _e13: vec4<f32> = c_1;
-    output = vec4<f32>(_e12.x, _e12.y, _e12.z, _e13.w);
-    let _e19: vec4<f32> = output;
-    return _e19;
+    if (_e9.w > 0f) {
+        {
+            let _e13: vec4<f32> = c_1;
+            let _e15: vec4<f32> = c_1;
+            let _e18: vec3<f32> = (_e13.xyz / vec3(_e15.w));
+            let _e19: vec4<f32> = c_1;
+            output = vec4<f32>(_e18.x, _e18.y, _e18.z, _e19.w);
+        }
+    }
+    let _e25: vec4<f32> = output;
+    return _e25;
 }
 
 fn mc_math_closure_4214e9c9_(uv: vec2<f32>, uv_1: vec2<f32>) -> vec4<f32> {
@@ -367,13 +373,19 @@ fn mc_math_closure_821d4b6e(uv: vec2<f32>, c: vec4<f32>) -> vec4<f32> {
 
     uv_1 = uv;
     c_1 = c;
-    let _e7: vec4<f32> = c_1;
+    output = vec4(0f);
     let _e9: vec4<f32> = c_1;
-    let _e12: vec3<f32> = (_e7.xyz / vec3(_e9.w));
-    let _e13: vec4<f32> = c_1;
-    output = vec4<f32>(_e12.x, _e12.y, _e12.z, _e13.w);
-    let _e19: vec4<f32> = output;
-    return _e19;
+    if (_e9.w > 0f) {
+        {
+            let _e13: vec4<f32> = c_1;
+            let _e15: vec4<f32> = c_1;
+            let _e18: vec3<f32> = (_e13.xyz / vec3(_e15.w));
+            let _e19: vec4<f32> = c_1;
+            output = vec4<f32>(_e18.x, _e18.y, _e18.z, _e19.w);
+        }
+    }
+    let _e25: vec4<f32> = output;
+    return _e25;
 }
 
 fn mc_math_closure_a6514d6e(uv: vec2<f32>, sdf: f32) -> f32 {
@@ -443,12 +455,12 @@ fn sample_pass_texture(uv_in: vec2f) -> vec4f {
 // The Rust compiler wires node inputs into calls to these helpers.
 
 fn sdf2d_bevel_smooth5_map(t_in: f32) -> f32 {
-    // Map t in [0, 1] into a symmetric [-1, 1] curve.
-    var t = 0.5 + t_in * 0.5;
-    t = clamp(t, 0.0, 1.0);
-    // 5th-degree smootherstep: t^3 * (t * (t * 6 - 15) + 10)
-    t = t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
-    return (t - 0.5) * 2.0;
+    // Evaluate the symmetric polynomial in the nearer endpoint's coordinate.
+    // Expanded terms near t=1 lose precision before finite-difference normals.
+    let t = clamp(0.5 + t_in * 0.5, 0.0, 1.0);
+    let q = min(t, 1.0 - t);
+    let polynomial = q * q * q * (10.0 + q * (-15.0 + 6.0 * q));
+    return select(2.0 * polynomial - 1.0, 1.0 - 2.0 * polynomial, t >= 0.5);
 }
 
 fn sdf2d_bevel_smooth5(d_in: f32, edge: f32, cliff: f32) -> f32 {
@@ -470,18 +482,11 @@ fn sdf2d_bevel_smooth5(d_in: f32, edge: f32, cliff: f32) -> f32 {
 }
 
 fn sdf2d_bevel_smooth7_map(t_in: f32) -> f32 {
-    // Map t in [0, 1] into a symmetric [-1, 1] curve.
-    var t = 0.5 + t_in * 0.5;
-    t = clamp(t, 0.0, 1.0);
-    let t2 = t * t;
-    let t3 = t2 * t;
-    let t4 = t3 * t;
-    let t5 = t4 * t;
-    let t6 = t5 * t;
-    let t7 = t6 * t;
-    // 7th-degree smooth polynomial
-    t = -20.0 * t7 + 70.0 * t6 - 84.0 * t5 + 35.0 * t4;
-    return (t - 0.5) * 2.0;
+    let t = clamp(0.5 + t_in * 0.5, 0.0, 1.0);
+    let q = min(t, 1.0 - t);
+    let q2 = q * q;
+    let polynomial = q2 * q2 * (35.0 + q * (-84.0 + q * (70.0 - 20.0 * q)));
+    return select(2.0 * polynomial - 1.0, 1.0 - 2.0 * polynomial, t >= 0.5);
 }
 
 fn sdf2d_bevel_smooth7(d_in: f32, edge: f32, cliff: f32) -> f32 {

@@ -47,6 +47,7 @@ pub struct MatrixCell {
     pub pass_bindings: Vec<renderer::PassBindings>,
     pub pipeline_signature: [u8; 32],
     pub output_texture_name: ResourceName,
+    pub scene_output_texture_name: ResourceName,
     pub dynamic_sync_pending: bool,
     pub egui_texture_id: Option<egui::TextureId>,
     pub hdr_clamp_renderer: Option<HdrClampRenderer>,
@@ -169,6 +170,7 @@ struct BuiltCell {
     pass_bindings: Vec<renderer::PassBindings>,
     pipeline_signature: [u8; 32],
     output_texture_name: ResourceName,
+    scene_output_texture_name: ResourceName,
 }
 
 struct PendingMatrixState {
@@ -585,6 +587,7 @@ fn build_matrix_cell(
         pass_bindings: result.pass_bindings,
         pipeline_signature: result.pipeline_signature,
         output_texture_name: result.present_output_texture,
+        scene_output_texture_name: result.scene_output_texture,
     })
 }
 
@@ -746,6 +749,7 @@ fn register_built_cell(
         pass_bindings: cell.pass_bindings,
         pipeline_signature: cell.pipeline_signature,
         output_texture_name: cell.output_texture_name,
+        scene_output_texture_name: cell.scene_output_texture_name,
         dynamic_sync_pending: true,
         egui_texture_id: Some(egui_id),
         hdr_clamp_renderer: None,
@@ -940,7 +944,12 @@ pub fn ensure_cell_pixel_cache(cell: &mut MatrixCell) {
         wgpu::TextureFormat::Rgba16Float => cell
             .shader_space
             .read_texture_rgba16f(cell.output_texture_name.as_str())
-            .map(|image| PixelOverlayReadback::Rgba16f(image.channels))
+            .map(|image| PixelOverlayReadback::RgbaFloat(image.channels))
+            .unwrap_or(PixelOverlayReadback::Unavailable),
+        wgpu::TextureFormat::Rgba32Float => cell
+            .shader_space
+            .read_texture_rgba32f(cell.output_texture_name.as_str())
+            .map(|image| PixelOverlayReadback::RgbaFloat(image.channels))
             .unwrap_or(PixelOverlayReadback::Unavailable),
         _ => PixelOverlayReadback::UnsupportedFormat,
     };

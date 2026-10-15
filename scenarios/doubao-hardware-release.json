@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "name": "doubao-hardware-release",
+  "fps": 60,
+  "track": {
+    "channels": [
+      "sp_business_panel_progress",
+      "sp_0423787753cd6bc8",
+      "sp_status_continuous",
+      "sp_status_hardware"
+    ],
+    "overrides": []
+  },
+  "actions": [
+    {"type": "step", "frames": 0},
+    {"type": "event", "eventType": "keydown", "key": " "},
+    {"type": "step", "seconds": 0.35},
+    {"type": "assertState", "stateId": "st_pre_listening_expanded"},
+    {"type": "event", "eventType": "keyup", "key": " "},
+    {"type": "assertState", "stateId": "st_listening"},
+    {"type": "step", "seconds": 0.3},
+    {"type": "assertState", "stateId": "st_listening"},
+    {"type": "event", "eventType": "keydown", "key": "c"},
+    {"type": "assertState", "stateId": "st_mrerxocx_8"},
+    {"type": "event", "eventType": "keydown", "key": " "},
+    {"type": "step", "seconds": 0.1},
+    {"type": "event", "eventType": "keyup", "key": " "},
+    {"type": "assertState", "stateId": "st_mrerw3qg_6"}
+  ]
+}

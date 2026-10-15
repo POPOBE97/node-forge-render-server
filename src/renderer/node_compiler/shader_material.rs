@@ -10,9 +10,9 @@ use crate::dsl::{Node, SceneDSL, incoming_connection};
 use crate::renderer::pass_source::{TextureSourceRef, resolve_texture_source_ref};
 use crate::renderer::utils::{coerce_to_type, sanitize_wgsl_ident};
 
-const SYSTEM_DECL_KEY: &str = "00.shader_material.system";
+pub(crate) const SYSTEM_DECL_KEY: &str = "00.shader_material.system";
 const LOCAL_UV_SAMPLE_HELPER: &str = "sample_texture_local_uv";
-const SYSTEM_DECL: &str = r#"
+pub(crate) const SYSTEM_DECL: &str = r#"
 struct ShaderMaterialInput {
     // Public material UV: bottom-left origin, Y increasing upward.
     uv: vec2f,

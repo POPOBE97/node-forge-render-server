@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use anyhow::{Result, bail};
 use rust_wgpu_fiber::{
     ResourceName,
-    eframe::wgpu::{self, Color, TextureFormat},
+    wgpu::{self, Color, TextureFormat},
 };
 
 use crate::{
@@ -520,7 +520,7 @@ pub(crate) fn parse_render_pass_color_load_op(
 mod tests {
     use super::*;
     use crate::renderer::types::{OutputEndpoint, PassOutputSpec, PassTextureRef};
-    use rust_wgpu_fiber::eframe::wgpu::{self, TextureFormat};
+    use rust_wgpu_fiber::wgpu::{self, TextureFormat};
 
     fn bloom_node_with_tint(tint: serde_json::Value) -> crate::dsl::Node {
         crate::dsl::Node {

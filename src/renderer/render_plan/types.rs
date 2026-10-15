@@ -3,7 +3,7 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use image::DynamicImage;
 use rust_wgpu_fiber::{
     ResourceName,
-    eframe::wgpu::{self, BlendState, Color, TextureFormat},
+    wgpu::{self, BlendState, Color, TextureFormat},
 };
 
 use crate::renderer::{

@@ -2,7 +2,7 @@ use rust_wgpu_fiber::{ResourceName, eframe::egui, shader_space::PassCaptureMode}
 
 use crate::app::{
     frame::commands::AppCommand,
-    types::{AnalysisTab, DiffMetricMode, QualifierChannel},
+    types::{AnalysisTab, ClippingMode, DiffMetricMode, QualifierChannel},
 };
 use crate::ui::resource_tree::PassDesignTarget;
 
@@ -39,6 +39,7 @@ pub enum CanvasAction {
     ToggleReferenceMode,
     SetDiffMetricMode(DiffMetricMode),
     SetAnalysisTab(AnalysisTab),
+    SetClippingMode(ClippingMode),
     SetClippingShadowThreshold(f32),
     SetClippingHighlightThreshold(f32),
     #[allow(dead_code)]

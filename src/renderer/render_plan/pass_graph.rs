@@ -102,7 +102,7 @@ fn deps_for_pass_node(
                 .into_iter()
                 .collect())
         }
-        "Downsample" | "Convolution" | "Upsample" | "GradientBlur" => {
+        "Downsample" | "Convolution" | "Upsample" | "GradientBlur" | "ChromaticBlur" => {
             let (source_conn, _) = processing_input_connection(scene, pass_node_id)?;
             match resolve_texture_source_ref(scene, nodes_by_id, &source_conn.from)? {
                 TextureSourceRef::Image { .. } => Ok(Vec::new()),
@@ -110,7 +110,7 @@ fn deps_for_pass_node(
             }
         }
         "Composite" => composite_layers_in_draw_order(scene, nodes_by_id, pass_node_id),
-        "IntelligentLight" | "MeshGradient" => Ok(Vec::new()),
+        "IntelligentLight" | "MeshGradient" | "TextPass" => Ok(Vec::new()),
         other => bail!("expected a pass node id, got node type {other} for {pass_node_id}"),
     }
 }

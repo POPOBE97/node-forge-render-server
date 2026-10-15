@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{OnceLock, RwLock};
+use node_forge_resource_store::{material_id_from_reference, ResourceIdentity};
 
 static CACHE: OnceLock<RwLock<HashMap<String, String>>> = OnceLock::new();
 static OVERRIDE_CACHE: OnceLock<RwLock<HashMap<PathBuf, String>>> = OnceLock::new();
@@ -25,7 +26,7 @@ thread_local! {
 /// resolved once from `NODE_FORGE_MATERIALS_DIR` at first call.
 ///
 /// Set by the editor (via env var when spawning the renderer) to the
-/// `<autosave-root>/materials/` path. Returns None if unset, in which case
+/// `<autosave-root>/resources/materials/` path. Returns None if unset, in which case
 /// `wgslOverride` fields silently fall back to bundled templates.
 pub fn materials_root() -> Option<&'static Path> {
     MATERIALS_ROOT
@@ -33,28 +34,49 @@ pub fn materials_root() -> Option<&'static Path> {
         .as_deref()
 }
 
-/// Resolve a `wgslOverride` relative path (e.g. "materials/<id>.wgsl") to
-/// an absolute path under the materials root, if one is configured. The
-/// returned path may not yet exist on disk.
+/// Resolve a logical document reference through the same mapping as the editor.
+/// IDs never become path components, including when the ID contains separators.
 pub fn resolve_override_path(rel: &str) -> Option<PathBuf> {
-    let Some(root) = materials_root() else {
-        return Some(PathBuf::from(rel));
-    };
-    // The DSL stores `materials/<id>.wgsl`; strip the leading prefix so we
-    // don't end up at `<materials_root>/materials/<id>.wgsl`.
-    let stripped = rel.strip_prefix("materials/").unwrap_or(rel);
-    Some(root.join(stripped))
+    resolve_override_path_in(materials_root(), rel)
+}
+
+fn resolve_override_path_in(root: Option<&Path>, reference: &str) -> Option<PathBuf> {
+    if let Some(id) = material_id_from_reference(reference) {
+        let relative = ResourceIdentity::material(id).ok()?.relative_path();
+        return Some(match root {
+            Some(root) => root.join(relative.file_name()?),
+            None => relative,
+        });
+    }
+    // Explicit file overrides are also used by the standalone renderer.
+    Some(PathBuf::from(reference))
 }
 
 pub fn install_document_overrides(overrides: impl IntoIterator<Item = (String, String)>) {
     DOCUMENT_OVERRIDES.with(|current| {
         let mut current = current.borrow_mut();
         current.clear();
-        current.extend(overrides);
+        current.extend(overrides.into_iter().filter_map(|(id, source)| {
+            let path = ResourceIdentity::material(&id).ok()?.relative_path();
+            Some((path.file_name()?.to_str()?.to_owned(), source))
+        }));
     });
     DOCUMENT_OVERRIDE_GENERATION.with(|generation| {
         generation.set(generation.get().wrapping_add(1));
     });
+}
+
+/// Remote playback cannot resolve working-copy files on the Editor's computer.
+pub fn validate_document_overrides<'a>(scene: &crate::dsl::SceneDSL, ids: impl IntoIterator<Item = &'a str>) -> anyhow::Result<()> {
+    let ids: std::collections::HashSet<_> = ids.into_iter().collect();
+    for node in scene.nodes.iter().chain(scene.groups.iter().flat_map(|group| &group.nodes)) {
+        if let Some(reference) = &node.wgsl_override {
+            let id = material_id_from_reference(reference)
+                .ok_or_else(|| anyhow::anyhow!("Node '{}' uses a non-document material reference '{reference}'", node.id))?;
+            if !ids.contains(id) { anyhow::bail!("Material '{id}' required by node '{}' was not transferred", node.id); }
+        }
+    }
+    Ok(())
 }
 
 fn cache() -> &'static RwLock<HashMap<String, String>> {
@@ -81,11 +103,11 @@ pub fn load_template(name: &str) -> String {
         }
     }
 
-    #[cfg(feature = "web-core")]
+    #[cfg(any(feature = "web-core", feature = "android-core"))]
     let content = embedded_template(name)
         .unwrap_or_else(|| panic!("unknown embedded WGSL template '{name}'"))
         .to_string();
-    #[cfg(feature = "native")]
+    #[cfg(all(feature = "native", not(feature = "android-core")))]
     let content = {
         let path = templates_dir().join(name);
         std::fs::read_to_string(&path)
@@ -108,15 +130,15 @@ pub fn load_template_with_override(
     template_name: &str,
 ) -> String {
     if let Some(path) = override_abs_path {
-        if let Some(node_id) = path.file_stem().and_then(|value| value.to_str())
+        if let Some(resource_file) = path.file_name().and_then(|value| value.to_str())
             && let Some(content) =
-                DOCUMENT_OVERRIDES.with(|overrides| overrides.borrow().get(node_id).cloned())
+                DOCUMENT_OVERRIDES.with(|overrides| overrides.borrow().get(resource_file).cloned())
         {
             return content;
         }
-        #[cfg(feature = "web-core")]
+        #[cfg(any(feature = "web-core", feature = "android-core"))]
         return load_template(template_name);
-        #[cfg(feature = "native")]
+        #[cfg(all(feature = "native", not(feature = "android-core")))]
         {
             let c = override_cache().read().unwrap();
             if let Some(content) = c.get(path) {
@@ -124,7 +146,7 @@ pub fn load_template_with_override(
             }
         }
 
-        #[cfg(feature = "native")]
+        #[cfg(all(feature = "native", not(feature = "android-core")))]
         match std::fs::read_to_string(path) {
             Ok(content) => {
                 let mut c = override_cache().write().unwrap();
@@ -143,7 +165,7 @@ pub fn load_template_with_override(
     load_template(template_name)
 }
 
-#[cfg(feature = "web-core")]
+#[cfg(any(feature = "web-core", feature = "android-core"))]
 fn embedded_template(name: &str) -> Option<&'static str> {
     Some(match name {
         "glass_material_fragment.wgsl" => include_str!("templates/glass_material_fragment.wgsl"),
@@ -186,6 +208,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn editor_working_sources_and_archive_sources_use_the_same_identity() {
+        use node_forge_resource_store::ResourceStore;
+        let root = std::env::temp_dir().join(format!("nforge-render-resource-test-{}", std::process::id()));
+        let store = ResourceStore::new(&root);
+        let ids = ["pointer.localize", "Material / 中文", "A", "a", " a ", "../outside", "C:\\CON"];
+        install_document_overrides([]);
+        for id in ids {
+            let identity = ResourceIdentity::material(id).unwrap();
+            let written = store.write(&identity, &format!("disk:{id}")).unwrap();
+            let resolved = resolve_override_path_in(Some(&root.join("materials")), &format!("materials/{id}.wgsl")).unwrap();
+            assert_eq!(resolved, written);
+            assert_eq!(load_template_with_override(Some(&resolved), "shader_material_default.wgsl"), format!("disk:{id}"));
+        }
+        install_document_overrides(ids.map(|id| (id.to_string(), format!("archive:{id}"))));
+        for id in ids {
+            let resolved = resolve_override_path_in(None, &format!("materials/{id}.wgsl")).unwrap();
+            assert_eq!(load_template_with_override(Some(&resolved), "shader_material_default.wgsl"), format!("archive:{id}"));
+        }
+        install_document_overrides([]);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn document_overrides_are_isolated_between_render_threads() {
         let barrier = Arc::new(Barrier::new(2));
         let handles = ["thread-a", "thread-b"].map(|source| {
@@ -194,7 +239,7 @@ mod tests {
                 install_document_overrides([("SharedNode".to_string(), source.to_string())]);
                 barrier.wait();
                 load_template_with_override(
-                    Some(Path::new("materials/SharedNode.wgsl")),
+                    resolve_override_path("materials/SharedNode.wgsl").as_deref(),
                     "shader_material_default.wgsl",
                 )
             })

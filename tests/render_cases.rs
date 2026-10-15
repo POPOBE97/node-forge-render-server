@@ -33,6 +33,10 @@ fn default_baseline_png(case_name: &'static str) -> Option<&'static str> {
         "bloom-nodes" => None,
         "hdr-bloom-nodes" => None,
         "mesh-gradient" => None,
+        // Native text pixel invariants are covered in text_pass.rs.
+        "text-pass" => None,
+        // Pixel parity with the research graph is checked in chromatic_blur.rs.
+        "blur-chromatic" => None,
         // Doubao has dedicated State Param / Motion / Derivation numeric goldens.
         // Its 1080p HDR animation frames are intentionally not committed as ~350 MB
         // of duplicate pixel baselines.

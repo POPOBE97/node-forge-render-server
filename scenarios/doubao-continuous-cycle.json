@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "name": "doubao-continuous-cycle",
+  "fps": 60,
+  "track": {
+    "channels": [
+      "sp_business_panel_progress",
+      "sp_0423787753cd6bc8",
+      "sp_status_continuous",
+      "sp_status_hardware"
+    ],
+    "overrides": []
+  },
+  "actions": [
+    {"type": "step", "frames": 0},
+    {"type": "assertState", "stateId": "st_mrerw3qg_6"},
+    {"type": "event", "eventType": "keydown", "key": " "},
+    {"type": "step", "seconds": 0.1},
+    {"type": "event", "eventType": "keyup", "key": " "},
+    {"type": "assertState", "stateId": "st_mshiyxvq_3"},
+    {"type": "step", "seconds": 1.6},
+    {"type": "assertState", "stateId": "st_mrerxocx_8"},
+    {"type": "event", "eventType": "keydown", "key": " "},
+    {"type": "step", "seconds": 0.35},
+    {"type": "assertState", "stateId": "st_pre_listening_idle"},
+    {"type": "event", "eventType": "keyup", "key": " "},
+    {"type": "assertState", "stateId": "st_listening"},
+    {"type": "step", "seconds": 0.5},
+    {"type": "event", "eventType": "keydown", "key": "Enter"},
+    {"type": "assertState", "stateId": "st_thinking"},
+    {"type": "step", "seconds": 2.2},
+    {"type": "assertState", "stateId": "st_speaking"},
+    {"type": "step", "seconds": 5.2},
+    {"type": "assertState", "stateId": "st_listening_again"},
+    {"type": "event", "eventType": "keydown", "key": "c"},
+    {"type": "assertState", "stateId": "st_mrerxocx_8"},
+    {"type": "step", "seconds": 0.7},
+    {"type": "event", "eventType": "keyup", "key": "Escape"},
+    {"type": "assertState", "stateId": "st_mrerw3qg_6"}
+  ]
+}

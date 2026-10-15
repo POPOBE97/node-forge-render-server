@@ -7,7 +7,7 @@ use std::{
 use anyhow::{Result, anyhow, bail};
 use rust_wgpu_fiber::{
     ResourceName,
-    eframe::wgpu::{self, BlendState, Color, TextureFormat, TextureUsages},
+    wgpu::{self, BlendState, Color, TextureFormat, TextureUsages},
 };
 
 use crate::{
@@ -22,8 +22,11 @@ use crate::{
         node_compiler::geometry_nodes::{rect2d_geometry_vertices, rect2d_unit_geometry_vertices},
         scene_prep::{PreparedScene, ScenePrepReport, prepare_scene_with_report},
         shader_space::{
-            image_utils::{ensure_rgba8, load_image_from_data_url_checked, load_image_from_path},
-            sampler::build_image_premultiply_wgsl,
+            image_utils::{
+                load_image_from_data_url_checked, load_image_from_path,
+                normalize_image_channels, prepare_high_precision_image,
+            },
+            sampler::build_image_prepare_wgsl,
         },
         types::{MaterialCompileContext, PassBindings, PassOutputRegistry},
         utils::{as_bytes_slice, cpu_num_u32_min_1},
@@ -466,6 +469,7 @@ impl RenderPlanner {
                 sampled_pass_format: layer_sampled_pass_format,
                 tgt_size: layer_tgt_size,
                 tgt_size_u: layer_tgt_size_u,
+                image_textures: &mut image_textures,
                 geometry_buffers: &mut geometry_buffers,
                 instance_buffers: &mut instance_buffers,
                 textures: &mut textures,
@@ -839,16 +843,17 @@ fn plan_image_textures(
                 .unwrap_or("srgb")
                 .trim()
                 .to_ascii_lowercase();
-            let is_srgb = match encoder_space.as_str() {
-                "srgb" => true,
+            let decode_srgb_transfer = match encoder_space.as_str() {
+                "srgb" | "display-p3" => true,
                 "linear" => false,
                 other => bail!("unsupported ImageTexture.encoderSpace: {other}"),
             };
+            let is_display_p3 = encoder_space == "display-p3";
 
             let image = if let Some(asset_id) = asset_id {
                 if let Some(store) = asset_store {
                     match store.load_image(asset_id)? {
-                        Some(image) => ensure_rgba8(Arc::new(image)),
+                        Some(image) => Arc::new(image),
                         None => bail!(
                             "ImageTexture node '{node_id}': asset '{asset_id}' not found in asset store"
                         ),
@@ -870,11 +875,12 @@ fn plan_image_textures(
                     }
                     _ => {
                         let path = node.params.get("path").and_then(|v| v.as_str());
-                        ensure_rgba8(load_image_from_path(&rel_base, path, node_id)?)
+                        load_image_from_path(&rel_base, path, node_id)?
                     }
                 }
             };
 
+            let image = normalize_image_channels(image)?;
             let alpha_mode = node
                 .params
                 .get("alphaMode")
@@ -896,34 +902,45 @@ fn plan_image_textures(
                 .cloned()
                 .ok_or_else(|| anyhow!("missing name for node: {node_id}"))?;
 
-            if needs_premultiply {
+            if image.color() != image::ColorType::Rgba8 {
+                image_textures.push(ImageTextureSpec {
+                    name,
+                    image: prepare_high_precision_image(
+                        &image, decode_srgb_transfer, is_display_p3, needs_premultiply,
+                    ),
+                    usage: TextureUsages::TEXTURE_BINDING
+                        | TextureUsages::COPY_DST
+                        | TextureUsages::COPY_SRC,
+                    // The f32 buffer already contains linear working-space values.
+                    srgb: false,
+                });
+            } else if needs_premultiply || is_display_p3 {
                 let src_name: ResourceName = format!("sys.image.{node_id}.src").into();
                 image_textures.push(ImageTextureSpec {
                     name: src_name.clone(),
                     image,
                     usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-                    srgb: is_srgb,
+                    srgb: decode_srgb_transfer,
                 });
 
                 textures.push(TextureDecl {
                     name: name.clone(),
                     size: [img_w, img_h],
-                    format: if is_srgb {
-                        TextureFormat::Rgba16Float
-                    } else {
-                        TextureFormat::Rgba8Unorm
-                    },
+                    // Color conversion and alpha multiplication create values between
+                    // source codes. Do not quantize them back to UNORM8 or float16.
+                    format: TextureFormat::Rgba32Float,
                     sample_count: 1,
                     needs_sampling: false,
                 });
 
                 let w = img_w as f32;
                 let h = img_h as f32;
-                let geo: ResourceName = format!("sys.image.{node_id}.premultiply.geo").into();
+                let role = if is_display_p3 { "color" } else { "premultiply" };
+                let geo: ResourceName = format!("sys.image.{node_id}.{role}.geo").into();
                 geometry_buffers.push((geo.clone(), make_fullscreen_geometry(w, h)));
 
                 let params_buffer: ResourceName =
-                    format!("params.sys.image.{node_id}.premultiply").into();
+                    format!("params.sys.image.{node_id}.{role}").into();
                 let params = make_params(
                     [w, h],
                     [w, h],
@@ -933,9 +950,11 @@ fn plan_image_textures(
                 );
                 let tex_var = MaterialCompileContext::tex_var_name(src_name.as_str());
                 let samp_var = MaterialCompileContext::sampler_var_name(src_name.as_str());
-                let shader_wgsl = build_image_premultiply_wgsl(&tex_var, &samp_var);
+                let shader_wgsl = build_image_prepare_wgsl(
+                    &tex_var, &samp_var, is_display_p3, needs_premultiply,
+                );
                 let pass_name: ResourceName =
-                    format!("sys.image.{node_id}.premultiply.pass").into();
+                    format!("sys.image.{node_id}.{role}.pass").into();
 
                 image_prepasses.push(ImagePrepass {
                     pass_name: pass_name.clone(),
@@ -952,7 +971,7 @@ fn plan_image_textures(
                     name,
                     image,
                     usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-                    srgb: is_srgb,
+                    srgb: decode_srgb_transfer,
                 });
             }
         }
@@ -2008,7 +2027,7 @@ mod tests {
     export_output_texture: "RenderTexture_7.present.sdr.srgb",
     export_encode_pass_name: None,
     textures: [
-        "ImageTexture_9:Rgba16Float:1080x2400:samples=1",
+        "ImageTexture_9:Rgba32Float:1080x2400:samples=1",
         "RenderTexture_7.present.sdr.srgb:Rgba8Unorm:1080x2400:samples=1",
         "RenderTexture_7:Rgba8UnormSrgb:1080x2400:samples=1",
     ],

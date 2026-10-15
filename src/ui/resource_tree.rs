@@ -268,6 +268,11 @@ fn pass_source_metadata_by_pass(
                 format!("sys.mesh_gradient.{}.pass", node.id),
                 (Some(node.id.clone()), Some(node.node_type.clone())),
             );
+        } else if node.node_type == "TextPass" {
+            out.insert(
+                format!("sys.text.{}.pass", node.id),
+                (Some(node.id.clone()), Some(node.node_type.clone())),
+            );
         } else if node.node_type == "IntelligentLight" {
             out.insert(
                 format!("sys.ilight.{}.pass", node.id),

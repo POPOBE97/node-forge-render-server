@@ -1,10 +1,16 @@
 use rust_wgpu_fiber::eframe::wgpu;
 
+use crate::app::ClippingSettings;
+
 const COMPUTE_SHADER_SRC: &str = r#"
 struct ClipParams {
     size: vec2<u32>,
     shadow_threshold: f32,
     highlight_threshold: f32,
+    mode: u32,
+    _pad0: u32,
+    _pad1: u32,
+    _pad2: u32,
 };
 
 @group(0) @binding(0)
@@ -26,8 +32,17 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let max_rgb = max(max(rgb.r, rgb.g), rgb.b);
     let min_rgb = min(min(rgb.r, rgb.g), rgb.b);
 
-    let h = smoothstep(params.highlight_threshold - 0.02, params.highlight_threshold, max_rgb);
-    let s = 1.0 - smoothstep(params.shadow_threshold, params.shadow_threshold + 0.02, min_rgb);
+    var h = 0.0;
+    var s = 0.0;
+    if (params.mode == 1u) {
+        // The source is the decoded linear-sRGB texture, before display encoding/clamping.
+        // Exact endpoints are in range; alpha is coverage, not a color channel.
+        h = select(0.0, 1.0, any(rgb > vec3<f32>(1.0)));
+        s = select(0.0, 1.0, any(rgb < vec3<f32>(0.0)));
+    } else {
+        h = smoothstep(params.highlight_threshold - 0.02, params.highlight_threshold, max_rgb);
+        s = 1.0 - smoothstep(params.shadow_threshold, params.shadow_threshold + 0.02, min_rgb);
+    }
 
     var out_rgb = vec3<f32>(0.0, 0.0, 0.0);
     var out_a = 0.0;
@@ -53,6 +68,8 @@ struct ClipParams {
     size: [u32; 2],
     shadow_threshold: f32,
     highlight_threshold: f32,
+    mode: u32,
+    _padding: [u32; 3],
 }
 
 pub struct ClippingMapRenderer {
@@ -158,7 +175,9 @@ impl ClippingMapRenderer {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::STORAGE_BINDING,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::STORAGE_BINDING
+                | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
         let output_view = output_texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -184,15 +203,16 @@ impl ClippingMapRenderer {
         queue: &wgpu::Queue,
         source_view: &wgpu::TextureView,
         source_size: [u32; 2],
-        shadow_threshold: f32,
-        highlight_threshold: f32,
+        settings: ClippingSettings,
     ) {
         self.ensure_output_size(device, source_size);
 
         let params = ClipParams {
             size: self.output_size,
-            shadow_threshold: shadow_threshold.clamp(0.0, 1.0),
-            highlight_threshold: highlight_threshold.clamp(0.0, 1.0),
+            shadow_threshold: settings.shadow_threshold.clamp(0.0, 1.0),
+            highlight_threshold: settings.highlight_threshold.clamp(0.0, 1.0),
+            mode: settings.mode.shader_code(),
+            _padding: [0; 3],
         };
         queue.write_buffer(&self.params_buffer, 0, bytemuck::bytes_of(&params));
 

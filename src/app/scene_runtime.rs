@@ -693,8 +693,9 @@ fn apply_uniform_node_param_updates_inner(
     Ok(())
 }
 
-pub fn drain_latest_scene_update(app: &mut App) -> Option<ws::SceneUpdate> {
-    let mut latest: Option<ws::SceneUpdate> = None;
+pub fn next_scene_update(app: &mut App) -> Option<ws::SceneUpdate> {
+    // The handoff already coalesces replaceable scene data. Consume the next entry rather than
+    // discarding earlier snapshots, partial patches, errors, or artifact commands while draining.
     while let Ok(update) = app.runtime.scene_rx.try_recv() {
         match update {
             ws::SceneUpdate::FrameFreezesSync { cases } => {
@@ -715,10 +716,10 @@ pub fn drain_latest_scene_update(app: &mut App) -> Option<ws::SceneUpdate> {
                     )
                 });
             }
-            update => latest = Some(update),
+            update => return Some(update),
         }
     }
-    latest
+    None
 }
 
 pub fn apply_scene_resolution_to_window_state(

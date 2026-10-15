@@ -3,7 +3,7 @@ use std::{collections::HashMap, io::Write, path::Path};
 use anyhow::{Result, anyhow, bail};
 use rust_wgpu_fiber::HeadlessRenderer;
 use rust_wgpu_fiber::HeadlessRendererConfig;
-use rust_wgpu_fiber::eframe::wgpu::TextureFormat;
+use rust_wgpu_fiber::wgpu::TextureFormat;
 use rust_wgpu_fiber::shader_space::{
     PASS_CAPTURE_OUTPUT_TEXTURE_NAME, PassCaptureMode, PassCaptureRequest,
 };
@@ -129,6 +129,7 @@ enum HeadlessOutputKind {
 enum HeadlessTextureOutputKind {
     Exr,
     RawRgba16F,
+    RawRgba32F,
 }
 
 fn route_headless_output(format: TextureFormat, output_path: &Path) -> Result<HeadlessOutputKind> {
@@ -165,12 +166,18 @@ fn route_headless_texture_output(
     match (format, ext.as_deref()) {
         (TextureFormat::Rgba16Float, Some("rgba16f")) => Ok(HeadlessTextureOutputKind::RawRgba16F),
         (TextureFormat::Rgba16Float, Some("exr")) => Ok(HeadlessTextureOutputKind::Exr),
+        (TextureFormat::Rgba32Float, Some("rgba32f")) => Ok(HeadlessTextureOutputKind::RawRgba32F),
+        (TextureFormat::Rgba32Float, Some("exr")) => Ok(HeadlessTextureOutputKind::Exr),
+        (TextureFormat::Rgba32Float, _) => bail!(
+            "RGBA32Float texture export requires .rgba32f (exact float bits) or .exr; got {}",
+            output_path.display()
+        ),
         (TextureFormat::Rgba16Float, _) => bail!(
             "RGBA16Float texture export requires .rgba16f (exact half bits) or .exr; got {}",
             output_path.display()
         ),
         (other, _) => bail!(
-            "headless texture export unsupported for format {other:?}; only Rgba16Float is supported"
+            "headless texture export unsupported for format {other:?}; expected Rgba16Float or Rgba32Float"
         ),
     }
 }
@@ -182,10 +189,20 @@ fn route_headless_texture_output(
 /// an exactly representable f32; converting it back to f16 therefore preserves every
 /// finite source bit without the precision loss of an 8-bit image path.
 fn save_rgba16f_raw(output_path: &Path, width: u32, height: u32, channels: &[f32]) -> Result<()> {
+    save_float_rgba_raw(output_path, width, height, channels, false)
+}
+
+fn save_rgba32f_raw(output_path: &Path, width: u32, height: u32, channels: &[f32]) -> Result<()> {
+    save_float_rgba_raw(output_path, width, height, channels, true)
+}
+
+fn save_float_rgba_raw(
+    output_path: &Path, width: u32, height: u32, channels: &[f32], full_precision: bool,
+) -> Result<()> {
     let expected_len = width as usize * height as usize * 4;
     if channels.len() != expected_len {
         bail!(
-            "invalid RGBA16F readback shape: expected {expected_len} channels, got {}",
+            "invalid float RGBA readback shape: expected {expected_len} channels, got {}",
             channels.len()
         );
     }
@@ -193,13 +210,17 @@ fn save_rgba16f_raw(output_path: &Path, width: u32, height: u32, channels: &[f32
     let file = std::fs::File::create(output_path)
         .map_err(|error| anyhow!("failed to create {}: {error}", output_path.display()))?;
     let mut writer = std::io::BufWriter::new(file);
-    writer.write_all(b"NF16")?;
+    writer.write_all(if full_precision { b"NF32" } else { b"NF16" })?;
     writer.write_all(&1u32.to_le_bytes())?;
     writer.write_all(&width.to_le_bytes())?;
     writer.write_all(&height.to_le_bytes())?;
     writer.write_all(&4u32.to_le_bytes())?;
     for value in channels {
-        writer.write_all(&half::f16::from_f32(*value).to_bits().to_le_bytes())?;
+        if full_precision {
+            writer.write_all(&value.to_le_bytes())?;
+        } else {
+            writer.write_all(&half::f16::from_f32(*value).to_bits().to_le_bytes())?;
+        }
     }
     writer.flush()?;
     Ok(())
@@ -370,6 +391,11 @@ fn render_scene_texture_to_file_headless_with_runtime(
         .texture_info(texture_name)
         .ok_or_else(|| anyhow!("named headless texture not found: {texture_name}"))?;
     match route_headless_texture_output(texture_info.format, output_path)? {
+        HeadlessTextureOutputKind::RawRgba32F => {
+            let image = result.shader_space.read_texture_rgba32f(texture_name)
+                .map_err(|error| anyhow!("failed to read RGBA32F texture {texture_name}: {error}"))?;
+            save_rgba32f_raw(output_path, image.width, image.height, &image.channels)?;
+        }
         HeadlessTextureOutputKind::RawRgba16F => {
             let image = result
                 .shader_space
@@ -469,6 +495,11 @@ fn render_scene_pass_to_file_headless_with_runtime(
         .render_profiled_with_pass_capture(true, &request);
 
     match route_headless_texture_output(capture.format, output_path)? {
+        HeadlessTextureOutputKind::RawRgba32F => {
+            let image = result.shader_space.read_texture_rgba32f(PASS_CAPTURE_OUTPUT_TEXTURE_NAME)
+                .map_err(|error| anyhow!("failed to read RGBA32F pass capture {pass_name}: {error}"))?;
+            save_rgba32f_raw(output_path, image.width, image.height, &image.channels)?;
+        }
         HeadlessTextureOutputKind::RawRgba16F => {
             let image = result
                 .shader_space
@@ -622,7 +653,7 @@ mod tests {
         let Ok(renderer) = HeadlessRenderer::new(HeadlessRendererConfig::default()) else {
             return;
         };
-        if renderer.adapter.get_info().backend == rust_wgpu_fiber::eframe::wgpu::Backend::Noop {
+        if renderer.adapter.get_info().backend == rust_wgpu_fiber::wgpu::Backend::Noop {
             return;
         }
         let base =
@@ -719,6 +750,25 @@ mod tests {
             .unwrap(),
             HeadlessTextureOutputKind::RawRgba16F
         );
+    }
+
+    #[test]
+    fn image_raw_rgba32f_export_keeps_bits_and_rejects_half_precision_extension() {
+        assert!(route_headless_texture_output(
+            TextureFormat::Rgba32Float, Path::new("image.rgba16f")
+        ).is_err());
+        assert_eq!(route_headless_texture_output(
+            TextureFormat::Rgba32Float, Path::new("image.rgba32f")
+        ).unwrap(), HeadlessTextureOutputKind::RawRgba32F);
+        let path = std::env::temp_dir().join(format!("image-precision-{}.rgba32f", std::process::id()));
+        let values = [-0.0f32, -0.25, 100_000.0, 1.5, 0.500_123_4, 1e-30, 1e20, 0.5];
+        save_rgba32f_raw(&path, 2, 1, &values).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        assert_eq!(&bytes[..4], b"NF32");
+        let bits: Vec<_> = bytes[20..].chunks_exact(4)
+            .map(|bytes| u32::from_le_bytes(bytes.try_into().unwrap())).collect();
+        assert_eq!(bits, values.map(f32::to_bits));
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]

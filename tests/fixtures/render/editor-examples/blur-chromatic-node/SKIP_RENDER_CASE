@@ -1,0 +1,2 @@
+Research reference covered by the pixel comparison in tests/chromatic_blur.rs.
+The integrated blur-chromatic case owns the product WGSL goldens.

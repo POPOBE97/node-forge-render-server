@@ -1,6 +1,7 @@
 # Rust
 /target/
 /crates/web-player/target/
+/crates/android-player/target/
 **/*.rs.bk
 
 # Node
@@ -26,6 +27,7 @@
 # Generated test outputs
 tests/**/out/
 /tmp/
+/out/android-player/
 *.log
 *.nforge-shm
 *.nforge-wal

@@ -9,11 +9,6 @@ pub enum PngRgbSpace {
     Srgb,
 }
 
-const DISPLAY_P3_TO_LINEAR_SRGB: [[f32; 3]; 3] = [
-    [1.224_940_2, -0.224_940_18, 0.0],
-    [-0.042_056_955, 1.042_057, 0.0],
-    [-0.019_637_555, -0.078_636_04, 1.098_273_6],
-];
 
 pub fn detect_png_rgb_space(png_bytes: &[u8]) -> anyhow::Result<PngRgbSpace> {
     Ok(inspect_png_rgb_space(png_bytes)?.unwrap_or(PngRgbSpace::Srgb))
@@ -110,14 +105,7 @@ fn xyz_matrix_close(actual: [[f32; 3]; 3], expected: [[f32; 3]; 3]) -> bool {
         .all(|(actual, expected)| (actual - expected).abs() <= 0.02)
 }
 
-pub fn linear_p3_to_linear_srgb([r, g, b]: [f32; 3]) -> [f32; 3] {
-    let m = DISPLAY_P3_TO_LINEAR_SRGB;
-    [
-        m[0][0] * r + m[0][1] * g + m[0][2] * b,
-        m[1][0] * r + m[1][1] * g + m[1][2] * b,
-        m[2][0] * r + m[2][1] * g + m[2][2] * b,
-    ]
-}
+pub use crate::color::linear_p3_to_linear_srgb;
 
 pub fn display_p3_rgba8_to_srgb(rgba: &mut RgbaImage) {
     let decode_lut: [f32; 256] =

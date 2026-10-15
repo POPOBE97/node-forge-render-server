@@ -4,6 +4,9 @@ mod dispatch;
 mod hub;
 mod scene_delta;
 mod shader_templates;
+mod update_queue;
+
+pub use update_queue::{SceneUpdateReceiver, SceneUpdateSender, scene_update_channel};
 
 use asset_transfer::{
     AssetTransferState, AssetUploadEndPayload, AssetUploadStartPayload, UploadFinalizeResult,
@@ -36,7 +39,6 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use crossbeam_channel::{Receiver, Sender};
 use serde_json::Value;
 use tungstenite::{Error as WsError, Message, accept};
 
@@ -277,6 +279,7 @@ pub fn broadcast_pass_target_sizes(hub: &WsHub, snapshot: &ResourceSnapshot, sce
         .filter_map(|node| {
             let pass_name = match node.node_type.as_str() {
                 "MeshGradient" => format!("sys.mesh_gradient.{}.pass", node.id),
+                "TextPass" => format!("sys.text.{}.pass", node.id),
                 "IntelligentLight" => format!("sys.ilight.{}.pass", node.id),
                 _ => return None,
             };
@@ -359,8 +362,7 @@ pub type UiWakeCallback = Arc<dyn Fn() + Send + Sync + 'static>;
 
 pub fn spawn_ws_server(
     addr: &str,
-    scene_tx: Sender<SceneUpdate>,
-    scene_drop_rx: Receiver<SceneUpdate>,
+    scene_tx: SceneUpdateSender,
     hub: WsHub,
     last_good: Arc<Mutex<Option<SceneDSL>>>,
     asset_store: AssetStore,
@@ -380,7 +382,6 @@ pub fn spawn_ws_server(
             server,
             &addr_str,
             scene_tx,
-            scene_drop_rx,
             hub.clone(),
             last_good,
             scene_cache,
@@ -411,8 +412,7 @@ fn report_internal_error(hub: &WsHub, request_id: Option<String>, code: &str, me
 fn run_ws_server(
     server: TcpListener,
     addr: &str,
-    scene_tx: Sender<SceneUpdate>,
-    scene_drop_rx: Receiver<SceneUpdate>,
+    scene_tx: SceneUpdateSender,
     hub: WsHub,
     last_good: Arc<Mutex<Option<SceneDSL>>>,
     scene_cache: Arc<Mutex<Option<SceneCache>>>,
@@ -442,7 +442,6 @@ fn run_ws_server(
         };
 
         let scene_tx = scene_tx.clone();
-        let scene_drop_rx = scene_drop_rx.clone();
         let hub = hub.clone();
         let last_good = last_good.clone();
         let scene_cache = scene_cache.clone();
@@ -453,7 +452,6 @@ fn run_ws_server(
             if let Err(e) = handle_client(
                 stream,
                 scene_tx,
-                scene_drop_rx,
                 hub.clone(),
                 last_good,
                 scene_cache,
@@ -470,8 +468,7 @@ fn run_ws_server(
 
 fn handle_client(
     stream: std::net::TcpStream,
-    scene_tx: Sender<SceneUpdate>,
-    scene_drop_rx: Receiver<SceneUpdate>,
+    scene_tx: SceneUpdateSender,
     hub: WsHub,
     last_good: Arc<Mutex<Option<SceneDSL>>>,
     scene_cache: Arc<Mutex<Option<SceneCache>>>,
@@ -502,7 +499,6 @@ fn handle_client(
                     &mut ws,
                     &text,
                     &scene_tx,
-                    &scene_drop_rx,
                     &last_good,
                     &scene_cache,
                     &asset_store,

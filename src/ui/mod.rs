@@ -9,6 +9,7 @@ pub mod debug_sidebar;
 pub mod design_tokens;
 pub mod diff_renderer;
 pub mod file_tree_widget;
+pub mod fonts;
 pub mod hdr_clamp;
 pub mod histogram;
 pub mod parade;

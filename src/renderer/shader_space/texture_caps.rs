@@ -10,7 +10,7 @@ use anyhow::{Result, anyhow, bail};
 use image::DynamicImage;
 use rust_wgpu_fiber::{
     ResourceName,
-    eframe::wgpu::{self, TextureFormat},
+    wgpu::{self, TextureFormat},
     pool::texture_pool::TextureSpec as FiberTextureSpec,
 };
 
@@ -21,15 +21,28 @@ pub(crate) fn effective_texture_format_features(
     device_features: wgpu::Features,
     adapter: Option<&wgpu::Adapter>,
 ) -> wgpu::TextureFormatFeatures {
-    if device_features.contains(wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES) {
-        if let Some(adapter) = adapter {
-            return adapter.get_texture_format_features(format);
-        }
+    let mut features = if device_features.contains(wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES) {
+        adapter.map(|adapter| adapter.get_texture_format_features(format))
+            .unwrap_or_else(|| format.guaranteed_format_features(device_features))
+    } else {
+        format.guaranteed_format_features(device_features)
+    };
+    // Adapter support alone does not enable a filterable f32 binding on this device.
+    if matches!(format, TextureFormat::R32Float | TextureFormat::Rg32Float | TextureFormat::Rgba32Float)
+        && !device_features.contains(wgpu::Features::FLOAT32_FILTERABLE)
+    {
+        features.flags.remove(wgpu::TextureFormatFeatureFlags::FILTERABLE);
     }
-    format.guaranteed_format_features(device_features)
+    features
 }
 
 pub(crate) fn image_texture_wgpu_format(image: &DynamicImage, srgb: bool) -> Result<TextureFormat> {
+    if srgb && !matches!(image.color(), image::ColorType::Rgb8 | image::ColorType::Rgba8) {
+        bail!(
+            "hardware sRGB decoding requires an 8-bit RGB(A) texture; {:?} must be decoded to linear f32 before upload",
+            image.color()
+        );
+    }
     let base_format = match image.color() {
         image::ColorType::L8 => TextureFormat::R8Unorm,
         image::ColorType::La8 => TextureFormat::Rg8Unorm,
@@ -265,9 +278,24 @@ pub(crate) fn validate_texture_capability_requirements(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rust_wgpu_fiber::eframe::wgpu::{self, TextureFormat, TextureUsages};
+    use rust_wgpu_fiber::wgpu::{self, TextureFormat, TextureUsages};
 
     use crate::renderer::render_plan::pass_spec::TextureCapabilityRequirement;
+
+    #[test]
+    fn image_float32_filtering_requires_enabled_device_feature() {
+        let format = TextureFormat::Rgba32Float;
+        let flag = wgpu::TextureFormatFeatureFlags::FILTERABLE;
+        assert!(!effective_texture_format_features(format, wgpu::Features::empty(), None).flags.contains(flag));
+        assert!(effective_texture_format_features(format, wgpu::Features::FLOAT32_FILTERABLE, None).flags.contains(flag));
+    }
+
+    #[test]
+    fn image_float_texture_cannot_silently_use_encoded_srgb_samples() {
+        let image = DynamicImage::ImageRgba32F(image::Rgba32FImage::new(1, 1));
+        assert!(image_texture_wgpu_format(&image, true).is_err());
+        assert_eq!(image_texture_wgpu_format(&image, false).unwrap(), TextureFormat::Rgba32Float);
+    }
 
     fn make_format_features(
         allowed_usages: TextureUsages,

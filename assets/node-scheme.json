@@ -14,6 +14,7 @@
     "BloomNode",
     "BoolInput",
     "CheckerTexture",
+    "ChromaticBlur",
     "ColorArrayInput",
     "ColorInput",
     "ColorMix",
@@ -30,6 +31,7 @@
     "EmissionShader",
     "File",
     "FloatInput",
+    "FontFile",
     "FragCoord",
     "GLTFGeometry",
     "GeoFragcoord",
@@ -91,7 +93,9 @@
     "SetTransform",
     "ShaderMaterial",
     "Sin",
+    "StringFormat",
     "Tan",
+    "TextPass",
     "TextureInput",
     "TextureSampler",
     "TimeInput",
@@ -105,6 +109,7 @@
     "ViewVector"
   ],
   "portTypes": [
+    "FontFile",
     "ImageFile",
     "any",
     "bezierCurve",
@@ -129,6 +134,7 @@
     "pass",
     "renderTexture",
     "shader",
+    "string",
     "texture",
     "vector2",
     "vector2[]",
@@ -513,6 +519,26 @@
         "ImageFile"
       ]
     },
+    "FontFile": {
+      "kind": "opaque",
+      "literal": false,
+      "stateParam": false,
+      "motion": "none",
+      "editor": null,
+      "acceptedOutputs": [
+        "FontFile"
+      ]
+    },
+    "string": {
+      "kind": "opaque",
+      "literal": false,
+      "stateParam": false,
+      "motion": "none",
+      "editor": null,
+      "acceptedOutputs": [
+        "string"
+      ]
+    },
     "renderTexture": {
       "kind": "opaque",
       "literal": false,
@@ -668,6 +694,8 @@
         "texture",
         "depthTexture",
         "ImageFile",
+        "FontFile",
+        "string",
         "renderTexture",
         "material",
         "shader",
@@ -874,6 +902,12 @@
     "ImageFile": [
       "ImageFile"
     ],
+    "FontFile": [
+      "FontFile"
+    ],
+    "string": [
+      "string"
+    ],
     "renderTexture": [
       "renderTexture"
     ],
@@ -943,6 +977,8 @@
       "texture",
       "depthTexture",
       "ImageFile",
+      "FontFile",
+      "string",
       "renderTexture",
       "material",
       "shader",
@@ -1378,6 +1414,211 @@
         }
       ],
       "defaultParams": {}
+    },
+    {
+      "type": "ChromaticBlur",
+      "label": "Chromatic Blur",
+      "category": "Filter",
+      "description": "Apply radial blur, RGB separation, and masked Gaussian blur to a texture",
+      "inputs": [
+        {
+          "id": "texture",
+          "name": "Texture",
+          "type": "texture"
+        },
+        {
+          "id": "camera",
+          "name": "Camera",
+          "type": "mat4",
+          "default": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "id": "center",
+          "name": "Center · LocalUV",
+          "type": "vector2",
+          "default": [
+            0.5,
+            0.5
+          ],
+          "coordinateSpace": "local-uv"
+        },
+        {
+          "id": "radialEnabled",
+          "name": "Radial Enabled",
+          "type": "bool",
+          "default": true
+        },
+        {
+          "id": "radialStrength",
+          "name": "Radial Strength",
+          "type": "float",
+          "default": 0.4,
+          "range": {
+            "min": 0,
+            "max": 2,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "radialSamples",
+          "name": "Radial Samples",
+          "type": "int",
+          "default": 4,
+          "range": {
+            "min": 2,
+            "max": 48,
+            "step": 1
+          }
+        },
+        {
+          "id": "radialMask",
+          "name": "Radial Mask",
+          "type": "vector4",
+          "default": [
+            640,
+            0.86,
+            1.7,
+            1
+          ]
+        },
+        {
+          "id": "rgbEnabled",
+          "name": "RGB Enabled",
+          "type": "bool",
+          "default": true
+        },
+        {
+          "id": "rgbOffset",
+          "name": "RGB Offset (px)",
+          "type": "float",
+          "default": 120,
+          "range": {
+            "min": -1000,
+            "max": 1000,
+            "step": 1
+          }
+        },
+        {
+          "id": "rgbSpread",
+          "name": "RGB Spread (px)",
+          "type": "float",
+          "default": 80,
+          "range": {
+            "min": 0,
+            "max": 1000,
+            "step": 1
+          }
+        },
+        {
+          "id": "rgbSamples",
+          "name": "RGB Samples",
+          "type": "int",
+          "default": 4,
+          "range": {
+            "min": 1,
+            "max": 16,
+            "step": 1
+          }
+        },
+        {
+          "id": "rgbChannels",
+          "name": "RGB Channels",
+          "type": "vector3",
+          "default": [
+            1,
+            0,
+            -1
+          ]
+        },
+        {
+          "id": "rgbFixedDirection",
+          "name": "RGB Fixed Direction",
+          "type": "bool",
+          "default": false
+        },
+        {
+          "id": "rgbAngle",
+          "name": "RGB Angle (°)",
+          "type": "float",
+          "default": 0,
+          "range": {
+            "min": -180,
+            "max": 180,
+            "step": 1
+          }
+        },
+        {
+          "id": "rgbMask",
+          "name": "RGB Mask",
+          "type": "vector4",
+          "default": [
+            640,
+            0.59,
+            1,
+            1
+          ]
+        },
+        {
+          "id": "gaussianEnabled",
+          "name": "Gaussian Enabled",
+          "type": "bool",
+          "default": true
+        },
+        {
+          "id": "gaussianSigma",
+          "name": "Gaussian σ (px)",
+          "type": "float",
+          "default": 40,
+          "range": {
+            "min": 0,
+            "max": 48,
+            "step": 0.1
+          }
+        },
+        {
+          "id": "gaussianMask",
+          "name": "Gaussian Mask",
+          "type": "vector4",
+          "default": [
+            640,
+            0.86,
+            1.7,
+            1
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "id": "texture",
+          "name": "Texture",
+          "type": "texture"
+        }
+      ],
+      "defaultParams": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha"
+      }
     },
     {
       "type": "ColorArrayInput",
@@ -1888,6 +2129,24 @@
       ],
       "defaultParams": {
         "value": 0
+      }
+    },
+    {
+      "type": "FontFile",
+      "label": "Font File",
+      "category": "Input",
+      "description": "Embed a TTF/OTF font in the document; shared by Text Pass nodes",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "font",
+          "name": "Font",
+          "type": "FontFile"
+        }
+      ],
+      "defaultParams": {
+        "assetId": "",
+        "faceIndex": 0
       }
     },
     {
@@ -3265,7 +3524,7 @@
       "type": "ImageTexture",
       "label": "Image Texture",
       "category": "Texture",
-      "description": "Load and sample an image texture",
+      "description": "Load and sample an sRGB, linear sRGB, or Display P3 image texture",
       "inputs": [
         {
           "id": "image",
@@ -6575,6 +6834,37 @@
       "defaultParams": {}
     },
     {
+      "type": "StringFormat",
+      "label": "String Format",
+      "category": "Input",
+      "description": "Format CPU numbers with {0}, {1}, … placeholders; use {{ and }} for literal braces",
+      "inputs": [
+        {
+          "id": "value0",
+          "name": "Value 0",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "value1",
+          "name": "Value 1",
+          "type": "float",
+          "default": 0
+        }
+      ],
+      "outputs": [
+        {
+          "id": "text",
+          "name": "Text",
+          "type": "string"
+        }
+      ],
+      "defaultParams": {
+        "format": "{0} × {1}",
+        "decimals": 0
+      }
+    },
+    {
       "type": "Tan",
       "label": "Tan",
       "category": "Math",
@@ -6594,6 +6884,161 @@
         }
       ],
       "defaultParams": {}
+    },
+    {
+      "type": "TextPass",
+      "label": "Text Pass",
+      "category": "PipelineControl",
+      "description": "Shape Unicode text from embedded fonts and draw glyphs at the target pixel density",
+      "inputs": [
+        {
+          "id": "text",
+          "name": "Text",
+          "type": "string"
+        },
+        {
+          "id": "font",
+          "name": "Font",
+          "type": "FontFile"
+        },
+        {
+          "id": "fallbackFont",
+          "name": "Fallback Font",
+          "type": "FontFile"
+        },
+        {
+          "id": "fontSize",
+          "name": "Font Size (px)",
+          "type": "float",
+          "default": 28,
+          "range": {
+            "min": 0.1,
+            "max": 4096,
+            "step": 0.1
+          }
+        },
+        {
+          "id": "fontWeight",
+          "name": "Font Weight (0 = font default)",
+          "type": "int",
+          "default": 0,
+          "range": {
+            "min": 0,
+            "max": 1000,
+            "step": 1
+          }
+        },
+        {
+          "id": "lineHeight",
+          "name": "Line Height (px; 0 = auto)",
+          "type": "float",
+          "default": 0,
+          "range": {
+            "min": 0,
+            "max": 8192,
+            "step": 0.1
+          }
+        },
+        {
+          "id": "letterSpacing",
+          "name": "Letter Spacing (px)",
+          "type": "float",
+          "default": 0,
+          "range": {
+            "min": -4096,
+            "max": 4096,
+            "step": 0.1
+          }
+        },
+        {
+          "id": "size",
+          "name": "Layout Size · ScenePx",
+          "type": "vector2",
+          "coordinateSpace": "scene-px"
+        },
+        {
+          "id": "position",
+          "name": "Position · ScenePx",
+          "type": "vector2",
+          "coordinateSpace": "scene-px"
+        },
+        {
+          "id": "color",
+          "name": "Color",
+          "type": "color",
+          "default": "#ffffff"
+        },
+        {
+          "id": "alpha",
+          "name": "Alpha",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "camera",
+          "name": "Camera",
+          "type": "mat4",
+          "default": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "id": "pass",
+          "name": "Pass",
+          "type": "pass"
+        },
+        {
+          "id": "texture",
+          "name": "Texture",
+          "type": "texture"
+        }
+      ],
+      "defaultParams": {
+        "text": "Node Forge",
+        "fontSize": 28,
+        "fontWeight": 0,
+        "lineHeight": 0,
+        "letterSpacing": 0,
+        "align": "left",
+        "verticalAlign": "top",
+        "wrap": "none",
+        "hinting": false,
+        "color": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "alpha": 1,
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha"
+      }
     },
     {
       "type": "TextureInput",

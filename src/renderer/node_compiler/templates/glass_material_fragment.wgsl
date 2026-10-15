@@ -328,10 +328,11 @@ fn glass_process_color(
 }
 
 fn glass_smooth5_map(t_in: f32) -> f32 {
-    var t = mix(0.5, 1.0, t_in);
-    t = clamp(t, 0.0, 1.0);
-    t = t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
-    return (t - 0.5) * 2.0;
+    // Symmetry avoids catastrophic cancellation in finite-difference normals.
+    let t = clamp(0.5 + t_in * 0.5, 0.0, 1.0);
+    let q = min(t, 1.0 - t);
+    let polynomial = q * q * q * (10.0 + q * (-15.0 + 6.0 * q));
+    return select(2.0 * polynomial - 1.0, 1.0 - 2.0 * polynomial, t >= 0.5);
 }
 
 fn glass_smooth5_vertical(x: f32, k: f32) -> f32 {

@@ -768,6 +768,17 @@ fn collect_ignored_input_value_node_ids_for_pass_bindings(
         }
     }
 
+    // Text layout/coverage is CPU-built. A value shared with a GPU uniform must
+    // still invalidate the text plan when it changes.
+    let mut pending: Vec<String> = scene.nodes.iter().filter(|node| node.node_type == "TextPass")
+        .map(|node| node.id.clone()).collect();
+    let mut visited = BTreeSet::new();
+    while let Some(id) = pending.pop() {
+        if !visited.insert(id.clone()) { continue; }
+        ignored_input_value_node_ids.remove(&id);
+        pending.extend(scene.connections.iter().filter(|edge| edge.to.node_id == id)
+            .map(|edge| edge.from.node_id.clone()));
+    }
     ignored_input_value_node_ids
 }
 
@@ -1689,8 +1700,17 @@ mod tests {
         scene.nodes[1]
             .params
             .insert("value".to_string(), json!(10.0));
-        let h3 = compute_pipeline_signature_for_pass_bindings(&scene, &[pass]);
+        let h3 = compute_pipeline_signature_for_pass_bindings(&scene, &[pass.clone()]);
         assert_ne!(h2, h3, "unbound input value must force rebuild");
+        scene.nodes.push(make_node("label", "TextPass", json!({})));
+        scene.connections.push(serde_json::from_value(json!({
+            "id":"text-size", "from":{"nodeId":"fast","portId":"value"},
+            "to":{"nodeId":"label","portId":"fontSize"}
+        })).unwrap());
+        let h4 = compute_pipeline_signature_for_pass_bindings(&scene, &[pass.clone()]);
+        scene.nodes[0].params.insert("value".into(), json!(20.0));
+        let h5 = compute_pipeline_signature_for_pass_bindings(&scene, &[pass]);
+        assert_ne!(h4, h5, "GPU-shared input used by text layout must rebuild");
     }
 
     #[test]

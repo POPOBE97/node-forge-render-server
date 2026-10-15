@@ -243,7 +243,7 @@ fn node_params_changed_only_uniform_keys(
     saw_change
 }
 
-pub(crate) fn delta_updates_only_uniform_values(cache: &SceneCache, delta: &SceneDelta) -> bool {
+pub fn delta_updates_only_uniform_values(cache: &SceneCache, delta: &SceneDelta) -> bool {
     if delta.nodes.updated.is_empty() {
         return false;
     }
@@ -319,6 +319,7 @@ fn is_render_plan_rebuild_sink(node_type: &str, port_id: &str) -> bool {
             | ("RenderPass", "camera")
             | ("GuassianBlurPass", "camera")
             | ("GradientBlur", "camera")
+            | ("ChromaticBlur", "camera")
             | ("MeshGradient", "camera")
             | ("IntelligentLight", "canvasSizePx")
             | ("IntelligentLight", "downsampleFactor")

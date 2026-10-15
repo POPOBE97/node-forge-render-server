@@ -632,8 +632,8 @@ fn validate_camera_node_geometry(node: &Node) -> std::result::Result<(), String>
 
 fn validate_camera_and_mat4_params(node: &Node) -> std::result::Result<(), String> {
     match node.node_type.as_str() {
-        "RenderPass" | "GuassianBlurPass" | "GradientBlur" | "Downsample" | "Convolution"
-        | "Upsample" | "Composite" | "MeshGradient" => {
+        "RenderPass" | "GuassianBlurPass" | "GradientBlur" | "ChromaticBlur" | "Downsample" | "Convolution"
+        | "Upsample" | "Composite" | "MeshGradient" | "TextPass" => {
             if let Some(value) = node.params.get("camera") {
                 validate_mat4_row_major_value(value, &format!("{}.camera", node.id))?;
             }

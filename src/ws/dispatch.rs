@@ -6,8 +6,7 @@ use super::*;
 pub(super) fn handle_text_message(
     ws: &mut tungstenite::WebSocket<std::net::TcpStream>,
     text: &str,
-    scene_tx: &Sender<SceneUpdate>,
-    scene_drop_rx: &Receiver<SceneUpdate>,
+    scene_tx: &SceneUpdateSender,
     last_good: &Arc<Mutex<Option<SceneDSL>>>,
     scene_cache: &Arc<Mutex<Option<SceneCache>>>,
     asset_store: &AssetStore,
@@ -25,7 +24,6 @@ pub(super) fn handle_text_message(
             send_error(ws, None, "PARSE_ERROR", &message);
             send_scene_update(
                 scene_tx,
-                scene_drop_rx,
                 SceneUpdate::ParseError {
                     message,
                     request_id: None,
@@ -122,7 +120,6 @@ pub(super) fn handle_text_message(
                     send_error(ws, msg.request_id.clone(), "PARSE_ERROR", &message);
                     send_scene_update(
                         scene_tx,
-                        scene_drop_rx,
                         SceneUpdate::ParseError {
                             message,
                             request_id: msg.request_id,
@@ -145,7 +142,6 @@ pub(super) fn handle_text_message(
                     send_error(ws, msg.request_id.clone(), "PARSE_ERROR", &message);
                     send_scene_update(
                         scene_tx,
-                        scene_drop_rx,
                         SceneUpdate::ParseError {
                             message,
                             request_id: msg.request_id,
@@ -173,7 +169,6 @@ pub(super) fn handle_text_message(
                 send_error(ws, msg.request_id.clone(), "VALIDATION_ERROR", &message);
                 send_scene_update(
                     scene_tx,
-                    scene_drop_rx,
                     SceneUpdate::ParseError {
                         message,
                         request_id: msg.request_id,
@@ -189,7 +184,6 @@ pub(super) fn handle_text_message(
                 send_error(ws, msg.request_id.clone(), "PARSE_ERROR", &message);
                 send_scene_update(
                     scene_tx,
-                    scene_drop_rx,
                     SceneUpdate::ParseError {
                         message,
                         request_id: msg.request_id,
@@ -213,10 +207,9 @@ pub(super) fn handle_text_message(
             }
 
             if assets_ready {
-                // Keep only latest: bounded(1) + drop stale message if receiver hasn't caught up.
+                // The queue replaces pending full snapshots, preserving ordered controls.
                 send_scene_update(
                     scene_tx,
-                    scene_drop_rx,
                     SceneUpdate::Parsed {
                         scene,
                         request_id: msg.request_id,
@@ -321,7 +314,6 @@ pub(super) fn handle_text_message(
                     *guard = Some(cache);
                     send_scene_update(
                         scene_tx,
-                        scene_drop_rx,
                         SceneUpdate::UniformDelta {
                             updated_nodes: delta.nodes.updated.clone(),
                             request_id: msg.request_id,
@@ -358,7 +350,6 @@ pub(super) fn handle_text_message(
             if let Some(scene) = scene {
                 send_scene_update(
                     scene_tx,
-                    scene_drop_rx,
                     SceneUpdate::Parsed {
                         scene,
                         request_id: msg.request_id,
@@ -466,7 +457,6 @@ pub(super) fn handle_text_message(
                         scene_cache,
                         asset_store,
                         scene_tx,
-                        scene_drop_rx,
                         ui_wake,
                     );
                 }
@@ -631,7 +621,6 @@ pub(super) fn handle_text_message(
             };
             send_scene_update(
                 scene_tx,
-                scene_drop_rx,
                 SceneUpdate::DebugArtifactUpsert {
                     item: payload.item,
                     content_text: payload.content_text,
@@ -666,7 +655,6 @@ pub(super) fn handle_text_message(
             };
             send_scene_update(
                 scene_tx,
-                scene_drop_rx,
                 SceneUpdate::DebugArtifactDelete {
                     artifact_id: payload.artifact_id,
                 },
@@ -736,7 +724,6 @@ pub(super) fn handle_text_message(
                 Ok(Some((item, bytes))) => {
                     send_scene_update(
                         scene_tx,
-                        scene_drop_rx,
                         SceneUpdate::DebugArtifactBinaryUpsert { item, bytes },
                         ui_wake,
                     );
@@ -797,8 +784,7 @@ fn trigger_rerender_for_asset(
     asset_id: &str,
     scene_cache: &Arc<Mutex<Option<SceneCache>>>,
     asset_store: &AssetStore,
-    scene_tx: &Sender<SceneUpdate>,
-    scene_drop_rx: &Receiver<SceneUpdate>,
+    scene_tx: &SceneUpdateSender,
     ui_wake: Option<&UiWakeCallback>,
 ) {
     let scene = scene_cache.lock().ok().and_then(|guard| {
@@ -810,7 +796,6 @@ fn trigger_rerender_for_asset(
     if let Some(scene) = scene {
         send_scene_update(
             scene_tx,
-            scene_drop_rx,
             SceneUpdate::Parsed {
                 scene,
                 request_id: None,
@@ -919,53 +904,122 @@ pub(super) fn send_error(
 }
 
 fn send_scene_update(
-    scene_tx: &Sender<SceneUpdate>,
-    scene_drop_rx: &Receiver<SceneUpdate>,
+    scene_tx: &SceneUpdateSender,
     update: SceneUpdate,
     ui_wake: Option<&UiWakeCallback>,
 ) {
-    // Debounce policy: keep the latest *scene* update.
-    // But never drop ParseError updates, otherwise we can mask the reason we
-    // requested a resync and make debugging much harder.
-    let queued = if scene_tx.try_send(update.clone()).is_err() {
-        match update {
-            SceneUpdate::Parsed { .. } => {
-                while scene_drop_rx.try_recv().is_ok() {}
-                scene_tx.try_send(update).is_ok()
-            }
-            SceneUpdate::UniformDelta { .. } => {
-                // Uniform-only updates are cheap and high-frequency.
-                // If the channel is full, prefer keeping the in-flight message
-                // (often a full Parsed scene) and drop this delta.
-                false
-            }
-            SceneUpdate::ParseError { .. } => {
-                // Channel is full; keep the existing message rather than
-                // replacing it. A future update will replace it naturally.
-                false
-            }
-            SceneUpdate::DebugArtifactUpsert { .. }
-            | SceneUpdate::DebugArtifactBinaryUpsert { .. }
-            | SceneUpdate::DebugArtifactDelete { .. }
-            | SceneUpdate::FrameFreezesSync { .. }
-            | SceneUpdate::FrameFreezePersisted { .. } => {
-                // Artifact messages are side-channel state for the debug UI.
-                // Keep an in-flight scene update if one exists; the editor can
-                // answer a later request if this update is skipped.
-                false
-            }
-        }
-    } else {
-        true
-    };
+    send_control_update(scene_tx, update, ui_wake);
+}
 
-    if queued && let Some(wake) = ui_wake {
-        wake();
+#[cfg(test)]
+mod queue_tests {
+    use super::*;
+
+    fn delta(id: &str, field: &str, value: i64) -> SceneUpdate {
+        SceneUpdate::UniformDelta {
+            updated_nodes: vec![Node {
+                id: id.into(),
+                node_type: "FloatInput".into(),
+                params: HashMap::from([(field.into(), serde_json::json!(value))]),
+                inputs: Vec::new(),
+                outputs: Vec::new(),
+                input_bindings: Vec::new(),
+                wgsl_override: None,
+            }],
+            request_id: None,
+            perf_trace: None,
+        }
+    }
+
+    #[test]
+    fn burst_keeps_latest_value_without_a_followup_edit() {
+        let (tx, rx) = scene_update_channel();
+        for value in 0..1000 {
+            send_scene_update(&tx, delta("gain", "value", value), None);
+        }
+        let SceneUpdate::UniformDelta { updated_nodes, .. } = rx.try_recv().unwrap() else {
+            panic!("expected a uniform delta");
+        };
+        assert_eq!(updated_nodes[0].params["value"], serde_json::json!(999));
+    }
+
+    #[test]
+    fn wire_scene_then_partial_deltas_keep_baseline_and_latest_values() {
+        use std::net::{TcpListener, TcpStream};
+        use tungstenite::protocol::Role;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let client_stream = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (server_stream, _) = listener.accept().unwrap();
+        let mut socket = tungstenite::WebSocket::from_raw_socket(server_stream, Role::Server, None);
+        let (tx, rx) = scene_update_channel();
+        let cache = Arc::new(Mutex::new(None));
+        let last_good = Arc::new(Mutex::new(None));
+        let store = AssetStore::new();
+        let mut assets = AssetTransferState::default();
+        let mut artifacts = DebugArtifactTransferState::default();
+        let scene = serde_json::json!({
+            "version": "6.0",
+            "metadata": { "name": "wire-test" },
+            "nodes": [
+                { "id": "gain", "type": "FloatInput", "params": { "value": 0.0 } },
+                { "id": "radius", "type": "FloatInput", "params": { "value": 0.0 } },
+                { "id": "sum", "type": "MathAdd", "params": {} }
+            ],
+            "connections": [
+                { "id": "c1", "from": { "nodeId": "gain", "portId": "value" },
+                  "to": { "nodeId": "sum", "portId": "a" } },
+                { "id": "c2", "from": { "nodeId": "radius", "portId": "value" },
+                  "to": { "nodeId": "sum", "portId": "b" } }
+            ],
+            "outputs": {}, "groups": [], "assets": {}
+        });
+        let initial = serde_json::json!({
+            "type": "scene_update", "timestamp": 0,
+            "payload": { "scene": scene, "functions": [] }
+        });
+        handle_text_message(&mut socket, &initial.to_string(), &tx, &last_good, &cache,
+            &store, &mut assets, &mut artifacts, None).unwrap();
+        for (id, value) in [("gain", 1.0), ("radius", 2.0), ("gain", 3.0)] {
+            let message = serde_json::json!({
+                "type": "scene_delta", "timestamp": 0,
+                "payload": {
+                    "version": "6.0",
+                    "nodes": { "added": [], "removed": [],
+                        "updated": [{ "id": id, "type": "FloatInput", "params": { "value": value } }] },
+                    "connections": { "added": [], "updated": [], "removed": [] }
+                }
+            });
+            handle_text_message(&mut socket, &message.to_string(), &tx, &last_good, &cache,
+                &store, &mut assets, &mut artifacts, None).unwrap();
+        }
+        assert!(matches!(rx.recv().unwrap(), SceneUpdate::Parsed { .. }));
+        let SceneUpdate::UniformDelta { updated_nodes, .. } = rx.try_recv().unwrap() else {
+            panic!("expected coalesced wire deltas");
+        };
+        let values: HashMap<_, _> = updated_nodes.iter()
+            .map(|node| (node.id.as_str(), node.params["value"].clone())).collect();
+        assert_eq!(values.len(), 2);
+        assert_eq!(values["gain"], serde_json::json!(3.0));
+        assert_eq!(values["radius"], serde_json::json!(2.0));
+        assert!(rx.is_empty());
+        drop(client_stream);
+    }
+
+    #[test]
+    fn burst_preserves_updates_to_independent_nodes() {
+        let (tx, rx) = scene_update_channel();
+        send_scene_update(&tx, delta("gain", "value", 1), None);
+        send_scene_update(&tx, delta("radius", "value", 2), None);
+        let SceneUpdate::UniformDelta { updated_nodes, .. } = rx.try_recv().unwrap() else {
+            panic!("expected a uniform delta");
+        };
+        assert_eq!(updated_nodes.len(), 2);
     }
 }
 
 fn send_control_update(
-    scene_tx: &Sender<SceneUpdate>,
+    scene_tx: &SceneUpdateSender,
     update: SceneUpdate,
     ui_wake: Option<&UiWakeCallback>,
 ) {

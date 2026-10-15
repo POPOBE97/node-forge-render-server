@@ -71,7 +71,7 @@ fn pixel_overlay_channel_color(channel: char) -> Color32 {
 #[derive(Clone, Debug)]
 pub enum PixelOverlayReadback {
     Rgba8(Vec<u8>),
-    Rgba16f(Vec<f32>),
+    RgbaFloat(Vec<f32>),
     Unavailable,
     UnsupportedFormat,
 }
@@ -140,7 +140,13 @@ fn read_pixel_overlay_cache(
             .core
             .shader_space
             .read_texture_rgba16f(texture_name)
-            .map(|image| PixelOverlayReadback::Rgba16f(image.channels))
+            .map(|image| PixelOverlayReadback::RgbaFloat(image.channels))
+            .unwrap_or(PixelOverlayReadback::Unavailable),
+        wgpu::TextureFormat::Rgba32Float => app
+            .core
+            .shader_space
+            .read_texture_rgba32f(texture_name)
+            .map(|image| PixelOverlayReadback::RgbaFloat(image.channels))
             .unwrap_or(PixelOverlayReadback::Unavailable),
         _ => PixelOverlayReadback::UnsupportedFormat,
     };
@@ -290,7 +296,7 @@ fn sample_rgba16unorm_pixel(
     ]))
 }
 
-fn sample_rgba16f_pixel(
+fn sample_float_pixel(
     channels: &[f32],
     width: u32,
     height: u32,
@@ -318,8 +324,8 @@ fn sample_overlay_pixel(cache: &PixelOverlayCache, x: u32, y: u32) -> Option<[f3
         PixelOverlayReadback::Rgba8(bytes) => {
             sample_rgba8_pixel(bytes.as_slice(), cache.width, cache.height, x, y)
         }
-        PixelOverlayReadback::Rgba16f(channels) => {
-            sample_rgba16f_pixel(channels.as_slice(), cache.width, cache.height, x, y)
+        PixelOverlayReadback::RgbaFloat(channels) => {
+            sample_float_pixel(channels.as_slice(), cache.width, cache.height, x, y)
         }
         PixelOverlayReadback::Unavailable | PixelOverlayReadback::UnsupportedFormat => None,
     }?;
@@ -341,7 +347,7 @@ fn sample_reference_pixel_rgba(
     if rx < 0 || ry < 0 {
         return None;
     }
-    sample_rgba16f_pixel(
+    sample_float_pixel(
         reference.linear_premul_rgba,
         reference.size[0],
         reference.size[1],
@@ -634,7 +640,7 @@ mod tests {
         DiffMetricMode, PixelOverlayCache, PixelOverlayReadback, PixelValueDisplayMode,
         RefImageMode, ValueSamplingReference, compose_reference_over_base,
         compute_diff_metric_rgba, format_diff_stat_value, format_overlay_channel,
-        rgba8_to_rgba_f32, sample_rgba8_pixel, sample_rgba16f_pixel, sample_rgba16unorm_pixel,
+        rgba8_to_rgba_f32, sample_rgba8_pixel, sample_float_pixel, sample_rgba16unorm_pixel,
         sample_value_pixel,
     };
 
@@ -660,7 +666,7 @@ mod tests {
             width,
             height,
             format: super::wgpu::TextureFormat::Rgba16Float,
-            readback: PixelOverlayReadback::Rgba16f(channels),
+            readback: PixelOverlayReadback::RgbaFloat(channels),
         }
     }
 
@@ -796,8 +802,8 @@ mod tests {
     }
 
     #[test]
-    fn sample_rgba16f_pixel_checks_bounds() {
-        let pixel = sample_rgba16f_pixel(
+    fn sample_float_pixel_checks_bounds() {
+        let pixel = sample_float_pixel(
             &[
                 0.1, 0.2, 0.3, 0.4, //
                 0.5, 0.6, 0.7, 0.8,
@@ -809,7 +815,7 @@ mod tests {
         )
         .unwrap();
         assert_rgba_approx_eq(pixel, [0.5, 0.6, 0.7, 0.8]);
-        assert!(sample_rgba16f_pixel(&[0.1, 0.2, 0.3, 0.4], 1, 1, 0, 1).is_none());
+        assert!(sample_float_pixel(&[0.1, 0.2, 0.3, 0.4], 1, 1, 0, 1).is_none());
     }
 
     #[test]
@@ -997,7 +1003,7 @@ mod tests {
 
     #[test]
     fn value_sampling_supports_float_reference_pixels() {
-        let sampled = sample_rgba16f_pixel(&[1.2, -0.1, 0.5, 2.0], 1, 1, 0, 0).unwrap();
+        let sampled = sample_float_pixel(&[1.2, -0.1, 0.5, 2.0], 1, 1, 0, 0).unwrap();
         assert_rgba_approx_eq(sampled, [1.2, -0.1, 0.5, 2.0]);
     }
 

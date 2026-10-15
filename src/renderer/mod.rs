@@ -28,11 +28,13 @@ pub mod render_plan;
 pub mod scene_prep;
 pub mod shader_space;
 pub mod types;
+pub(crate) mod text;
 pub mod utils;
 pub mod validation;
 pub mod wgsl;
 pub mod wgsl_bloom;
 pub mod wgsl_gradient_blur;
+pub mod wgsl_chromatic_blur;
 pub mod wgsl_templates;
 
 // Re-export key types and functions for backward compatibility

@@ -131,7 +131,7 @@ fn spawn_metal_capture_state_watcher(
 }
 
 fn spawn_template_watcher(
-    scene_tx: crossbeam_channel::Sender<ws::SceneUpdate>,
+    scene_tx: ws::SceneUpdateSender,
     last_good: Arc<Mutex<Option<dsl::SceneDSL>>>,
     egui_ctx: egui::Context,
 ) {
@@ -209,7 +209,7 @@ fn spawn_template_watcher(
                             egui_ctx.request_repaint();
                             continue;
                         }
-                        let _ = scene_tx.try_send(ws::SceneUpdate::Parsed {
+                        let _ = scene_tx.send(ws::SceneUpdate::Parsed {
                             scene,
                             request_id: None,
                             source: ws::ParsedSceneSource::SceneDelta,
@@ -1519,9 +1519,7 @@ fn run_headless_ws_render_once(
 ) -> Result<()> {
     use std::{thread, time::Duration};
 
-    let (scene_tx, scene_rx) = crossbeam_channel::bounded::<ws::SceneUpdate>(1);
-    let app_scene_rx = scene_rx.clone();
-    let drop_rx = scene_rx;
+    let (scene_tx, app_scene_rx) = ws::scene_update_channel();
 
     let last_good = Arc::new(Mutex::new(None));
     let hub = ws::WsHub::default();
@@ -1530,7 +1528,6 @@ fn run_headless_ws_render_once(
     let _ws_handle = ws::spawn_ws_server(
         addr,
         scene_tx,
-        drop_rx,
         hub.clone(),
         last_good,
         asset_store.clone(),
@@ -1715,105 +1712,6 @@ fn resolve_file_output_path(rt: &dsl::FileRenderTarget) -> std::path::PathBuf {
     path
 }
 
-fn configure_egui_fonts(ctx: &egui::Context) {
-    let mut fonts = egui::FontDefinitions::default();
-
-    fonts.font_data.insert(
-        "GeistMono-Regular".to_string(),
-        egui::FontData::from_static(include_bytes!(
-            "../assets/fonts/GeistMono/GeistMono-Regular.ttf"
-        ))
-        .into(),
-    );
-    fonts.font_data.insert(
-        "MiSans-Thin".to_string(),
-        egui::FontData::from_static(include_bytes!("../assets/fonts/MiSans/MiSans-Thin.ttf"))
-            .into(),
-    );
-    fonts.font_data.insert(
-        "MiSans-ExtraLight".to_string(),
-        egui::FontData::from_static(include_bytes!(
-            "../assets/fonts/MiSans/MiSans-ExtraLight.ttf"
-        ))
-        .into(),
-    );
-    fonts.font_data.insert(
-        "MiSans-Light".to_string(),
-        egui::FontData::from_static(include_bytes!("../assets/fonts/MiSans/MiSans-Light.ttf"))
-            .into(),
-    );
-    fonts.font_data.insert(
-        "MiSans-Normal".to_string(),
-        egui::FontData::from_static(include_bytes!("../assets/fonts/MiSans/MiSans-Normal.ttf"))
-            .into(),
-    );
-    fonts.font_data.insert(
-        "MiSans-Regular".to_string(),
-        egui::FontData::from_static(include_bytes!("../assets/fonts/MiSans/MiSans-Regular.ttf"))
-            .into(),
-    );
-    fonts.font_data.insert(
-        "MiSans-Medium".to_string(),
-        egui::FontData::from_static(include_bytes!("../assets/fonts/MiSans/MiSans-Medium.ttf"))
-            .into(),
-    );
-    fonts.font_data.insert(
-        "MiSans-Demibold".to_string(),
-        egui::FontData::from_static(include_bytes!("../assets/fonts/MiSans/MiSans-Demibold.ttf"))
-            .into(),
-    );
-    fonts.font_data.insert(
-        "MiSans-Semibold".to_string(),
-        egui::FontData::from_static(include_bytes!("../assets/fonts/MiSans/MiSans-Semibold.ttf"))
-            .into(),
-    );
-    fonts.font_data.insert(
-        "MiSans-Bold".to_string(),
-        egui::FontData::from_static(include_bytes!("../assets/fonts/MiSans/MiSans-Bold.ttf"))
-            .into(),
-    );
-    fonts.font_data.insert(
-        "MiSans-Heavy".to_string(),
-        egui::FontData::from_static(include_bytes!("../assets/fonts/MiSans/MiSans-Heavy.ttf"))
-            .into(),
-    );
-
-    let mut proportional = vec!["MiSans-Normal".to_string()];
-    proportional.extend(
-        fonts
-            .families
-            .get(&egui::FontFamily::Proportional)
-            .cloned()
-            .unwrap_or_default(),
-    );
-    fonts
-        .families
-        .insert(egui::FontFamily::Proportional, proportional);
-
-    for family in [
-        "MiSans-Thin",
-        "MiSans-ExtraLight",
-        "MiSans-Light",
-        "MiSans-Normal",
-        "MiSans-Regular",
-        "MiSans-Medium",
-        "MiSans-Demibold",
-        "MiSans-Semibold",
-        "MiSans-Bold",
-        "MiSans-Heavy",
-    ] {
-        fonts.families.insert(
-            egui::FontFamily::Name(family.into()),
-            vec![family.to_string()],
-        );
-    }
-    fonts.families.insert(
-        egui::FontFamily::Name("geist_mono".into()),
-        vec!["GeistMono-Regular".to_string()],
-    );
-
-    ctx.set_fonts(fonts);
-}
 
 pub(crate) fn run() -> Result<()> {
     let argv: Vec<String> = std::env::args().skip(1).collect();
@@ -1984,6 +1882,9 @@ pub(crate) fn run() -> Result<()> {
                 let mut setup = egui_wgpu::WgpuSetupCreateNew::without_display_handle();
                 setup.device_descriptor = std::sync::Arc::new(|adapter| {
                     let mut required_features = wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER;
+                    if adapter.features().contains(wgpu::Features::FLOAT32_FILTERABLE) {
+                        required_features |= wgpu::Features::FLOAT32_FILTERABLE;
+                    }
                     if adapter
                         .features()
                         .contains(wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES)
@@ -2028,7 +1929,7 @@ pub(crate) fn run() -> Result<()> {
         "Node Forge Render Server",
         native_options,
         Box::new(move |cc| {
-            configure_egui_fonts(&cc.egui_ctx);
+            node_forge_render_server::ui::fonts::configure_egui_fonts(&cc.egui_ctx);
             let render_state = cc
                 .wgpu_render_state
                 .as_ref()
@@ -2129,10 +2030,8 @@ pub(crate) fn run() -> Result<()> {
                 )
             };
 
-            // WS scene updates (keep latest only).
-            let (scene_tx, scene_rx) = crossbeam_channel::bounded::<ws::SceneUpdate>(1);
-            let app_scene_rx = scene_rx.clone();
-            let drop_rx = scene_rx;
+            // Coalesce pending scene/parameter updates without dropping control messages.
+            let (scene_tx, app_scene_rx) = ws::scene_update_channel();
 
             let last_good = Arc::new(Mutex::new(last_good_initial));
             let hub = ws::WsHub::default();
@@ -2143,7 +2042,6 @@ pub(crate) fn run() -> Result<()> {
             if let Err(e) = ws::spawn_ws_server(
                 "0.0.0.0:8080",
                 scene_tx,
-                drop_rx,
                 hub.clone(),
                 last_good.clone(),
                 asset_store.clone(),

@@ -1,6 +1,27 @@
-pub fn build_image_premultiply_wgsl(tex_var: &str, samp_var: &str) -> String {
-    // Convert straight-alpha source -> premultiplied-alpha output.
-    // If the source texture is sRGB, textureSample returns linear floats.
+pub fn build_image_prepare_wgsl(
+    tex_var: &str,
+    samp_var: &str,
+    display_p3: bool,
+    premultiply: bool,
+) -> String {
+    // sRGB and Display P3 share a transfer function, decoded by the source texture.
+    // Convert P3 primaries without clipping, then premultiply straight-alpha input.
+    let color_transform = if display_p3 {
+        let [r, g, b] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+            .map(crate::color::linear_p3_to_linear_srgb);
+        format!(
+            "    let rgb = mat3x3f(vec3f({:?}, {:?}, {:?}), vec3f({:?}, {:?}, {:?}), vec3f({:?}, {:?}, {:?})) * c.xyz;\n",
+            r[0], r[1], r[2], g[0], g[1], g[2], b[0], b[1], b[2],
+        )
+    } else {
+        String::new()
+    };
+    let rgb = if display_p3 { "rgb" } else { "c.xyz" };
+    let output_rgb = if premultiply {
+        format!("{rgb} * a")
+    } else {
+        rgb.to_string()
+    };
     format!(
         "\
 struct Params {{\n\
@@ -61,7 +82,7 @@ fn vs_main(\n\
 fn fs_main(in: VSOut) -> @location(0) vec4f {{\n\
     let c = textureSample({tex_var}, {samp_var}, in.uv);\n\
     let a = saturate(c.w);
-    return vec4(c.xyz * a, a);
+{color_transform}    return vec4({output_rgb}, a);
 }}\n"
     )
 }

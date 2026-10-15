@@ -112,16 +112,52 @@ pub(crate) fn load_image_from_path(
     );
 }
 
-/// Ensure the image is RGBA8 for GPU upload.
-///
-/// rust-wgpu-fiber's image texture path selects wgpu texture format based on `image.color()`.
-/// For RGB images it maps to RGBA formats (because wgpu has no RGB8), so we must ensure
-/// the pixel buffer is actually RGBA to keep `bytes_per_row` consistent.
-pub(crate) fn ensure_rgba8(image: Arc<DynamicImage>) -> Arc<DynamicImage> {
-    if image.color() == image::ColorType::Rgba8 {
-        return image;
+/// Expand grayscale/RGB to RGBA without changing the source component precision.
+/// The upload buffer must have the same channel layout as its GPU texture format.
+pub(crate) fn normalize_image_channels(image: Arc<DynamicImage>) -> Result<Arc<DynamicImage>> {
+    use image::ColorType;
+    Ok(match image.color() {
+        ColorType::Rgba8 | ColorType::Rgba16 | ColorType::Rgba32F => image,
+        ColorType::L8 | ColorType::La8 | ColorType::Rgb8 => {
+            Arc::new(DynamicImage::ImageRgba8(image.to_rgba8()))
+        }
+        ColorType::L16 | ColorType::La16 | ColorType::Rgb16 => {
+            Arc::new(DynamicImage::ImageRgba16(image.to_rgba16()))
+        }
+        ColorType::Rgb32F => Arc::new(DynamicImage::ImageRgba32F(image.to_rgba32f())),
+        other => bail!("unsupported image component format: {other:?}"),
+    })
+}
+
+/// Prepare high precision images before filtering. There is no 16/32-bit sRGB GPU
+/// format: applying an sRGB suffix would leave these encoded samples undecoded.
+/// Use f32 for transfer/primary conversion and premultiplication, retaining all
+/// 16-bit source levels and the range/precision of floating-point sources.
+pub(crate) fn prepare_high_precision_image(
+    image: &DynamicImage,
+    decode_srgb_transfer: bool,
+    display_p3: bool,
+    premultiply: bool,
+) -> Arc<DynamicImage> {
+    let mut rgba = image.to_rgba32f();
+    for pixel in rgba.pixels_mut() {
+        let [r, g, b, alpha] = pixel.0;
+        let mut rgb = [r, g, b];
+        if decode_srgb_transfer {
+            rgb = rgb.map(|value| {
+                value.signum() * crate::color::srgb_to_linear_channel(value.abs())
+            });
+        }
+        if display_p3 {
+            rgb = crate::color::linear_p3_to_linear_srgb(rgb);
+        }
+        if premultiply {
+            rgb = rgb.map(|value| value * alpha);
+        }
+        // In particular, never clamp negative or >1 floating-point values.
+        pixel.0 = [rgb[0], rgb[1], rgb[2], alpha];
     }
-    Arc::new(DynamicImage::ImageRgba8(image.as_ref().to_rgba8()))
+    Arc::new(DynamicImage::ImageRgba32F(rgba))
 }
 
 /// Load an image from a data URL string (legacy path).
@@ -130,7 +166,68 @@ pub(crate) fn load_image_from_data_url_checked(
     node_id: &str,
 ) -> Result<Arc<DynamicImage>> {
     match load_image_from_data_url(data_url) {
-        Ok(img) => Ok(ensure_rgba8(Arc::new(img))),
+        Ok(img) => Ok(Arc::new(img)),
         Err(e) => bail!("ImageTexture node '{node_id}': failed to load image from dataUrl: {e}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::{ImageBuffer, LumaA, Rgb};
+
+    #[test]
+    fn image_channel_expansion_preserves_component_depth_and_alpha() {
+        let gray = DynamicImage::ImageLumaA16(
+            ImageBuffer::from_raw(2, 1, vec![32768, 12345, 32769, 54321]).unwrap(),
+        );
+        let expanded = normalize_image_channels(Arc::new(gray)).unwrap();
+        assert_eq!(expanded.color(), image::ColorType::Rgba16);
+        assert_eq!(
+            expanded.as_rgba16().unwrap().as_raw(),
+            &[32768, 32768, 32768, 12345, 32769, 32769, 32769, 54321]
+        );
+        let gray8 = DynamicImage::ImageLumaA8(ImageBuffer::from_pixel(1, 1, LumaA([17, 128])));
+        let expanded = normalize_image_channels(Arc::new(gray8)).unwrap();
+        assert_eq!(expanded.as_rgba8().unwrap().as_raw(), &[17, 17, 17, 128]);
+        let rgb = DynamicImage::ImageRgb32F(ImageBuffer::from_pixel(
+            1, 1, Rgb([-0.25, 0.500_123_4, 100_000.0]),
+        ));
+        let expanded = normalize_image_channels(Arc::new(rgb)).unwrap();
+        assert_eq!(expanded.color(), image::ColorType::Rgba32F);
+        assert_eq!(
+            expanded.as_rgba32f().unwrap().as_raw(),
+            &[-0.25, 0.500_123_4, 100_000.0, 1.0]
+        );
+    }
+
+    #[test]
+    fn image_u16_transfer_keeps_all_65536_source_levels_distinct() {
+        let image = DynamicImage::ImageLuma16(ImageBuffer::from_fn(65536, 1, |x, _| {
+            image::Luma([x as u16])
+        }));
+        let prepared = prepare_high_precision_image(&image, true, false, false);
+        let pixels = prepared.as_rgba32f().unwrap();
+        let mut previous = -1.0;
+        for pixel in pixels.pixels() {
+            assert!(pixel[0] > previous);
+            assert_eq!(pixel[0], pixel[1]);
+            assert_eq!(pixel[1], pixel[2]);
+            assert_eq!(pixel[3], 1.0);
+            previous = pixel[0];
+        }
+    }
+
+    #[test]
+    fn image_linear_float_upload_preserves_bits_and_unbounded_values() {
+        let values = vec![-0.25, 0.500_123_4, 100_000.0, 1.5];
+        let image = DynamicImage::ImageRgba32F(ImageBuffer::from_raw(1, 1, values.clone()).unwrap());
+        let prepared = prepare_high_precision_image(&image, false, false, false);
+        assert_eq!(prepared.as_rgba32f().unwrap().as_raw(), &values);
+        let prepared = prepare_high_precision_image(&image, false, false, true);
+        assert_eq!(
+            prepared.as_rgba32f().unwrap().as_raw(),
+            &[-0.375, values[1] * 1.5, 150_000.0, 1.5]
+        );
     }
 }

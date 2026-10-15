@@ -38,6 +38,11 @@ pub(super) fn run(app: &App, ctx: &egui::Context, advance: &AdvancePhase, presen
     };
     ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
 
+    if !app.runtime.scene_rx.is_empty() {
+        // Ordered scene/control barriers may require another frame after the current update.
+        ctx.request_repaint();
+    }
+
     if should_request_immediate_repaint(
         advance.time_driven_scene || advance.animation_session_active,
         present.sidebar_animating,

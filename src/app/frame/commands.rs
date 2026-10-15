@@ -23,6 +23,8 @@ pub enum AppCommand {
     ForceState(String),
     ClearStateControl,
     OpenAnimationCurves,
+    OpenPixelPerfecto,
+    OpenCameraStudio,
     Canvas(CanvasAction),
     PickReferenceImage,
     ClearReference,
@@ -58,6 +60,8 @@ pub fn from_sidebar_action(action: ui::debug_sidebar::SidebarAction) -> AppComma
         ui::debug_sidebar::SidebarAction::ForceState(state_id) => AppCommand::ForceState(state_id),
         ui::debug_sidebar::SidebarAction::ClearStateControl => AppCommand::ClearStateControl,
         ui::debug_sidebar::SidebarAction::OpenAnimationCurves => AppCommand::OpenAnimationCurves,
+        ui::debug_sidebar::SidebarAction::OpenPixelPerfecto => AppCommand::OpenPixelPerfecto,
+        ui::debug_sidebar::SidebarAction::OpenCameraStudio => AppCommand::OpenCameraStudio,
         ui::debug_sidebar::SidebarAction::PreviewTexture(name) => AppCommand::Canvas(
             CanvasAction::SetPreviewTexture(ResourceName::from(name.as_str())),
         ),
@@ -96,6 +100,9 @@ pub fn from_sidebar_action(action: ui::debug_sidebar::SidebarAction) -> AppComma
         }
         ui::debug_sidebar::SidebarAction::SetClipEnabled(enabled) => {
             AppCommand::Canvas(CanvasAction::SetClipEnabled(enabled))
+        }
+        ui::debug_sidebar::SidebarAction::SetClippingMode(mode) => {
+            AppCommand::Canvas(CanvasAction::SetClippingMode(mode))
         }
         ui::debug_sidebar::SidebarAction::SetClippingShadowThreshold(threshold) => {
             AppCommand::Canvas(CanvasAction::SetClippingShadowThreshold(threshold))
@@ -199,6 +206,14 @@ pub fn dispatch(
         AppCommand::ClearStateControl => {
             crate::app::frame_freeze::clear_case(app, now)?;
             scene_runtime::clear_state_control(app);
+            ctx.request_repaint();
+        }
+        AppCommand::OpenPixelPerfecto => {
+            crate::pixel_perfecto::open_tool_window(&mut app.shell.pixel_perfecto_window, render_state);
+            ctx.request_repaint();
+        }
+        AppCommand::OpenCameraStudio => {
+            crate::camera_studio::open_tool_window(&mut app.shell.camera_studio_window);
             ctx.request_repaint();
         }
         AppCommand::OpenAnimationCurves => {

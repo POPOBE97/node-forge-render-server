@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "name": "doubao-hardware-hold",
+  "fps": 60,
+  "track": {
+    "channels": [
+      "sp_business_panel_progress",
+      "sp_0423787753cd6bc8",
+      "sp_status_continuous",
+      "sp_status_hardware"
+    ],
+    "overrides": []
+  },
+  "actions": [
+    {"type": "step", "frames": 0},
+    {"type": "event", "eventType": "keydown", "key": " "},
+    {"type": "step", "seconds": 0.35},
+    {"type": "assertState", "stateId": "st_pre_listening_expanded"},
+    {"type": "step", "seconds": 0.75},
+    {"type": "assertState", "stateId": "st_hardware_push_to_talk"},
+    {"type": "mouse", "x": 800, "y": 1000},
+    {"type": "event", "eventType": "mousemove"},
+    {"type": "assertState", "stateId": "st_hardware_push_to_talk"},
+    {"type": "event", "eventType": "keyup", "key": " "},
+    {"type": "assertState", "stateId": "st_command_delivered"},
+    {"type": "step", "seconds": 1.7},
+    {"type": "assertState", "stateId": "st_single_turn_speaking"},
+    {"type": "step", "seconds": 5.2},
+    {"type": "assertState", "stateId": "st_mrerxocx_8"}
+  ]
+}

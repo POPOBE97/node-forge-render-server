@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "name": "doubao-pointer-capture",
+  "fps": 60,
+  "track": {
+    "channels": [
+      "sp_business_panel_progress",
+      "sp_0423787753cd6bc8",
+      "sp_status_continuous",
+      "sp_status_hardware"
+    ],
+    "overrides": []
+  },
+  "actions": [
+    {"type": "step", "frames": 0},
+    {"type": "event", "eventType": "keydown", "key": " "},
+    {"type": "step", "seconds": 0.1},
+    {"type": "event", "eventType": "keyup", "key": " "},
+    {"type": "step", "seconds": 1.6},
+    {"type": "assertState", "stateId": "st_mrerxocx_8"},
+    {"type": "mouse", "x": 630, "y": 217},
+    {"type": "event", "eventType": "mousedown"},
+    {"type": "assertState", "stateId": "st_push_to_talk"},
+    {"type": "mouse", "x": 630, "y": 650},
+    {"type": "event", "eventType": "mousemove"},
+    {"type": "assertState", "stateId": "st_push_to_talk_cancel"},
+    {"type": "mouse", "x": 630, "y": 217},
+    {"type": "event", "eventType": "mousemove"},
+    {"type": "assertState", "stateId": "st_push_to_talk"},
+    {"type": "event", "eventType": "mouseup"},
+    {"type": "assertState", "stateId": "st_command_delivered"},
+    {"type": "step", "seconds": 0.4},
+    {"type": "mouse", "x": 630, "y": 217},
+    {"type": "event", "eventType": "touchstart"},
+    {"type": "assertState", "stateId": "st_push_to_talk"},
+    {"type": "mouse", "x": 630, "y": 650},
+    {"type": "event", "eventType": "touchmove"},
+    {"type": "assertState", "stateId": "st_push_to_talk_cancel"},
+    {"type": "event", "eventType": "touchend"},
+    {"type": "assertState", "stateId": "st_mrerxocx_8"}
+  ]
+}

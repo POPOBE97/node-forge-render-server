@@ -84,8 +84,15 @@ pub(crate) fn sampler_kind_for_pass_texture(
         .unwrap_or(SamplerKind::LinearClamp)
 }
 
-pub(crate) fn build_image_premultiply_wgsl(tex_var: &str, samp_var: &str) -> String {
-    crate::renderer::wgsl_templates::build_image_premultiply_wgsl(tex_var, samp_var)
+pub(crate) fn build_image_prepare_wgsl(
+    tex_var: &str,
+    samp_var: &str,
+    display_p3: bool,
+    premultiply: bool,
+) -> String {
+    crate::renderer::wgsl_templates::build_image_prepare_wgsl(
+        tex_var, samp_var, display_p3, premultiply,
+    )
 }
 
 pub fn update_pass_params(

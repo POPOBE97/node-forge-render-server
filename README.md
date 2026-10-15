@@ -14,6 +14,30 @@ cargo run --release
 
 > 默认会从 `assets/` 读取示例场景作为初始 scene。
 
+## Pixel Perfecto
+
+显微镜照片的 Diamond RGB 子像素网格对齐工具，支持自动初对齐、单画布累积校准、图片旋转、拖格点建立标定锚点、自动补点及逐图透视／镜头矫正，也支持横纵标尺与共享辅助线、两点数像素（图像／网格独立计数与差值）、吸附拖动、叠加／差值／A/B／卷帘比较，以及打包工程和 PNG 导出。
+
+```bash
+cargo run --bin pixel-perfecto -- photo-a.png photo-b.jpg
+```
+
+也可从 Render Server 侧栏的 **Pixel Perfecto** 按钮打开独立工具窗口。完整操作说明见 [docs/pixel-perfecto.md](docs/pixel-perfecto.md)。
+
+## Camera Studio
+
+Canon T4i / 650D 拍摄工具，提供 Live View、相机参数、手动步进对焦、照片自动下载及相机录像后的 MOV 下载。
+从 Render Server 侧栏 **Camera Studio** 打开原生工具窗口，也可以独立启动：
+
+```bash
+brew install libgphoto2 gphoto2
+cargo run --bin camera-studio
+```
+
+原始 JPEG/CR2/MOV 与拍摄记录保存在本地目录。安装、恢复下载和实机验证状态见 [docs/camera-studio.md](docs/camera-studio.md)。
+
+Camera Studio 的 **Screen test** 提供独立的几何标定、iPhone RAW 参考库和安卓色彩检测。手机使用原生播放器，通过 USB 显示按屏幕分辨率生成的测试图；操作、构建和验收边界见 [docs/screen-test.md](docs/screen-test.md)。
+
 ## Android 截图到剪贴板
 
 连接一台已授权 USB 调试的 Android 设备后，可直接截图并写入系统剪贴板。默认执行 Display P3 到 sRGB 的像素转换，适合粘贴到 Figma：

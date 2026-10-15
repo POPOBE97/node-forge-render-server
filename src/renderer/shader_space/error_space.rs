@@ -4,7 +4,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use rust_wgpu_fiber::{
     ResourceName,
-    eframe::wgpu::{self, BlendState, Color, TextureFormat, TextureUsages, vertex_attr_array},
+    wgpu::{self, BlendState, Color, TextureFormat, TextureUsages, vertex_attr_array},
     pool::buffer_pool::BufferSpec,
     pool::texture_pool::TextureSpec as FiberTextureSpec,
     shader_space::ShaderSpace,

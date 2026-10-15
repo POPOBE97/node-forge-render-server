@@ -465,7 +465,7 @@ where
     // Compile inputs in declared order.
     let mut param_bindings: Vec<String> = Vec::new();
     let mut uses_time = false;
-    // Track actual resolved (name, type) for each non-texture input — needed by the array path.
+    // Preserve resolved input types for both the GLSL and array compiler paths.
     let mut resolved_input_types: Vec<(String, ValueType)> = Vec::new();
 
     for port in &node.inputs {
@@ -617,55 +617,24 @@ where
             Some(glsl_helper_prefix)
         };
 
-        let mut glsl_params: Vec<String> = vec!["vec2 uv".to_string()];
-        let mut wgsl_args: Vec<String> = vec![match stage {
-            GlslShaderStage::Vertex => "uv".to_string(),
-            _ => "in.uv".to_string(),
+        let mut params = vec![GlslParam {
+            name: "uv".to_string(),
+            ty: ValueType::Vec2,
+            wgsl_expr: match stage {
+                GlslShaderStage::Vertex => "uv".to_string(),
+                _ => "in.uv".to_string(),
+            },
         }];
-
-        for port in &node.inputs {
-            let param_name = port_id_to_param_name(port);
-            let port_ty = map_port_type(port.port_type.as_deref())?;
-
-            if port_ty == ValueType::Texture2D {
-                continue;
-            }
-
-            let expected_ty = promote_type_from_source_swizzles(&source, &param_name, port_ty);
-            glsl_params.push(format!("{} {}", expected_ty.glsl(), param_name));
-            if expected_ty == ValueType::Bool {
-                wgsl_args.push(format!("select(0.0, 1.0, {param_name})"));
-            } else {
-                wgsl_args.push(param_name);
-            }
-        }
+        params.extend(resolved_input_types.iter().map(|(name, ty)| GlslParam {
+            name: name.clone(),
+            ty: *ty,
+            wgsl_expr: name.clone(),
+        }));
 
         let compiled = compile_glsl_snippet(GlslSnippetSpec {
             fn_name: fn_name.clone(),
             return_type: ret_ty,
-            params: glsl_params
-                .iter()
-                .zip(wgsl_args.iter())
-                .map(|(glsl_param, wgsl_expr)| {
-                    let mut parts = glsl_param.split_whitespace();
-                    let ty = parts.next().unwrap_or("float");
-                    let name = parts.next().unwrap_or("arg");
-                    let ty = match ty {
-                        "float" => ValueType::F32,
-                        "int" => ValueType::I32,
-                        "uint" => ValueType::U32,
-                        "vec2" => ValueType::Vec2,
-                        "vec3" => ValueType::Vec3,
-                        "vec4" => ValueType::Vec4,
-                        _ => ValueType::F32,
-                    };
-                    GlslParam {
-                        name: name.to_string(),
-                        ty,
-                        wgsl_expr: wgsl_expr.clone(),
-                    }
-                })
-                .collect(),
+            params,
             body: source.clone(),
             stage,
             helper_prefix,

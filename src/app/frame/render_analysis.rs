@@ -1,9 +1,14 @@
-use rust_wgpu_fiber::eframe::{egui_wgpu, wgpu};
+use rust_wgpu_fiber::{
+    eframe::{egui_wgpu, wgpu},
+    shader_space::ShaderSpace,
+};
 
 use crate::{
     app::{
         canvas, matrix_render, texture_bridge,
-        types::{AnalysisSourceDomain, App, DiffMetricMode, DiffStats, RefImageMode, TestMode},
+        types::{
+            AnalysisSourceDomain, App, ClippingMode, DiffMetricMode, DiffStats, RefImageMode, TestMode,
+        },
     },
     renderer, ui,
 };
@@ -22,6 +27,31 @@ fn effective_diff_clamp_output(
     hdr_preview_clamp_enabled: bool,
 ) -> bool {
     !capture_shortwire_diff && hdr_preview_clamp_enabled
+}
+
+/// Presentation textures may already have lost negative/HDR values. Use their
+/// original scene output; explicit intermediate previews are already shader-visible data.
+fn linear_clipping_source<'a>(
+    shader_space: &'a ShaderSpace,
+    scene_texture_name: &'a str,
+    present_texture_name: &str,
+    display_texture_name: &'a str,
+) -> Option<AnalysisSourceDomain<'a>> {
+    let texture_name = if display_texture_name == present_texture_name {
+        scene_texture_name
+    } else {
+        display_texture_name
+    };
+    let texture = shader_space.textures.get(texture_name)?;
+    Some(AnalysisSourceDomain {
+        texture_name,
+        view: texture.wgpu_texture_view.as_ref()?,
+        size: [
+            texture.wgpu_texture_desc.size.width,
+            texture.wgpu_texture_desc.size.height,
+        ],
+        format: texture.wgpu_texture_desc.format,
+    })
 }
 
 pub(super) fn run(
@@ -128,6 +158,12 @@ pub(super) fn run(
             })
     });
     let compare_source_key = display_source.as_ref().map(AnalysisSourceKey::from_source);
+    let linear_clip_source = linear_clipping_source(
+        &app.core.shader_space,
+        app.core.scene_output_texture_name.as_str(),
+        output_texture_name,
+        display_texture_name,
+    );
 
     let mut computed_diff_stats: Option<DiffStats> = None;
     let pending_shortwire_diff_capture = app.shell.pending_shortwire_diff_capture.clone();
@@ -546,7 +582,16 @@ pub(super) fn run(
             }
         }
 
-        if app.canvas.analysis.clip_enabled {
+        if app.canvas.analysis.clip_enabled
+            && let Some(source) = match app.canvas.analysis.clipping_settings.mode {
+                ClippingMode::Threshold => Some(source),
+                ClippingMode::LinearSrgb => linear_clip_source.as_ref(),
+            }
+        {
+            let source_key = match app.canvas.analysis.clipping_settings.mode {
+                ClippingMode::Threshold => source_key,
+                ClippingMode::LinearSrgb => AnalysisSourceKey::from_source(source),
+            };
             let request_key =
                 ClippingRequestKey::new(source_key, app.canvas.analysis.clipping_settings, true);
             if app.canvas.analysis.clipping_renderer.is_none() {
@@ -567,8 +612,7 @@ pub(super) fn run(
                     app.core.shader_space.queue.as_ref(),
                     source.view,
                     source.size,
-                    app.canvas.analysis.clipping_settings.shadow_threshold,
-                    app.canvas.analysis.clipping_settings.highlight_threshold,
+                    app.canvas.analysis.clipping_settings,
                 );
 
                 let mut sampler =
@@ -887,22 +931,41 @@ fn update_matrix_cell_analysis(
 
     // Clip
     if clip_enabled {
-        // Clip source: if we're in Diff mode, use the diff renderer's analysis
-        // output (mirrors the single-image behavior in run()).
+        // Threshold follows the displayed Diff; linear-sRGB checks the scene
+        // before presentation, matching the single-image path.
         let clip_in_diff = matches!(reference_mode, Some(RefImageMode::Diff));
         let cell = &mut app.shell.matrix_state.cells[cell_idx];
-        let (clip_view, clip_size, clip_source_label) =
-            if clip_in_diff && let Some(diff_renderer) = cell.diff_renderer.as_ref() {
+        let (clip_view, clip_size, clip_source_key) =
+            if clipping_settings.mode == ClippingMode::LinearSrgb {
+                let Some(source) = linear_clipping_source(
+                    &cell.shader_space,
+                    cell.scene_output_texture_name.as_str(),
+                    cell.output_texture_name.as_str(),
+                    cell.output_texture_name.as_str(),
+                ) else {
+                    return;
+                };
+                (
+                    source.view.clone(),
+                    source.size,
+                    AnalysisSourceKey::from_source(&source),
+                )
+            } else if clip_in_diff && let Some(diff_renderer) = cell.diff_renderer.as_ref() {
                 (
                     diff_renderer.analysis_output_view().clone(),
                     diff_renderer.analysis_output_size(),
-                    "matrix.diff.analysis",
+                    AnalysisSourceKey::from_hashable(&(cell_coord, "matrix.diff.analysis"))
+                        .with_diff_request(cell.last_diff_request_key),
                 )
             } else {
-                (cell_view.clone(), cell_size, "matrix.cell.output")
+                (
+                    cell_view.clone(),
+                    cell_size,
+                    AnalysisSourceKey::from_hashable(&(
+                        cell_coord, cell_size, cell_format, "matrix.cell.output",
+                    )),
+                )
             };
-        let clip_source_key =
-            AnalysisSourceKey::from_hashable(&(cell_coord, clip_size, clip_source_label));
         let request_key = ClippingRequestKey::new(clip_source_key, clipping_settings, true);
 
         let needs_new_renderer = cell
@@ -928,8 +991,7 @@ fn update_matrix_cell_analysis(
                 app.core.shader_space.queue.as_ref(),
                 &clip_view,
                 clip_size,
-                clipping_settings.shadow_threshold,
-                clipping_settings.highlight_threshold,
+                clipping_settings,
             );
 
             let mut sampler = texture_bridge::canvas_sampler_descriptor(wgpu::FilterMode::Nearest);
@@ -1036,7 +1098,7 @@ mod tests {
         AnalysisSourceKey, ClippingRequestKey, DiffRequestKey, HistogramRequestKey,
         ParadeRequestKey, RefImageMode, VectorscopeRequestKey, effective_diff_clamp_output,
     };
-    use crate::app::{ClippingSettings, DiffMetricMode};
+    use crate::app::{ClippingMode, ClippingSettings, DiffMetricMode};
 
     #[test]
     fn request_keys_change_with_source_domain() {
@@ -1137,7 +1199,7 @@ mod tests {
     }
 
     #[test]
-    fn clipping_request_key_changes_with_toggle_and_thresholds() {
+    fn clipping_request_key_changes_with_toggle_thresholds_and_mode() {
         let source_key = AnalysisSourceKey::from_hashable(&("output", [1920_u32, 1080_u32]));
         let base_settings = ClippingSettings::default();
         let base = ClippingRequestKey::new(source_key, base_settings, true);
@@ -1152,5 +1214,59 @@ mod tests {
         );
         assert_ne!(base, toggled);
         assert_ne!(base, changed_threshold);
+        let changed_mode = ClippingRequestKey::new(
+            source_key,
+            ClippingSettings {
+                mode: ClippingMode::LinearSrgb,
+                ..base_settings
+            },
+            true,
+        );
+        assert_ne!(base, changed_mode);
+    }
+
+    #[test]
+    fn linear_clipping_uses_scene_before_presentation_and_honors_preview() {
+        use rust_wgpu_fiber::{
+            HeadlessRenderer, HeadlessRendererConfig, eframe::wgpu,
+            pool::texture_pool::TextureSpec, shader_space::ShaderSpace,
+        };
+
+        let gpu = match HeadlessRenderer::new(HeadlessRendererConfig::default()) {
+            Ok(gpu) => gpu,
+            Err(error) => {
+                eprintln!("No GPU available for clipping source test: {error:?}");
+                return;
+            }
+        };
+        let mut space = ShaderSpace::new(gpu.device, gpu.queue);
+        space
+            .declare_textures(
+                [
+                    ("scene", [7, 2], wgpu::TextureFormat::Rgba16Float),
+                    ("present", [7, 2], wgpu::TextureFormat::Rgba8Unorm),
+                    ("preview", [3, 1], wgpu::TextureFormat::Rgba32Float),
+                ]
+                .map(|(name, resolution, format)| TextureSpec::Texture {
+                    name: name.into(),
+                    resolution,
+                    format,
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                    sample_count: 1,
+                }),
+            )
+            .prepare();
+
+        let scene = super::linear_clipping_source(&space, "scene", "present", "present")
+            .expect("linear scene source");
+        assert_eq!(scene.texture_name, "scene");
+        assert_eq!(scene.format, wgpu::TextureFormat::Rgba16Float);
+        assert_eq!(scene.size, [7, 2]);
+        let preview = super::linear_clipping_source(&space, "scene", "present", "preview")
+            .expect("linear preview source");
+        assert_eq!(preview.texture_name, "preview");
+        assert_eq!(preview.format, wgpu::TextureFormat::Rgba32Float);
+        assert_eq!(preview.size, [3, 1]);
+        assert!(super::linear_clipping_source(&space, "missing", "present", "present").is_none());
     }
 }

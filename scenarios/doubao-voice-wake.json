@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "name": "doubao-voice-wake",
+  "fps": 60,
+  "track": {
+    "channels": [
+      "sp_business_panel_progress",
+      "sp_0423787753cd6bc8",
+      "sp_status_continuous",
+      "sp_status_hardware"
+    ],
+    "overrides": []
+  },
+  "actions": [
+    {"type": "step", "frames": 0},
+    {"type": "event", "eventType": "keydown", "key": "v"},
+    {"type": "assertState", "stateId": "st_voice_wake"},
+    {"type": "step", "seconds": 0.3},
+    {"type": "assertState", "stateId": "st_listening"},
+    {"type": "step", "seconds": 5.1},
+    {"type": "assertState", "stateId": "st_thinking"},
+    {"type": "event", "eventType": "keyup", "key": "Escape"},
+    {"type": "assertState", "stateId": "st_mrerw3qg_6"}
+  ]
+}

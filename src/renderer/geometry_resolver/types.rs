@@ -11,8 +11,10 @@ pub const DRAW_PASS_NODE_TYPES: &[&str] = &[
     "Convolution",
     "Upsample",
     "GradientBlur",
+    "ChromaticBlur",
     "IntelligentLight",
     "MeshGradient",
+    "TextPass",
 ];
 
 pub fn is_draw_pass_node_type(node_type: &str) -> bool {

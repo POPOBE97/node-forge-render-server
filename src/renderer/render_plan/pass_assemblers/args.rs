@@ -11,7 +11,7 @@ use std::{
 
 use rust_wgpu_fiber::{
     ResourceName,
-    eframe::wgpu::{self, TextureFormat},
+    wgpu::{self, TextureFormat},
 };
 
 use crate::{
@@ -71,6 +71,7 @@ pub(crate) struct BuilderState<'b> {
 
     pub geometry_buffers: &'b mut Vec<(ResourceName, Arc<[u8]>)>,
     pub instance_buffers: &'b mut Vec<(ResourceName, Arc<[u8]>)>,
+    pub image_textures: &'b mut Vec<crate::renderer::render_plan::types::ImageTextureSpec>,
     pub textures: &'b mut Vec<TextureDecl>,
     pub texture_mip_level_counts: &'b mut HashMap<ResourceName, u32>,
     pub texture_views: &'b mut Vec<crate::renderer::render_plan::types::TextureViewDecl>,

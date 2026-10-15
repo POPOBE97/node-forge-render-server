@@ -80,6 +80,14 @@ pub fn radio_button_group<'a, T: Copy + Eq>(
                                     egui::vec2(item_w, item_h),
                                     egui::Sense::click(),
                                 );
+                                response.widget_info(|| {
+                                    egui::WidgetInfo::selected(
+                                        egui::WidgetType::RadioButton,
+                                        enabled,
+                                        is_selected,
+                                        option.label,
+                                    )
+                                });
                                 let response = if enabled {
                                     response.on_hover_cursor(egui::CursorIcon::PointingHand)
                                 } else {

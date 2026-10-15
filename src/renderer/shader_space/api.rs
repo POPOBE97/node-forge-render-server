@@ -2,7 +2,7 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use anyhow::{Result, bail};
 use rust_wgpu_fiber::shader_space::ShaderSpace;
-use rust_wgpu_fiber::{ResourceName, eframe::wgpu};
+use rust_wgpu_fiber::{ResourceName, wgpu};
 
 use crate::{
     asset_store::AssetStore,

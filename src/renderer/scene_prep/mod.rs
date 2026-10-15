@@ -1,6 +1,9 @@
 mod composite;
 mod data_parse;
-#[cfg(feature = "native")]
+#[cfg(all(feature = "native", not(feature = "portable-js")))]
+pub(crate) mod data_parse_runtime;
+#[cfg(feature = "portable-js")]
+#[path = "data_parse_runtime_portable.rs"]
 pub(crate) mod data_parse_runtime;
 #[cfg(feature = "web-core")]
 #[path = "data_parse_runtime_web.rs"]
