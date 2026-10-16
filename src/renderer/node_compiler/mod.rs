@@ -462,6 +462,7 @@ fn try_compile_pure_group_call(
         .collect::<Vec<_>>();
     let helper_scene = SceneDSL {
         version: scene.version.clone(),
+        working_color_space: scene.working_color_space,
         metadata: Metadata {
             name: format!("group:{group_id}"),
             created: None,
@@ -1236,6 +1237,7 @@ pub mod test_utils {
     /// Create a SceneDSL for testing with default metadata and version.
     pub fn test_scene(nodes: Vec<Node>, connections: Vec<Connection>) -> SceneDSL {
         SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "test".to_string(),
@@ -1259,6 +1261,7 @@ pub mod test_utils {
         outputs: HashMap<String, String>,
     ) -> SceneDSL {
         SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "test".to_string(),
@@ -1333,6 +1336,7 @@ mod readability_tests {
 
     fn scene(nodes: Vec<Node>, connections: Vec<Connection>, groups: Vec<GroupDSL>) -> SceneDSL {
         SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "readability".to_string(),

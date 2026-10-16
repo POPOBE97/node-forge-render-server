@@ -51,7 +51,16 @@ int main(int argc,char**argv) { try {
         json<<"width"<<(int)s.width<<"height"<<(int)s.height<<"cfa"<<"[";
         for(auto v:cfa) json<<v; json<<"]"<<"black"<<"["; for(auto v:black)json<<v;
         json<<"]"<<"white"<<(double)c.maximum<<"exposure"<<(double)d.other.shutter<<"iso"<<(double)d.other.iso_speed<<"aperture"<<(double)d.other.aperture<<"focal_length"<<(double)d.other.focal_len;
-        json<<"camera"<<std::string(d.idata.model)<<"lens"<<std::string(d.lens.Lens)<<"orientation"<<s.flip;
+        double neutral[3];
+        for(int channel=0;channel<3;channel++) {
+            if(d.color.cam_mul[channel]<=0) throw std::runtime_error("Camera white balance unavailable");
+            neutral[channel]=1.0/d.color.cam_mul[channel];
+        }
+        const double green_neutral=neutral[1];
+        for(auto &v:neutral) v/=green_neutral;
+        json<<"make"<<std::string(d.idata.make)<<"camera"<<std::string(d.idata.model)<<"lens"<<std::string(d.lens.Lens)<<"orientation"<<s.flip;
+        json<<"color_matrix"<<"["; for(int y=0;y<3;y++)for(int x=0;x<3;x++)json<<d.color.cam_xyz[y][x]; json<<"]";
+        json<<"as_shot_neutral"<<"["; for(auto v:neutral)json<<v; json<<"]";
         auto header=json.releaseAndGetString(); std::cout.write("NFR1",4);u32(header.size());std::cout<<header;
         size_t pitch=s.raw_pitch?s.raw_pitch/sizeof(ushort):s.raw_width;
         for(unsigned y=0;y<s.height;y++) for(unsigned x=0;x<s.width;x++) {

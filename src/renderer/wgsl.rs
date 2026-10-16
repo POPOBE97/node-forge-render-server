@@ -2381,6 +2381,7 @@ mod tests {
     fn test_scene(nodes: Vec<Node>, connections: Vec<Connection>) -> SceneDSL {
         SceneDSL {
             version: "6.0".to_string(),
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             metadata: Metadata {
                 name: "wgsl test".to_string(),
                 created: None,
@@ -2597,6 +2598,7 @@ mod tests {
         let graph_field = crate::renderer::graph_uniforms::graph_field_name(graph_node_id);
         let scene = SceneDSL {
             version: "6.0".to_string(),
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             metadata: Metadata {
                 name: "shared vertex and fragment graph input".to_string(),
                 created: None,
@@ -2704,6 +2706,7 @@ mod tests {
             };
         let scene = SceneDSL {
             version: "6.0".to_string(),
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             metadata: Metadata {
                 name: "bloom tint".to_string(),
                 created: None,

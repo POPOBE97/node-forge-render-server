@@ -30,6 +30,19 @@ pub fn diff_sampler_descriptor(filter: wgpu::FilterMode) -> wgpu::SamplerDescrip
     }
 }
 
+/// Screen presentation may have different primaries from intermediate graph textures.
+pub fn texture_color_space(app: &App, texture_name: &str) -> crate::color::WorkingColorSpace {
+    app.runtime.uniform_scene.as_ref()
+        .map(|scene| {
+            if texture_name == app.core.output_texture_name.as_str() {
+                crate::dsl::screen_color_space(scene).unwrap_or(scene.working_color_space)
+            } else {
+                scene.working_color_space
+            }
+        })
+        .unwrap_or_default()
+}
+
 pub fn sync_output_texture(
     app: &mut App,
     render_state: &egui_wgpu::RenderState,
@@ -58,6 +71,10 @@ pub fn sync_output_texture(
                 texture.wgpu_texture_view.as_ref().unwrap(),
                 canvas_sampler_descriptor(filter),
             ));
+    }
+    if let Some(id) = app.canvas.display.color_attachment {
+        let space = texture_color_space(app, texture_name.as_str());
+        renderer.set_native_texture_linear_color_space(id, space == crate::color::WorkingColorSpace::DisplayP3);
     }
 }
 
@@ -103,6 +120,10 @@ pub fn sync_preview_texture(
                 view,
                 canvas_sampler_descriptor(filter),
             ));
+    }
+    if let Some(id) = app.canvas.display.preview_color_attachment {
+        let space = texture_color_space(app, texture_name.as_str());
+        renderer.set_native_texture_linear_color_space(id, space == crate::color::WorkingColorSpace::DisplayP3);
     }
 }
 

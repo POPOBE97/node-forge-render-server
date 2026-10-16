@@ -831,6 +831,7 @@ mod asset_scene_tests {
             })
             .collect();
         let scene = SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "asset-scene".to_string(),
@@ -959,7 +960,7 @@ mod queue_tests {
         let mut assets = AssetTransferState::default();
         let mut artifacts = DebugArtifactTransferState::default();
         let scene = serde_json::json!({
-            "version": "6.0",
+            "version": "6.0", "workingColorSpace": "linear-srgb",
             "metadata": { "name": "wire-test" },
             "nodes": [
                 { "id": "gain", "type": "FloatInput", "params": { "value": 0.0 } },
@@ -984,7 +985,7 @@ mod queue_tests {
             let message = serde_json::json!({
                 "type": "scene_delta", "timestamp": 0,
                 "payload": {
-                    "version": "6.0",
+                    "version": "6.0", "workingColorSpace": "linear-srgb",
                     "nodes": { "added": [], "removed": [],
                         "updated": [{ "id": id, "type": "FloatInput", "params": { "value": value } }] },
                     "connections": { "added": [], "updated": [], "removed": [] }

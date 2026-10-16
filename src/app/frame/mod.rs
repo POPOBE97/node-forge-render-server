@@ -35,6 +35,29 @@ pub(super) fn run(app: &mut App, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
 
     let t0 = Instant::now();
     let ingest = ingest::run(app, &ctx, render_state, &mut renderer_guard, frame_time);
+    if let Some(scene) = app.runtime.uniform_scene.as_ref() {
+        let output_space =
+            crate::dsl::screen_color_space(scene).expect("validated Screen output color space");
+        // The presentation conversion texture may be float even for an authored
+        // UNORM target. Use the original Screen source to choose SDR versus EDR.
+        let target_format = app
+            .core
+            .shader_space
+            .textures
+            .get(app.core.scene_output_texture_name.as_str())
+            .expect("Screen source texture exists")
+            .wgpu_texture_desc
+            .format;
+        let surface_space = output_space.window_color_space(target_format);
+        if let Err(error) = render_state.request_surface_color_space(surface_space) {
+            egui::Window::new("显示色彩空间不可用")
+                .collapsible(false)
+                .resizable(false)
+                .show(&ctx, |ui| {
+                    ui.label(error);
+                });
+        }
+    }
     interaction_bridge::broadcast_payloads(app, &ingest.queued_interaction_payloads);
     let ingest_ms = t0.elapsed().as_secs_f64() * 1000.0;
 

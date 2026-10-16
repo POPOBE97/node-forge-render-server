@@ -642,13 +642,24 @@ impl Workspace {
                     Some(results::ResultState::Saved(saved)) => {
                         ui.horizontal(|ui| {
                             ui.label(format!("Corrected · {} × {}", saved.size[0], saved.size[1]));
-                            if action(ui, "Open result", true) {
+                            if action(ui, "Open preview", true) {
                                 if let Err(e) = reveal(&saved.path) {
-                                    self.issue(IssueTarget::Record(record.id.clone()), "Could not open result", e.to_string());
+                                    self.issue(IssueTarget::Record(record.id.clone()), "Could not open preview", e.to_string());
+                                }
+                            }
+                            if let Some(raw_path) = &saved.raw_path {
+                                if action(ui, "Open corrected RAW", true) {
+                                    if let Err(e) = reveal(raw_path) {
+                                        self.issue(IssueTarget::Record(record.id.clone()), "Could not open corrected RAW", e.to_string());
+                                    }
                                 }
                             }
                         });
-                        muted(ui, "Saved separately in results/rectified.png. Original RAW remains available for measurement.");
+                        if saved.raw_path.is_some() {
+                            muted(ui, "Saved results/rectified.dng (16-bit Bayer RAW) and a PNG preview. The original CR2 is unchanged.");
+                        } else {
+                            muted(ui, "Saved separately in results/rectified.png.");
+                        }
                     }
                     Some(results::ResultState::Pending) => { muted(ui, "Saving corrected result…"); }
                     Some(results::ResultState::Failed(error)) => {

@@ -130,6 +130,7 @@ fn scene_with_event_transition(event_name: &str) -> SceneDSL {
 
     SceneDSL {
         version: "6.0".into(),
+            working_color_space: node_forge_render_server::color::WorkingColorSpace::Srgb,
         metadata: Metadata {
             name: "Test Scene".into(),
             created: None,
@@ -257,6 +258,7 @@ fn scene_with_press_release_transitions() -> SceneDSL {
 
     SceneDSL {
         version: "6.0".into(),
+            working_color_space: node_forge_render_server::color::WorkingColorSpace::Srgb,
         metadata: Metadata {
             name: "Press Release Scene".into(),
             created: None,

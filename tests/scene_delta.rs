@@ -50,6 +50,7 @@ fn conn(id: &str, from: &str, to: &str) -> Connection {
 
 fn base_scene() -> SceneDSL {
     SceneDSL {
+        working_color_space: node_forge_render_server::color::WorkingColorSpace::Srgb,
         version: "1.0".to_string(),
         metadata: Metadata {
             name: "base".to_string(),
@@ -102,6 +103,7 @@ fn scene_update_replaces_cache() {
     assert_eq!(cache.outputs.get("main").map(String::as_str), Some("b"));
 
     let scene2 = SceneDSL {
+        working_color_space: node_forge_render_server::color::WorkingColorSpace::Srgb,
         version: "1.0".to_string(),
         metadata: Metadata {
             name: "next".to_string(),
@@ -339,6 +341,7 @@ fn materialize_scene_dsl_roundtrips_cache() {
 #[test]
 fn scene_delta_updates_intelligent_light_params() {
     let scene = SceneDSL {
+        working_color_space: node_forge_render_server::color::WorkingColorSpace::Srgb,
         version: "1.0".to_string(),
         metadata: Metadata {
             name: "ilight".to_string(),

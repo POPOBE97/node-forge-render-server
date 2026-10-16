@@ -89,9 +89,10 @@ pub(crate) fn build_image_prepare_wgsl(
     samp_var: &str,
     display_p3: bool,
     premultiply: bool,
+    working_space: crate::color::WorkingColorSpace,
 ) -> String {
     crate::renderer::wgsl_templates::build_image_prepare_wgsl(
-        tex_var, samp_var, display_p3, premultiply,
+        tex_var, samp_var, display_p3, premultiply, working_space,
     )
 }
 

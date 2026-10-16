@@ -229,7 +229,9 @@ pub(super) fn run(
             ));
         }
 
+        let source_space = crate::app::texture_bridge::texture_color_space(app, &source.texture_name);
         if let Some(diff_renderer) = app.canvas.analysis.diff_renderer.as_mut() {
+            diff_renderer.set_source_color_space(source_space);
             let request_key = DiffRequestKey::new(
                 source_key,
                 reference.size,
@@ -356,6 +358,9 @@ pub(super) fn run(
                             diff_renderer.output_view(),
                             sampler,
                         ));
+                }
+                if let Some(id) = app.canvas.analysis.diff_texture_id {
+                    renderer_guard.set_native_texture_linear_color_space(id, false);
                 }
                 app.canvas.invalidation.clear_diff();
             }

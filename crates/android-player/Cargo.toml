@@ -21,6 +21,10 @@ log = "0.4"
 android_logger = "0.15"
 half = "2"
 bytemuck = "1"
+ash = "0.38"
+
+[build-dependencies]
+cc = "1"
 
 [profile.dev]
 opt-level = 1

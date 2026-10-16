@@ -1107,6 +1107,7 @@ fn canonical_scene_value(
 
     json!({
         "version": scene.version,
+        "workingColorSpace": scene.working_color_space,
         "nodes": canonicalize_nodes(&scene.nodes, ignored_input_value_node_ids),
         "connections": sort_connections(&scene.connections),
         "outputs": outputs_sorted,
@@ -1282,6 +1283,7 @@ mod tests {
 
     fn base_scene() -> SceneDSL {
         SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "sig".to_string(),
@@ -1336,6 +1338,7 @@ mod tests {
     #[test]
     fn pack_graph_values_writes_expected_slots() {
         let scene = SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "pack".to_string(),
@@ -1382,6 +1385,7 @@ mod tests {
     #[test]
     fn pack_graph_values_writes_hdr_color_components_without_clamping() {
         let scene = SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "hdr-colors".to_string(),
@@ -1440,6 +1444,7 @@ mod tests {
     #[test]
     fn pack_graph_values_maps_midi_raw_value_to_range() {
         let scene = SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "midi".to_string(),
@@ -1488,6 +1493,7 @@ mod tests {
     #[test]
     fn pack_graph_values_reads_shader_material_parameter_slots() {
         let scene = SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "shader-params".to_string(),
@@ -1545,6 +1551,7 @@ mod tests {
     #[test]
     fn pack_graph_values_resolves_vector4_input_component_connections() {
         let scene = SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "midi-vector".to_string(),
@@ -1636,6 +1643,7 @@ mod tests {
     #[test]
     fn signature_for_pass_bindings_only_ignores_bound_input_values() {
         let mut scene = SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "sig-bind".to_string(),
@@ -1716,6 +1724,7 @@ mod tests {
     #[test]
     fn signature_for_pass_bindings_ignores_upstream_values_of_bound_vector_inputs() {
         let mut scene = SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "sig-vec4-bind".to_string(),

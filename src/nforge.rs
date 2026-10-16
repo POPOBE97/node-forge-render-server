@@ -551,6 +551,11 @@ fn read_scene(connection: &Connection) -> Result<(SceneDSL, AssetStore, DebugArt
         .unwrap_or_default();
     scene.insert("version".to_string(), Value::String(scene_version));
     scene.insert(
+        "workingColorSpace".to_string(),
+        sections.remove("workingColorSpace")
+            .ok_or_else(|| anyhow::anyhow!("missing workingColorSpace section in .nforge"))?,
+    );
+    scene.insert(
         "metadata".to_string(),
         sections
             .remove("metadata")
@@ -925,6 +930,7 @@ pub fn initialize_test_document(path: &Path, scene: &SceneDSL) -> Result<()> {
             .to_string()],
     )?;
     for (key, value) in [
+        ("workingColorSpace", serde_json::to_value(scene.working_color_space)?),
         (
             "outputs",
             object.get("outputs").cloned().unwrap_or(Value::Null),
@@ -989,6 +995,7 @@ mod frame_freeze_tests {
     fn empty_scene() -> SceneDSL {
         SceneDSL {
             version: "6.0".into(),
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             metadata: Metadata {
                 name: "freeze test".into(),
                 created: None,

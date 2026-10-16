@@ -8,6 +8,7 @@ pub mod model;
 pub mod pattern;
 mod player;
 pub mod raw;
+pub mod raw_dng;
 pub mod reprocess;
 pub mod repository;
 #[cfg(test)]

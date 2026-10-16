@@ -466,7 +466,7 @@ mod tests {
         }
 
         serde_json::from_value(json!({
-            "version": "6.0",
+            "version": "6.0", "workingColorSpace": "linear-srgb",
             "metadata": { "name": "group expansion regression" },
             "nodes": [
                 {
@@ -578,7 +578,7 @@ mod tests {
     #[test]
     fn expanded_nodes_inherit_the_group_instance_title_label() {
         let mut scene: SceneDSL = serde_json::from_value(json!({
-            "version": "6.0",
+            "version": "6.0", "workingColorSpace": "linear-srgb",
             "metadata": { "name": "group label regression" },
             "nodes": [
                 {
@@ -590,7 +590,7 @@ mod tests {
                 {
                     "id": "screen",
                     "type": "Screen",
-                    "params": {}
+                    "params": { "outputColorSpace": "srgb",}
                 }
             ],
             "connections": [{

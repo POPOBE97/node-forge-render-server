@@ -149,6 +149,7 @@ mod tests {
     fn scene(value: f64) -> SceneDSL {
         SceneDSL {
             version: "6.0".into(),
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             metadata: Metadata {
                 name: "freeze".into(),
                 created: None,

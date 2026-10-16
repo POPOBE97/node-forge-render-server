@@ -24,7 +24,7 @@ use crate::{
         display_metrics,
         frame::commands::AppCommand,
         input_scope, matrix_render, texture_bridge,
-        types::{App, RefImageMode, RefImageSource, ViewportOperationIndicatorVisual},
+        types::{App, RefImageMode, ViewportOperationIndicatorVisual},
         window_mode::WindowModeFrame,
     },
     ui::{
@@ -205,19 +205,17 @@ fn reference_display_texture_id(
 ) -> Option<egui::TextureId> {
     let filter = app.canvas.display.texture_filter;
     let reference = app.canvas.reference.ref_image.as_mut()?;
-    if matches!(reference.source, RefImageSource::AndroidScrcpyUsb(_)) {
-        if let Some(id) = reference.native_texture_id {
-            return Some(id);
-        }
-        let id = renderer.register_native_texture_with_sampler_options(
-            &render_state.device,
-            &reference.wgpu_texture_view,
-            texture_bridge::canvas_sampler_descriptor(filter),
-        );
-        reference.native_texture_id = Some(id);
+    if let Some(id) = reference.native_texture_id {
         return Some(id);
     }
-    Some(reference.texture.id())
+    let id = renderer.register_native_texture_with_sampler_options(
+        &render_state.device,
+        &reference.wgpu_texture_view,
+        texture_bridge::canvas_sampler_descriptor(filter),
+    );
+    renderer.set_native_texture_linear_color_space(id, false);
+    reference.native_texture_id = Some(id);
+    Some(id)
 }
 
 fn draw_display_layers(

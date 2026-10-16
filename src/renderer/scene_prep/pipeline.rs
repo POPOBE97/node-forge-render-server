@@ -30,6 +30,7 @@ pub(crate) fn prepare_scene_with_report(
 ) -> Result<(PreparedScene, ScenePrepReport)> {
     // Expand group instances before any filtering/validation.
     let mut expanded = input.clone();
+    crate::dsl::normalize_scene_color_literals(&mut expanded, &schema::load_default_scheme()?);
     let expanded_group_instances = expand_group_instances(&mut expanded)?;
     expand_image_passes(&mut expanded)?;
     let matrix_source_scene = expanded.clone();
@@ -84,6 +85,7 @@ pub(crate) fn prepare_scene_with_report(
         .collect();
     let scene = SceneDSL {
         version: expanded.version.clone(),
+        working_color_space: expanded.working_color_space,
         metadata: expanded.metadata.clone(),
         nodes,
         connections,

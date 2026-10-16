@@ -92,6 +92,7 @@ mod tests {
     #[test]
     fn composite_draw_order_is_pass_then_dynamic_indices() {
         let scene = SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1".to_string(),
             metadata: Metadata {
                 name: "test".to_string(),

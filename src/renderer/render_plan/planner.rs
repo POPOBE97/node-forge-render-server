@@ -275,6 +275,24 @@ impl RenderPlanner {
             }
         }
 
+        let working_space = prepared.scene.working_color_space;
+        let output_space = crate::dsl::screen_color_space(&prepared.scene)?;
+        let screen_output_texture = if presentation_mode == ShaderSpacePresentationMode::UiHdrNative
+            && working_space != output_space
+        {
+            let name: ResourceName =
+                format!("{}.present.screen.linear", target_texture_name.as_str()).into();
+            textures.push(TextureDecl {
+                name: name.clone(),
+                size: [tgt_w_u, tgt_h_u],
+                format: TextureFormat::Rgba16Float,
+                sample_count: 1,
+                needs_sampling: false,
+            });
+            Some(name)
+        } else {
+            None
+        };
         let is_hdr_native = presentation_mode == ShaderSpacePresentationMode::UiHdrNative;
         let hdr_gamma_texture = if enable_display_encode
             && is_hdr_native
@@ -536,11 +554,20 @@ impl RenderPlanner {
 
         let mut sdr_encode_pass_name: Option<ResourceName> = None;
         let encode_passes: Vec<(&ResourceName, &str, String)> = [
+            screen_output_texture.as_ref().map(|tex| {
+                (
+                    tex,
+                    ".present.screen.linear",
+                    crate::renderer::wgsl_templates::present::build_linear_output_wgsl(
+                        "src_tex", "src_samp", working_space, output_space,
+                    ),
+                )
+            }),
             sdr_srgb_texture.as_ref().map(|tex| {
                 (
                     tex,
                     UI_PRESENT_SDR_SRGB_SUFFIX,
-                    build_srgb_display_encode_wgsl("src_tex", "src_samp"),
+                    build_srgb_display_encode_wgsl("src_tex", "src_samp", working_space),
                 )
             }),
             hdr_gamma_texture.as_ref().map(|tex| {
@@ -596,7 +623,9 @@ impl RenderPlanner {
                 sample_count: 1,
             });
 
-            if is_hdr_native {
+            if suffix == ".present.screen.linear" {
+                composite_passes.push(pass_name);
+            } else if is_hdr_native {
                 if suffix == UI_PRESENT_SDR_SRGB_SUFFIX {
                     sdr_encode_pass_name = Some(pass_name);
                 }
@@ -658,7 +687,9 @@ impl RenderPlanner {
             compute_pipeline_signature_for_pass_bindings(&prepared.scene, &pass_bindings);
 
         let present_output_texture = match presentation_mode {
-            ShaderSpacePresentationMode::UiHdrNative => output_texture_name.clone(),
+            ShaderSpacePresentationMode::UiHdrNative => screen_output_texture
+                .clone()
+                .unwrap_or_else(|| output_texture_name.clone()),
             ShaderSpacePresentationMode::UiSdrDisplayEncode => sdr_srgb_texture
                 .clone()
                 .unwrap_or_else(|| output_texture_name.clone()),
@@ -849,6 +880,8 @@ fn plan_image_textures(
                 other => bail!("unsupported ImageTexture.encoderSpace: {other}"),
             };
             let is_display_p3 = encoder_space == "display-p3";
+            let working_space = prepared.scene.working_color_space;
+            let needs_primary_conversion = is_display_p3 != (working_space == crate::color::WorkingColorSpace::DisplayP3);
 
             let image = if let Some(asset_id) = asset_id {
                 if let Some(store) = asset_store {
@@ -906,7 +939,7 @@ fn plan_image_textures(
                 image_textures.push(ImageTextureSpec {
                     name,
                     image: prepare_high_precision_image(
-                        &image, decode_srgb_transfer, is_display_p3, needs_premultiply,
+                        &image, decode_srgb_transfer, is_display_p3, needs_premultiply, working_space,
                     ),
                     usage: TextureUsages::TEXTURE_BINDING
                         | TextureUsages::COPY_DST
@@ -914,7 +947,7 @@ fn plan_image_textures(
                     // The f32 buffer already contains linear working-space values.
                     srgb: false,
                 });
-            } else if needs_premultiply || is_display_p3 {
+            } else if needs_premultiply || needs_primary_conversion {
                 let src_name: ResourceName = format!("sys.image.{node_id}.src").into();
                 image_textures.push(ImageTextureSpec {
                     name: src_name.clone(),
@@ -935,7 +968,7 @@ fn plan_image_textures(
 
                 let w = img_w as f32;
                 let h = img_h as f32;
-                let role = if is_display_p3 { "color" } else { "premultiply" };
+                let role = if needs_primary_conversion { "color" } else { "premultiply" };
                 let geo: ResourceName = format!("sys.image.{node_id}.{role}.geo").into();
                 geometry_buffers.push((geo.clone(), make_fullscreen_geometry(w, h)));
 
@@ -951,7 +984,7 @@ fn plan_image_textures(
                 let tex_var = MaterialCompileContext::tex_var_name(src_name.as_str());
                 let samp_var = MaterialCompileContext::sampler_var_name(src_name.as_str());
                 let shader_wgsl = build_image_prepare_wgsl(
-                    &tex_var, &samp_var, is_display_p3, needs_premultiply,
+                    &tex_var, &samp_var, is_display_p3, needs_premultiply, working_space,
                 );
                 let pass_name: ResourceName =
                     format!("sys.image.{node_id}.{role}.pass").into();
@@ -1097,7 +1130,7 @@ mod tests {
 
     fn image_pass_texture_size_scene() -> SceneDSL {
         serde_json::from_value(serde_json::json!({
-            "version": "6.0",
+            "version": "6.0", "workingColorSpace": "linear-srgb",
             "metadata": { "name": "image-pass-texture-size" },
             "nodes": [
                 {
@@ -1139,7 +1172,7 @@ mod tests {
                 {
                     "id": "screen",
                     "type": "Screen",
-                    "params": { "width": 200, "height": 100 }
+                    "params": { "outputColorSpace": "srgb", "width": 200, "height": 100 }
                 }
             ],
             "connections": [
@@ -2155,7 +2188,7 @@ mod tests {
     #[test]
     fn nested_composite_layers_write_to_their_own_render_texture() -> Result<()> {
         let scene: SceneDSL = serde_json::from_value(serde_json::json!({
-            "version": "6.0",
+            "version": "6.0", "workingColorSpace": "linear-srgb",
             "metadata": {
                 "name": "nested composite target routing",
                 "created": null,
@@ -2215,7 +2248,7 @@ mod tests {
                 {
                     "id": "screen",
                     "type": "Screen",
-                    "params": { "width": 400, "height": 300 }
+                    "params": { "outputColorSpace": "srgb", "width": 400, "height": 300 }
                 }
             ],
             "connections": [

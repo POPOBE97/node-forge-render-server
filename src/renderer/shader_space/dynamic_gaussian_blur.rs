@@ -679,7 +679,7 @@ mod tests {
     #[test]
     fn animated_image_pass_zero_through_ten_reuses_prebuilt_pipeline() {
         let scene: crate::dsl::SceneDSL = serde_json::from_value(serde_json::json!({
-            "version": "6.0",
+            "version": "6.0", "workingColorSpace": "linear-srgb",
             "metadata": { "name": "animated-image-pass-blur" },
             "nodes": [
                 {
@@ -726,7 +726,7 @@ mod tests {
                     }
                 },
                 { "id": "composite", "type": "Composite" },
-                { "id": "screen", "type": "Screen", "params": { "width": 320, "height": 180 } }
+                { "id": "screen", "type": "Screen", "params": { "outputColorSpace": "srgb", "width": 320, "height": 180 } }
             ],
             "connections": [
                 {

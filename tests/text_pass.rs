@@ -30,7 +30,7 @@ fn assets() -> AssetStore {
     store
 }
 fn scene(width: u32, height: u32) -> SceneDSL {
-    serde_json::from_value(json!({"version":"6.0", "metadata":{"name":"text-pass-test"},
+    serde_json::from_value(json!({"version":"6.0", "workingColorSpace": "linear-srgb", "metadata":{"name":"text-pass-test"},
         "nodes":[
             {"id":"font","type":"FontFile","params":{"assetId":"latin"}},
             {"id":"fallback","type":"FontFile","params":{"assetId":"cjk"}},
@@ -40,7 +40,7 @@ fn scene(width: u32, height: u32) -> SceneDSL {
             }},
             {"id":"target","type":"RenderTexture","params":{"width":width,"height":height,"format":"rgba16float"}},
             {"id":"composite","type":"Composite","params":{"blend_preset":"premul_alpha"}},
-            {"id":"screen","type":"Screen","params":{"width":width,"height":height}}
+            {"id":"screen","type":"Screen","params":{ "outputColorSpace": "srgb","width":width,"height":height}}
         ],"connections":[
             {"id":"font","from":{"nodeId":"font","portId":"font"},"to":{"nodeId":"text","portId":"font"}},
             {"id":"fallback","from":{"nodeId":"fallback","portId":"font"},"to":{"nodeId":"text","portId":"fallbackFont"}},

@@ -324,6 +324,7 @@ mod tests {
 
     fn test_scene(nodes: Vec<Node>, connections: Vec<Connection>) -> SceneDSL {
         SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "test".to_string(),

@@ -40,6 +40,7 @@ base64 = "0.22"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
+tiff = "0.10.3"
 cosmic-text = { version = "0.19", default-features = false, features = ["std", "swash"] }
 unicode-script = "0.5"
 crossbeam-channel = { version = "0.5", optional = true }
@@ -101,6 +102,7 @@ objc2-foundation = { version = "0.3", default-features = false, features = ["std
 [patch.crates-io]
 eframe = { path = "third_party/eframe" }
 egui-wgpu = { path = "third_party/egui-wgpu" }
+wgpu-hal = { path = "third_party/wgpu-hal" }
 block = { path = "third_party/block" }
 
 [dev-dependencies]

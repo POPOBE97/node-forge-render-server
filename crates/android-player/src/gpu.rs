@@ -1,4 +1,7 @@
+use crate::native_output::{self, NativeOutput};
+use crate::presentation::{self, Output};
 use anyhow::{Result, bail};
+use node_forge_render_server::color::WorkingColorSpace;
 use raw_window_handle::{
     AndroidDisplayHandle, AndroidNdkWindowHandle, RawDisplayHandle, RawWindowHandle,
 };
@@ -15,6 +18,8 @@ pub struct Gpu {
     pub queue: Arc<wgpu::Queue>,
     pub config: wgpu::SurfaceConfiguration,
     pub native_pixels: bool,
+    output: Output,
+    native: Option<NativeOutput>,
     pipeline: wgpu::RenderPipeline,
     sampler: wgpu::Sampler,
     probe: wgpu::Buffer,
@@ -70,25 +75,15 @@ impl Gpu {
             adapter.get_info(),
             caps.format_capabilities
         );
-        if !caps
-            .color_spaces(wgpu::TextureFormat::Rgba16Float)
-            .contains(wgpu::SurfaceColorSpaces::EXTENDED_SRGB_LINEAR)
-        {
-            bail!(
-                "This device does not expose a Vulkan FP16 linear HDR Surface: {:?}",
-                caps.format_capabilities
-            );
-        }
+        let output = Output::select(&caps, wgpu::TextureFormat::Rgba8Unorm, WorkingColorSpace::Srgb)?;
         let optional = wgpu::Features::FLOAT32_FILTERABLE
             | wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES;
-        let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor {
+        let (device, queue) = native_output::create_device(&adapter, &wgpu::DeviceDescriptor {
                 label: Some("Node Forge Android"),
                 required_features: adapter.features() & optional,
                 required_limits: adapter.limits(),
                 ..Default::default()
-            })
-            .await?;
+            })?;
         let errors = Arc::new(Mutex::new(Vec::new()));
         let pending_errors = errors.clone();
         device.on_uncaptured_error(Arc::new(move |error| {
@@ -100,8 +95,8 @@ impl Gpu {
         }));
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: wgpu::TextureFormat::Rgba16Float,
-            color_space: wgpu::SurfaceColorSpace::ExtendedSrgbLinear,
+            format: output.format,
+            color_space: output.color_space,
             width: width.max(1),
             height: height.max(1),
             present_mode: wgpu::PresentMode::Fifo,
@@ -114,35 +109,7 @@ impl Gpu {
             view_formats: vec![],
         };
         surface.configure(&device, &config);
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Linear HDR presentation"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("present.wgsl").into()),
-        });
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Linear HDR presentation"),
-            layout: None,
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: Default::default(),
-            depth_stencil: None,
-            multisample: Default::default(),
-            multiview_mask: None,
-            cache: None,
-        });
+        let pipeline = presentation::create_pipeline(&device, config.format);
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
@@ -150,7 +117,7 @@ impl Gpu {
         });
         let probe = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Presentation mode"),
-            contents: bytemuck::cast_slice(&[0.0_f32; 4]),
+            contents: bytemuck::cast_slice(&[0.0_f32; 8]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
         let empty_texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -175,6 +142,8 @@ impl Gpu {
             queue: Arc::new(queue),
             config,
             native_pixels: false,
+            output,
+            native: None,
             pipeline,
             sampler,
             probe,
@@ -193,10 +162,67 @@ impl Gpu {
         Ok(())
     }
 
-    pub fn resize(&mut self, width: u32, height: u32) {
-        self.config.width = width.max(1);
-        self.config.height = height.max(1);
-        self.surface.configure(&self.device, &self.config);
+    pub fn resize(&mut self, width: u32, height: u32) -> Result<()> {
+        let native = if self.output.native_p3() {
+            Some(NativeOutput::new(self.device.clone(), self._window.0, width.max(1), height.max(1))?)
+        } else { None };
+        self.check_errors()?;
+        let mut config = self.config.clone();
+        config.width = width.max(1);
+        config.height = height.max(1);
+        self.surface.configure(&self.device, &config);
+        if let Err(error) = self.check_errors() {
+            self.surface.configure(&self.device, &self.config);
+            return Err(error);
+        }
+        self.config = config;
+        self.native = native;
+        Ok(())
+    }
+
+    pub fn output(&self) -> Output {
+        self.output
+    }
+
+    pub fn capture_hdr_transport(&self) -> Result<Vec<u8>> {
+        let Some(native) = &self.native else { bail!("HDR transport capture requires a float Screen render target"); };
+        native.capture(&self.queue)
+    }
+
+    pub fn configure_output(
+        &mut self,
+        source_format: wgpu::TextureFormat,
+        window_space: WorkingColorSpace,
+    ) -> Result<()> {
+        let output = Output::select(
+            &self.surface.get_capabilities(&self.adapter), source_format, window_space,
+        )?;
+        if output == self.output() {
+            return Ok(());
+        }
+        let pipeline = presentation::create_pipeline(&self.device, output.format);
+        self.check_errors()?;
+        let native = if output.native_p3() {
+            Some(NativeOutput::new(self.device.clone(), self._window.0, self.config.width, self.config.height)?)
+        } else { None };
+        let mut config = self.config.clone();
+        // Native HDR owns its own AHardwareBuffers. Keep the parent WSI surface
+        // in a supported SDR configuration; never request extended P3 from WSI.
+        if !output.native_p3() {
+            config.format = output.format;
+            config.color_space = output.color_space;
+        }
+        self.surface.configure(&self.device, &config);
+        if let Err(error) = self.check_errors() {
+            self.surface.configure(&self.device, &self.config);
+            return Err(error);
+        }
+        log::info!("Screen output: {source_format:?} -> {output:?}");
+        self.config = config;
+        self.pipeline = pipeline;
+        self.native = native;
+        self.output = output;
+        Ok(())
     }
 
     pub fn present(
@@ -205,7 +231,7 @@ impl Gpu {
         resolution: [u32; 2],
         hdr_probe: bool,
     ) -> Result<bool> {
-        let frame = match self.surface.get_current_texture() {
+        let frame = if self.native.is_some() { None } else { Some(match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame)
             | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
             wgpu::CurrentSurfaceTexture::Outdated => {
@@ -216,16 +242,13 @@ impl Gpu {
                 return Ok(false);
             }
             error => bail!("Acquire Android Surface: {error:?}"),
-        };
+        }) };
         self.queue.write_buffer(
             &self.probe,
             0,
-            bytemuck::cast_slice(&[
-                if hdr_probe { 1.0_f32 } else { 0.0 },
-                if self.native_pixels { 1.0 } else { 0.0 },
-                self.config.width as f32,
-                self.config.height as f32,
-            ]),
+            bytemuck::cast_slice(&self.output().options(
+                hdr_probe, self.native_pixels, [self.config.width, self.config.height],
+            )),
         );
         let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Scene presentation"),
@@ -245,13 +268,14 @@ impl Gpu {
                 },
             ],
         });
-        let view = frame.texture.create_view(&Default::default());
+        let surface_view = frame.as_ref().map(|frame| frame.texture.create_view(&Default::default()));
+        let view = self.native.as_ref().map(|native| &native.view).or(surface_view.as_ref()).unwrap();
         let mut encoder = self.device.create_command_encoder(&Default::default());
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("HDR present"),
+                label: Some("Color-managed present"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view,
                     resolve_target: None,
                     depth_slice: None,
                     ops: wgpu::Operations {
@@ -278,8 +302,14 @@ impl Gpu {
             pass.set_bind_group(0, &bind, &[]);
             pass.draw(0..3, 0..1);
         }
+        if let Some(native) = &self.native {
+            encoder.transition_resources(std::iter::empty(), std::iter::once(wgpu::TextureTransition {
+                texture: &native.texture, selector: None, state: wgpu::TextureUses::COPY_SRC,
+            }));
+        }
         self.queue.submit([encoder.finish()]);
-        self.queue.present(frame);
+        if let Some(native) = &self.native { native.present(self.output.buffer_ratio())?; }
+        if let Some(frame) = frame { self.queue.present(frame); }
         self.check_errors()?;
         Ok(true)
     }

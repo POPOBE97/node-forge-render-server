@@ -98,8 +98,12 @@ impl CaptureState {
         (texture, padding, bind_group)
     }
 
-    /// Updates the [`CaptureState`] if the size of the surface texture has changed
+    /// Update after surface size or SDR/extended format changes.
     pub fn update(&mut self, device: &wgpu::Device, texture: &wgpu::Texture) {
+        if self.texture.format() != texture.format() {
+            *self = Self::new(device, texture);
+            return;
+        }
         if self.texture.size() != texture.size() {
             let (new_texture, padding, bind_group) =
                 Self::create_texture(device, texture, &self.pipeline.get_bind_group_layout(0));

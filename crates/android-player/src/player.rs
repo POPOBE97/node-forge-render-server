@@ -87,7 +87,11 @@ impl Player {
 
     fn publish(&self) {
         *self.bridge.status.lock().unwrap() = json!({
-            "ready":true,"hdr":true,"surfaceFormat":"rgba16float","colorSpace":"extended-srgb-linear",
+            "ready":true,"hdr":self.gpu.output().hdr(),
+            "surfaceFormat":self.gpu.output().format_name(),"colorSpace":self.gpu.output().color_space_name(),
+            "bufferSdrRatio":self.gpu.output().buffer_ratio(),
+            "screenColorSpace":self.gpu.output().window_space,
+            "workingColorSpace":self.runtime.as_ref().map(PlaybackRuntime::working_color_space),
             "gpu":self.gpu.adapter.get_info().name,"backend":"Vulkan",
             "drawable":[self.gpu.config.width,self.gpu.config.height],
             "resolution":self.runtime.as_ref().map(PlaybackRuntime::resolution),
@@ -252,7 +256,7 @@ impl Player {
                     self.gpu.adapter.clone(),
                     pending.scene.clone(),
                     self.bridge.assets.clone(),
-                    ShaderSpacePresentationMode::SceneLinear,
+                    ShaderSpacePresentationMode::UiHdrNative,
                 )?;
                 let frame = runtime.advance(0.0)?;
                 if !frame.diagnostics.is_empty() {
@@ -260,6 +264,14 @@ impl Player {
                 }
                 runtime.play();
                 self.gpu.check_errors()?;
+                // Use the authored target, never the float Screen conversion intermediate.
+                let source = runtime.shader_space().textures
+                    .get(runtime.scene_output_texture_name().as_str())
+                    .context("Scene output texture missing")?;
+                self.gpu.configure_output(
+                    source.wgpu_texture_desc.format,
+                    node_forge_render_server::dsl::screen_color_space(&pending.scene)?,
+                )?;
                 Ok(runtime)
             })();
             match result {
@@ -437,7 +449,20 @@ impl Player {
                     json!({"action":action}),
                 );
             }
-            "player_capture" => self.capture(request)?,
+            "player_capture" => match payload["stage"].as_str().unwrap_or("scene") {
+                "scene" => self.capture(request)?,
+                "presentation" => {
+                    let bytes = self.gpu.capture_hdr_transport()?;
+                    self.bridge.send_capture(self.generation, json!({
+                        "type":"player_capture", "requestId":request, "stage":"presentation",
+                        "width":self.gpu.config.width, "height":self.gpu.config.height,
+                        "format":"rgb10a2unorm", "colorSpace":"extended-display-p3",
+                        "transfer":"srgb", "bufferSdrRatio":self.gpu.output().buffer_ratio(),
+                        "revision":self.revision, "generation":self.generation,
+                    }), &bytes)?;
+                }
+                stage => bail!("Unknown capture stage '{stage}'"),
+            },
             "player_snapshot" => {
                 let runtime = self.runtime.as_ref().context("No loaded scene")?;
                 self.bridge.send(
@@ -496,6 +521,6 @@ impl Player {
             .iter()
             .flat_map(|value| half::f16::from_f32(*value).to_bits().to_le_bytes())
             .collect();
-        self.bridge.send_capture(self.generation,json!({"type":"player_capture","requestId":request,"width":width,"height":height,"format":"rgba16f","colorSpace":"linear-srgb","revision":self.revision,"generation":self.generation}),&bytes)
+        self.bridge.send_capture(self.generation,json!({"type":"player_capture","requestId":request,"width":width,"height":height,"format":"rgba16f","colorSpace":runtime.working_color_space(),"revision":self.revision,"generation":self.generation}),&bytes)
     }
 }

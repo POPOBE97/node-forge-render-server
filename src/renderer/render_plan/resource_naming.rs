@@ -114,8 +114,8 @@ pub(crate) const UI_PRESENT_SDR_SRGB_SUFFIX: &str = ".present.sdr.srgb";
 /// can round-trip it back to linear on the Rgba16Float surface. Values > 1.0 survive.
 pub(crate) const UI_PRESENT_HDR_GAMMA_SUFFIX: &str = ".present.hdr.gamma";
 
-pub(crate) fn build_srgb_display_encode_wgsl(tex_var: &str, samp_var: &str) -> String {
-    crate::renderer::wgsl_templates::build_srgb_display_encode_wgsl(tex_var, samp_var)
+pub(crate) fn build_srgb_display_encode_wgsl(tex_var: &str, samp_var: &str, source: crate::color::WorkingColorSpace) -> String {
+    crate::renderer::wgsl_templates::build_srgb_display_encode_wgsl(tex_var, samp_var, source)
 }
 
 pub(crate) fn build_hdr_gamma_encode_wgsl(tex_var: &str, samp_var: &str) -> String {

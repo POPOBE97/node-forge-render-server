@@ -46,9 +46,12 @@ fn raw_meta() -> RawMetadata {
         iso: 100.,
         aperture: 5.6,
         focal_length: 62.,
+        make: "Canon".into(),
         camera: "650D".into(),
         lens: "test".into(),
         orientation: 0,
+        color_matrix: [1., 0., 0., 0., 1., 0., 0., 0., 1.],
+        as_shot_neutral: [1.; 3],
     }
 }
 fn profile() -> GeometryProfile {

@@ -1010,7 +1010,7 @@ mod tests {
 
     fn scene_with_mutation_function() -> SceneDSL {
         serde_json::from_value(serde_json::json!({
-            "version": "6.0",
+            "version": "6.0", "workingColorSpace": "linear-srgb",
             "metadata": { "name": "function validation" },
             "nodes": [],
             "connections": [],

@@ -3,20 +3,14 @@ pub fn build_image_prepare_wgsl(
     samp_var: &str,
     display_p3: bool,
     premultiply: bool,
+    working_space: crate::color::WorkingColorSpace,
 ) -> String {
     // sRGB and Display P3 share a transfer function, decoded by the source texture.
     // Convert P3 primaries without clipping, then premultiply straight-alpha input.
-    let color_transform = if display_p3 {
-        let [r, g, b] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
-            .map(crate::color::linear_p3_to_linear_srgb);
-        format!(
-            "    let rgb = mat3x3f(vec3f({:?}, {:?}, {:?}), vec3f({:?}, {:?}, {:?}), vec3f({:?}, {:?}, {:?})) * c.xyz;\n",
-            r[0], r[1], r[2], g[0], g[1], g[2], b[0], b[1], b[2],
-        )
-    } else {
-        String::new()
-    };
-    let rgb = if display_p3 { "rgb" } else { "c.xyz" };
+    let source = if display_p3 { crate::color::WorkingColorSpace::DisplayP3 } else { crate::color::WorkingColorSpace::Srgb };
+    let expression = source.wgsl_transform(working_space, "c.xyz");
+    let color_transform = if source != working_space { format!("    let rgb = {expression};\n") } else { String::new() };
+    let rgb = if source != working_space { "rgb" } else { "c.xyz" };
     let output_rgb = if premultiply {
         format!("{rgb} * a")
     } else {

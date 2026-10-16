@@ -138,6 +138,7 @@ pub(crate) fn prepare_high_precision_image(
     decode_srgb_transfer: bool,
     display_p3: bool,
     premultiply: bool,
+    working_space: crate::color::WorkingColorSpace,
 ) -> Arc<DynamicImage> {
     let mut rgba = image.to_rgba32f();
     for pixel in rgba.pixels_mut() {
@@ -148,9 +149,8 @@ pub(crate) fn prepare_high_precision_image(
                 value.signum() * crate::color::srgb_to_linear_channel(value.abs())
             });
         }
-        if display_p3 {
-            rgb = crate::color::linear_p3_to_linear_srgb(rgb);
-        }
+        let source = if display_p3 { crate::color::WorkingColorSpace::DisplayP3 } else { crate::color::WorkingColorSpace::Srgb };
+        rgb = source.convert(working_space, rgb);
         if premultiply {
             rgb = rgb.map(|value| value * alpha);
         }
@@ -206,7 +206,7 @@ mod tests {
         let image = DynamicImage::ImageLuma16(ImageBuffer::from_fn(65536, 1, |x, _| {
             image::Luma([x as u16])
         }));
-        let prepared = prepare_high_precision_image(&image, true, false, false);
+        let prepared = prepare_high_precision_image(&image, true, false, false, crate::color::WorkingColorSpace::Srgb);
         let pixels = prepared.as_rgba32f().unwrap();
         let mut previous = -1.0;
         for pixel in pixels.pixels() {
@@ -222,9 +222,9 @@ mod tests {
     fn image_linear_float_upload_preserves_bits_and_unbounded_values() {
         let values = vec![-0.25, 0.500_123_4, 100_000.0, 1.5];
         let image = DynamicImage::ImageRgba32F(ImageBuffer::from_raw(1, 1, values.clone()).unwrap());
-        let prepared = prepare_high_precision_image(&image, false, false, false);
+        let prepared = prepare_high_precision_image(&image, false, false, false, crate::color::WorkingColorSpace::Srgb);
         assert_eq!(prepared.as_rgba32f().unwrap().as_raw(), &values);
-        let prepared = prepare_high_precision_image(&image, false, false, true);
+        let prepared = prepare_high_precision_image(&image, false, false, true, crate::color::WorkingColorSpace::Srgb);
         assert_eq!(
             prepared.as_rgba32f().unwrap().as_raw(),
             &[-0.375, values[1] * 1.5, 150_000.0, 1.5]

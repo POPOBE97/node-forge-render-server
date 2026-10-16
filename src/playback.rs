@@ -128,6 +128,10 @@ impl PlaybackRuntime {
         &self.render.scene_output_texture
     }
 
+    pub fn working_color_space(&self) -> crate::color::WorkingColorSpace {
+        self.authored_scene.working_color_space
+    }
+
     /// Capture the scene before display encoding, retaining HDR and linearizing sRGB storage.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn capture_linear_rgba(&self) -> Result<(u32, u32, Vec<f32>)> {

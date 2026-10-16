@@ -1918,8 +1918,10 @@ pub(crate) fn run() -> Result<()> {
                 });
                 setup
             }),
-            // Use Rgba16Float surface for HDR-native preview (macOS EDR).
+            // Keep UI composition in float. Screen's source format selects the
+            // native SDR/extended surface and its final encoding each frame.
             preferred_surface_format: Some(wgpu::TextureFormat::Rgba16Float),
+            preferred_surface_color_space: Some(wgpu::SurfaceColorSpace::ExtendedSrgbLinear),
             ..Default::default()
         },
         ..Default::default()

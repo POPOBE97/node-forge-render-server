@@ -802,6 +802,7 @@ mod tests {
     #[test]
     fn grouped_render_pass_display_label_uses_instance_and_node_title_labels() {
         let scene = SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1".to_string(),
             metadata: Metadata {
                 name: "metadata test".to_string(),
@@ -839,6 +840,7 @@ mod tests {
     #[test]
     fn mesh_gradient_pass_source_metadata_maps_to_scene_node() {
         let scene = SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1".to_string(),
             metadata: Metadata {
                 name: "metadata test".to_string(),
@@ -875,6 +877,7 @@ mod tests {
     #[test]
     fn intelligent_light_pass_source_metadata_maps_intrinsic_pass_to_scene_node() {
         let scene = SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1".to_string(),
             metadata: Metadata {
                 name: "metadata test".to_string(),

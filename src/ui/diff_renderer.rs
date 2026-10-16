@@ -25,7 +25,7 @@ struct DiffParams {
     groups_x: u32,
     groups_y: u32,
     overlay_opacity: f32,
-    _padding: vec4<u32>,
+    color_space_flags: vec4<u32>,
 };
 
 @group(0) @binding(0)
@@ -135,7 +135,14 @@ fn main(
 
     if (in_render) {
         let render_xy = vec2<i32>(vec2<u32>(gid.xy));
-        let render_rgba = textureLoad(render_tex, render_xy, 0);
+        var render_rgba = textureLoad(render_tex, render_xy, 0);
+        if params.color_space_flags.x != 0u {
+            render_rgba = vec4f(mat3x3f(
+                vec3f(1.2249402, -0.042056955, -0.019637555),
+                vec3f(-0.22494018, 1.042057, -0.07863604),
+                vec3f(0.0, 0.0, 1.0982736)
+            ) * render_rgba.rgb, render_rgba.a);
+        }
         let ref_xy = render_xy - params.offset_px;
 
         let has_ref = (
@@ -284,7 +291,7 @@ struct DiffParams {
     groups_x: u32,
     groups_y: u32,
     overlay_opacity: f32,
-    _padding: [u32; 4],
+    color_space_flags: [u32; 4],
 }
 
 #[repr(C)]
@@ -306,6 +313,7 @@ struct PartialCounts {
 }
 
 pub struct DiffRenderer {
+    source_display_p3: bool,
     output_texture: wgpu::Texture,
     output_texture_view: wgpu::TextureView,
     output_size: [u32; 2],
@@ -665,6 +673,7 @@ impl DiffRenderer {
         });
 
         Self {
+            source_display_p3: false,
             output_texture,
             output_texture_view,
             output_size,
@@ -704,6 +713,10 @@ impl DiffRenderer {
 
     pub fn analysis_output_view(&self) -> &wgpu::TextureView {
         &self.analysis_texture_view
+    }
+
+    pub fn set_source_color_space(&mut self, space: crate::color::WorkingColorSpace) {
+        self.source_display_p3 = space == crate::color::WorkingColorSpace::DisplayP3;
     }
 
     pub fn update(
@@ -765,7 +778,7 @@ impl DiffRenderer {
             groups_x: group_x,
             groups_y: group_y,
             overlay_opacity: overlay_opacity.clamp(0.0, 1.0),
-            _padding: [0, 0, 0, 0],
+            color_space_flags: [u32::from(self.source_display_p3), 0, 0, 0],
         };
         queue.write_buffer(&self.params_buffer, 0, bytemuck::bytes_of(&params));
         queue.write_buffer(&self.histogram_buffer, 0, &self.histogram_clear_bytes);

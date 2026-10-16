@@ -14,7 +14,7 @@ use serde_json::json;
 
 fn scene(width: u32, height: u32, encoding: &str, alpha: &str, output: &str) -> SceneDSL {
     serde_json::from_value(json!({
-        "version": "6.0",
+        "version": "6.0", "workingColorSpace": "linear-srgb",
         "metadata": { "name": "image-texture-precision" },
         "nodes": [
             { "id": "image", "type": "ImageTexture", "params": {
@@ -25,7 +25,7 @@ fn scene(width: u32, height: u32, encoding: &str, alpha: &str, output: &str) -> 
                 "width": width, "height": height, "format": "rgba16float"
             } },
             { "id": "composite", "type": "Composite" },
-            { "id": "screen", "type": "Screen", "params": { "width": width, "height": height } }
+            { "id": "screen", "type": "Screen", "params": { "outputColorSpace": "srgb", "width": width, "height": height } }
         ],
         "connections": [
             { "id": "image", "from": { "nodeId": "image", "portId": output },

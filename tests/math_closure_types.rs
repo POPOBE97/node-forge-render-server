@@ -12,7 +12,7 @@ use serde_json::json;
 
 fn validate_closure(source: &str, output_type: &str, stage: GlslShaderStage, connected: bool) {
     let scene: SceneDSL = serde_json::from_value(json!({
-        "version": "6.0",
+        "version": "6.0", "workingColorSpace": "linear-srgb",
         "metadata": { "name": "MathClosure boolean types" },
         "nodes": [{
             "id": "mask",

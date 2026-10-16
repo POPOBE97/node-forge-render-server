@@ -760,6 +760,7 @@ fn shader_material(in: ShaderMaterialInput) -> vec4f {
             wgsl_override: None,
         };
         let scene = SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "shader".to_string(),
@@ -823,6 +824,7 @@ fn shader_material(in: ShaderMaterialInput) -> vec4f {
             wgsl_override: None,
         };
         let scene = SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "shader".to_string(),
@@ -932,6 +934,7 @@ fn shader_material(
             wgsl_override: None,
         };
         let scene = SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "shader-resource".to_string(),

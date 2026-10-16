@@ -373,6 +373,7 @@ mod tests {
     #[test]
     fn upsample_depends_on_source_pass_in_render_order() -> Result<()> {
         let scene = SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1".to_string(),
             metadata: Metadata {
                 name: "upsample-pass-order".to_string(),
@@ -430,6 +431,7 @@ mod tests {
     #[test]
     fn convolution_depends_on_and_samples_source_pass() -> Result<()> {
         let scene = SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1".to_string(),
             metadata: Metadata {
                 name: "convolution-pass-order".to_string(),
@@ -491,6 +493,7 @@ mod tests {
     #[test]
     fn bloom_depends_on_pass_input_in_render_order() -> Result<()> {
         let scene = SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1".to_string(),
             metadata: Metadata {
                 name: "bloom-pass-order".to_string(),
@@ -548,6 +551,7 @@ mod tests {
     #[test]
     fn sampled_pass_ids_from_roots_marks_reachable_processing_dependencies() -> Result<()> {
         let scene = SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1".to_string(),
             metadata: Metadata {
                 name: "sampled-from-roots-live".to_string(),
@@ -639,6 +643,7 @@ mod tests {
     #[test]
     fn sampled_pass_ids_from_roots_tracks_materialized_blur_source_transitive_deps() -> Result<()> {
         let scene = SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1".to_string(),
             metadata: Metadata {
                 name: "sampled-from-roots-blur-mathclosure".to_string(),
@@ -764,6 +769,7 @@ mod tests {
     #[test]
     fn sampled_pass_ids_from_roots_ignores_dead_branch_sampling() -> Result<()> {
         let scene = SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1".to_string(),
             metadata: Metadata {
                 name: "sampled-from-roots-dead".to_string(),
@@ -851,6 +857,7 @@ mod tests {
     #[test]
     fn strict_root_order_keeps_non_root_dependencies_before_each_root() -> Result<()> {
         let scene = SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1".to_string(),
             metadata: Metadata {
                 name: "strict-root-order".to_string(),
@@ -912,6 +919,7 @@ mod tests {
     #[test]
     fn forward_root_dependency_is_collected_for_warmup() -> Result<()> {
         let scene = SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1".to_string(),
             metadata: Metadata {
                 name: "strict-root-forward-dep".to_string(),
@@ -966,6 +974,7 @@ mod tests {
     #[test]
     fn pass_order_supports_nested_composition_routing_nodes() -> Result<()> {
         let scene = SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1".to_string(),
             metadata: Metadata {
                 name: "nested-comp".to_string(),

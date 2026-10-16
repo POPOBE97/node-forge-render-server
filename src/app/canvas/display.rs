@@ -169,6 +169,8 @@ pub fn build_display_frame(
                     ));
             }
             if let Some(id) = app.canvas.display.hdr_clamp_texture_id {
+                let space = texture_bridge::texture_color_space(app, &display_texture_name);
+                renderer.set_native_texture_linear_color_space(id, space == crate::color::WorkingColorSpace::DisplayP3);
                 display_attachment = Some(id);
             }
         }

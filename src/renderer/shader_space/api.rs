@@ -23,10 +23,10 @@ use super::{error_space, finalizer::ShaderSpaceFinalizer};
 pub enum ShaderSpacePresentationMode {
     SceneLinear,
     UiSdrDisplayEncode,
-    /// HDR-native UI mode: the wgpu surface is `Rgba16Float` (macOS EDR).
-    /// No display-encode pass is created; the scene output texture is
-    /// registered directly with egui.  Values > 1.0 are preserved and
-    /// shown as EDR brightness on HDR-capable displays.
+    /// Native UI mode: Screen output is linear in its selected primaries; a matrix
+    /// pass is used only when working/output primaries differ. The original scene
+    /// target determines the window range: UNORM uses SDR, float uses extended
+    /// output with EDR brightness on HDR-capable displays.
     UiHdrNative,
 }
 

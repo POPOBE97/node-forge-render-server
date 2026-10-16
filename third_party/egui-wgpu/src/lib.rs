@@ -20,6 +20,8 @@ pub use wgpu;
 
 /// Low-level painting of [`egui`](https://github.com/emilk/egui) on [`wgpu`].
 mod renderer;
+mod surface_output;
+pub use surface_output::EncodedSurfacePresenter;
 
 mod setup;
 
@@ -64,6 +66,13 @@ pub enum WgpuError {
     HandleError(#[from] ::winit::raw_window_handle::HandleError),
 }
 
+/// The native surface can use a different format from the linear UI compositor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SurfaceOutputConfig {
+    pub format: wgpu::TextureFormat,
+    pub color_space: wgpu::SurfaceColorSpace,
+}
+
 /// Access to the render state for egui.
 #[derive(Clone)]
 pub struct RenderState {
@@ -83,8 +92,16 @@ pub struct RenderState {
     /// Wgpu queue used for rendering, created from the adapter.
     pub queue: wgpu::Queue,
 
-    /// The target texture format used for presenting to the window.
+    /// The renderer's composition format. A final encode pass may present to a
+    /// different native surface format without rebuilding UI pipelines/textures.
     pub target_format: wgpu::TextureFormat,
+
+    /// Requested native window format and color space. The winit painter reconfigures each
+    /// surface before acquiring the next drawable and updates its output encoding.
+    pub surface_output: Arc<RwLock<SurfaceOutputConfig>>,
+    pub supported_surface_formats: Vec<wgpu::SurfaceFormatCapabilities>,
+    /// Most recently configured native surface, not merely a request.
+    pub active_surface_output: Arc<RwLock<Option<SurfaceOutputConfig>>>,
 
     /// Egui renderer responsible for drawing the UI.
     pub renderer: Arc<RwLock<Renderer>>,
@@ -151,6 +168,49 @@ async fn request_adapter(
 }
 
 impl RenderState {
+    /// Request SDR or extended output from a float compositor. Normalized output
+    /// uses a UNORM surface; float output preserves extended RGB. Never substitute
+    /// another color space when the requested one is unsupported.
+    pub fn request_surface_color_space(
+        &self,
+        space: wgpu::SurfaceColorSpace,
+    ) -> Result<(), String> {
+        if !matches!(
+            space,
+            wgpu::SurfaceColorSpace::Srgb
+                | wgpu::SurfaceColorSpace::DisplayP3
+                | wgpu::SurfaceColorSpace::ExtendedSrgbLinear
+                | wgpu::SurfaceColorSpace::ExtendedDisplayP3
+        ) {
+            return Err(format!("Unsupported output color space: {space:?}"));
+        }
+        if self.target_format != wgpu::TextureFormat::Rgba16Float {
+            return Err("Window color-space switching requires a float compositor".into());
+        }
+        let formats: &[wgpu::TextureFormat] = if space.is_hdr() {
+            &[wgpu::TextureFormat::Rgba16Float]
+        } else {
+            &[wgpu::TextureFormat::Bgra8Unorm, wgpu::TextureFormat::Rgba8Unorm]
+        };
+        let format = formats
+            .iter()
+            .copied()
+            .find(|format| {
+                self.supported_surface_formats.iter().any(|capability| {
+                    capability.format == *format
+                        && space.to_color_spaces().is_some_and(|required| {
+                            capability.color_spaces.contains(required)
+                        })
+                })
+            })
+            .ok_or_else(|| format!("This window does not support {formats:?} + {space:?}"))?;
+        *self.surface_output.write() = SurfaceOutputConfig {
+            format,
+            color_space: space,
+        };
+        Ok(())
+    }
+
     /// Creates a new [`RenderState`], containing everything needed for drawing egui with wgpu.
     ///
     /// # Errors
@@ -261,6 +321,9 @@ impl RenderState {
         };
 
         let renderer = Renderer::new(&device, target_format, options);
+        let supported_surface_formats = compatible_surface
+            .map(|surface| surface.get_capabilities(&adapter).format_capabilities)
+            .unwrap_or_default();
 
         // On wasm, depending on feature flags, wgpu objects may or may not implement sync.
         // It doesn't make sense to switch to Rc for that special usecase, so simply disable the lint.
@@ -272,6 +335,12 @@ impl RenderState {
             device,
             queue,
             target_format,
+            surface_output: Arc::new(RwLock::new(SurfaceOutputConfig {
+                format: target_format,
+                color_space: config.preferred_surface_color_space.unwrap_or_default(),
+            })),
+            supported_surface_formats,
+            active_surface_output: Default::default(),
             renderer: Arc::new(RwLock::new(renderer)),
         })
     }

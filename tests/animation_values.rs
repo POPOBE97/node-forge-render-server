@@ -462,6 +462,7 @@ fn generate_trace_via_session(
 fn sticky_override_test_scene() -> dsl::SceneDSL {
     dsl::SceneDSL {
         version: "6.0".into(),
+            working_color_space: node_forge_render_server::color::WorkingColorSpace::Srgb,
         metadata: dsl::Metadata {
             name: "Sticky Override Test".into(),
             created: None,

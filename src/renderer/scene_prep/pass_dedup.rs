@@ -513,6 +513,7 @@ mod tests {
         params2.insert("__dedup_original_id".to_string(), serde_json::json!("RP_1"));
 
         let mut scene = SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "test".to_string(),
@@ -581,6 +582,7 @@ mod tests {
         params_b.insert("blend".to_string(), serde_json::json!("multiply"));
 
         let mut scene = SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "test".to_string(),
@@ -610,6 +612,7 @@ mod tests {
     #[test]
     fn test_non_group_pass_keeps_canonical_id() {
         let mut scene = SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "test".to_string(),

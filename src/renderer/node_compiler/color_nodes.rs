@@ -94,10 +94,11 @@ where
     )?;
 
     let color_vec4 = to_vec4_color(color);
-    let luma_expr = format!(
-        "clamp(dot(({}).rgb, vec3f(0.2126, 0.7152, 0.0722)), 0.0, 1.0)",
-        color_vec4.expr
-    );
+    let weights = match scene.working_color_space {
+        crate::color::WorkingColorSpace::Srgb => "vec3f(0.2126, 0.7152, 0.0722)",
+        crate::color::WorkingColorSpace::DisplayP3 => "vec3f(0.22897456, 0.69173852, 0.07928692)",
+    };
+    let luma_expr = format!("clamp(dot(({}).rgb, {weights}), 0.0, 1.0)", color_vec4.expr);
 
     Ok(TypedExpr::with_time(
         luma_expr,

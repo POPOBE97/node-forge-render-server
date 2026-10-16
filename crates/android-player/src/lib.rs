@@ -1,5 +1,7 @@
 mod gpu;
+mod native_output;
 mod player;
+mod presentation;
 use jni::{
     JNIEnv,
     objects::{JObject, JString},
@@ -74,17 +76,27 @@ pub extern "system" fn Java_com_nodeforge_player_MainActivity_nativeFrame(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_nodeforge_player_MainActivity_nativeResize(
+pub extern "system" fn Java_com_nodeforge_player_MainActivity_nativeColorMode(
     _env: JNIEnv,
+    _this: JObject,
+) -> jint {
+    GPU.with(|value| value.borrow().as_ref().map_or(0, |player| player.gpu.output().android_color_mode()))
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_nodeforge_player_MainActivity_nativeResize(
+    env: JNIEnv,
     _this: JObject,
     width: jint,
     height: jint,
-) {
-    GPU.with(|value| {
+) -> jstring {
+    let result = GPU.with(|value| {
         if let Some(gpu) = value.borrow_mut().as_mut() {
-            gpu.gpu.resize(width as u32, height as u32);
+            gpu.gpu.resize(width as u32, height as u32)?;
         }
+        Ok(())
     });
+    response(&env, result)
 }
 
 #[unsafe(no_mangle)]

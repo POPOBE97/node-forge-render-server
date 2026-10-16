@@ -1591,6 +1591,7 @@ mod tests {
     fn scene_with_state_machine(sm: StateMachine, nodes: Vec<Node>) -> SceneDSL {
         SceneDSL {
             version: "6.0".into(),
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             metadata: crate::dsl::Metadata {
                 name: "Validation test".into(),
                 created: None,

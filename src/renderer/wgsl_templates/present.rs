@@ -89,7 +89,48 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {{\n\
     )
 }
 
-pub fn build_srgb_display_encode_wgsl(tex_var: &str, samp_var: &str) -> String {
+pub fn build_linear_output_wgsl(
+    tex_var: &str,
+    samp_var: &str,
+    source: crate::color::WorkingColorSpace,
+    target: crate::color::WorkingColorSpace,
+) -> String {
+    let rgb = source.wgsl_transform(target, "c.xyz");
+    format!(r#"
+struct Params {{
+    target_size: vec2f,
+    geo_size: vec2f,
+    center: vec2f,
+    geo_translate: vec2f,
+    geo_scale: vec2f,
+    time: f32,
+    _pad0: f32,
+    color: vec4f,
+    camera: mat4x4f,
+    camera_position: vec4f,
+}};
+@group(0) @binding(0) var<uniform> params: Params;
+@group(1) @binding(0) var {tex_var}: texture_2d<f32>;
+@group(1) @binding(1) var {samp_var}: sampler;
+struct VSOut {{
+    @builtin(position) position: vec4f,
+    @location(0) uv: vec2f,
+}};
+@vertex fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {{
+    var out: VSOut;
+    out.position = params.camera * vec4f(params.center + position.xy, position.z, 1.0);
+    out.uv = vec2f(uv.x, 1.0 - uv.y);
+    return out;
+}}
+@fragment fn fs_main(in: VSOut) -> @location(0) vec4f {{
+    let c = textureSample({tex_var}, {samp_var}, in.uv);
+    return vec4f({rgb}, c.w);
+}}
+"#)
+}
+
+pub fn build_srgb_display_encode_wgsl(tex_var: &str, samp_var: &str, source: crate::color::WorkingColorSpace) -> String {
+    let rgb = source.wgsl_transform(crate::color::WorkingColorSpace::Srgb, "c.xyz");
     // Convert linear scene output -> sRGB-encoded bytes for display paths that treat the
     // framebuffer as linear (common in UI renderers). The source texture is assumed to be an
     // sRGB texture; sampling returns linear floats.
@@ -171,7 +212,7 @@ fn vs_main(\n\
 @fragment\n\
 fn fs_main(in: VSOut) -> @location(0) vec4f {{\n\
     let c = textureSample({tex_var}, {samp_var}, in.uv);\n\
-    return vec4f(linear_to_srgb(c.xyz), saturate(c.w));
+    return vec4f(linear_to_srgb({rgb}), saturate(c.w));
 }}\n"
     )
 }
@@ -182,7 +223,7 @@ mod tests {
 
     #[test]
     fn sdr_present_encodes_linear_rgb_once_and_leaves_alpha_linear() {
-        let shader = build_srgb_display_encode_wgsl("source", "sampler");
+        let shader = build_srgb_display_encode_wgsl("source", "sampler", crate::color::WorkingColorSpace::Srgb);
         assert_eq!(shader.matches("linear_to_srgb(c.xyz)").count(), 1);
         assert!(!shader.contains("srgb_to_linear"));
         assert!(shader.contains("saturate(c.w)"));

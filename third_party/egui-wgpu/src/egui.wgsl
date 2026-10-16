@@ -15,6 +15,7 @@ struct Locals {
     /// 1 to do manual filtering for more predictable kittest snapshot images.
     /// See also https://github.com/emilk/egui/issues/5295
     predictable_texture_filtering: u32,
+    output_color_space: vec4u,
 };
 @group(0) @binding(0) var<uniform> r_locals: Locals;
 
@@ -148,6 +149,9 @@ fn fs_main_linear_framebuffer(in: VertexOutput) -> @location(0) vec4<f32> {
         out_color = vec4<f32>(linear_from_gamma_rgb(dithered), out_color.a);
     }
 
+    if r_locals.output_color_space.x != 0u {
+        out_color = vec4f(srgb_to_p3(out_color.rgb), out_color.a);
+    }
     return out_color;
 }
 
@@ -164,3 +168,46 @@ fn fs_main_gamma_framebuffer(in: VertexOutput) -> @location(0) vec4<f32> {
     }
     return out_color_gamma;
 }
+
+// Native canvas textures are already linear and premultiplied. Convert only their
+// primaries; preserve HDR and negative components through the linear blend stage.
+fn srgb_to_p3(rgb: vec3f) -> vec3f {
+    return mat3x3f(
+        vec3f(0.82246196, 0.0331942, 0.01708263),
+        vec3f(0.17753804, 0.9668058, 0.07239744),
+        vec3f(0.0, 0.0, 0.9105199)
+    ) * rgb;
+}
+fn canvas_color(in: VertexOutput, p3: bool) -> vec4f {
+    let c = sample_texture(in);
+    var rgb = c.rgb;
+    let target_p3 = r_locals.output_color_space.x != 0u;
+    if p3 && !target_p3 {
+        rgb = mat3x3f(
+            vec3f(1.2249402, -0.042056955, -0.019637555),
+            vec3f(-0.22494018, 1.042057, -0.07863604),
+            vec3f(0.0, 0.0, 1.0982736)
+        ) * rgb;
+    } else if !p3 && target_p3 {
+        rgb = srgb_to_p3(rgb);
+    }
+    var tint = linear_from_gamma_rgb(in.color.rgb);
+    if in.color.a > 0.0 {
+        tint = linear_from_gamma_rgb(in.color.rgb / in.color.a) * in.color.a;
+    }
+    if target_p3 {
+        tint = srgb_to_p3(tint);
+    }
+    return vec4f(rgb * tint, c.a * in.color.a);
+}
+fn canvas_encode(c: vec4f) -> vec4f {
+    let alpha = select(1.0, c.a, c.a > 0.0);
+    let straight = c.rgb / alpha;
+    let a = abs(straight);
+    let encoded = select(1.055 * pow(a, vec3f(1.0 / 2.4)) - 0.055, 12.92 * a, a <= vec3f(0.0031308));
+    return vec4f(sign(straight) * encoded * alpha, c.a);
+}
+@fragment fn fs_canvas_srgb_linear(in: VertexOutput) -> @location(0) vec4f { return canvas_color(in, false); }
+@fragment fn fs_canvas_p3_linear(in: VertexOutput) -> @location(0) vec4f { return canvas_color(in, true); }
+@fragment fn fs_canvas_srgb_gamma(in: VertexOutput) -> @location(0) vec4f { return canvas_encode(canvas_color(in, false)); }
+@fragment fn fs_canvas_p3_gamma(in: VertexOutput) -> @location(0) vec4f { return canvas_encode(canvas_color(in, true)); }

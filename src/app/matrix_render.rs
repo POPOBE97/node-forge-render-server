@@ -735,6 +735,9 @@ fn register_built_cell(
         super::texture_bridge::canvas_sampler_descriptor(filter),
     );
 
+    let output_space = crate::dsl::screen_color_space(&cell.variant_scene).unwrap_or(cell.variant_scene.working_color_space);
+    renderer.set_native_texture_linear_color_space(egui_id, output_space == crate::color::WorkingColorSpace::DisplayP3);
+
     let layout = MatrixDisplayLayout {
         display_rows: grid_rows,
         display_cols: grid_cols,
@@ -976,6 +979,7 @@ mod tests {
 
     fn frame_value_scene() -> SceneDSL {
         SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "matrix-frame-values".to_string(),
@@ -1208,6 +1212,10 @@ pub fn sync_matrix_hdr_clamp(
                 clamp_renderer.output_view(),
                 sampler,
             ));
+        }
+        if let Some(id) = cell.hdr_clamped_egui_id {
+            let space = crate::dsl::screen_color_space(&cell.variant_scene).unwrap_or(cell.variant_scene.working_color_space);
+            renderer.set_native_texture_linear_color_space(id, space == crate::color::WorkingColorSpace::DisplayP3);
         }
     }
 }

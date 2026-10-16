@@ -1,4 +1,4 @@
-//! Persist display results, not session calibration or RAW measurement data.
+//! Persist corrected RAW and its display preview, not session calibration or measurement data.
 use super::*;
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
@@ -13,8 +13,13 @@ pub(super) struct SavedResult {
     pub size: [u32; 2],
     pub png_sha256: String,
     pub display_source: String,
+    pub raw_source: Option<PathBuf>,
+    pub raw_source_sha256: Option<String>,
+    pub dng_sha256: Option<String>,
     #[serde(skip)]
     pub path: PathBuf,
+    #[serde(skip)]
+    pub raw_path: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug)]
@@ -25,7 +30,7 @@ pub(super) enum ResultState {
     Expired,
 }
 struct Entry {
-    key: (PathBuf, String, String),
+    key: (PathBuf, String, Option<PathBuf>, Option<String>, String),
     state: ResultState,
 }
 struct Job {
@@ -45,7 +50,14 @@ pub(super) fn photo_file(record: &CaptureRecord) -> Option<&CapturedFile> {
         .files
         .iter()
         .find(|f| matches!(f.remote.extension().as_str(), "jpg" | "jpeg" | "png"))
-        .or_else(|| record.files.iter().find(|f| f.remote.extension() == "cr2"))
+        .or_else(|| raw_file(record))
+}
+
+fn raw_file(record: &CaptureRecord) -> Option<&CapturedFile> {
+    record
+        .files
+        .iter()
+        .find(|f| f.remote.extension() == "cr2")
 }
 
 impl Results {
@@ -60,7 +72,14 @@ impl Results {
         if !record.pending_files.is_empty() {
             return;
         }
-        let key = (source.path.clone(), source.sha256.clone(), id.clone());
+        let raw = raw_file(record);
+        let key = (
+            source.path.clone(),
+            source.sha256.clone(),
+            raw.map(|f| f.path.clone()),
+            raw.map(|f| f.sha256.clone()),
+            id.clone(),
+        );
         if self.entries.get(&record.id).is_some_and(|e| e.key == key) {
             return;
         }
@@ -143,7 +162,9 @@ fn digest(bytes: &[u8]) -> String {
 fn load_or_save(job: &Job) -> Result<Option<SavedResult>> {
     let folder = job.record.directory.join("results");
     let path = folder.join("rectified.png");
+    let raw_path = folder.join("rectified.dng");
     let metadata = folder.join("rectified.json");
+    let raw = raw_file(&job.record);
     let id = job
         .record
         .context
@@ -155,8 +176,10 @@ fn load_or_save(job: &Job) -> Result<Option<SavedResult>> {
                 && saved.source == job.source.path
                 && saved.source_sha256 == job.source.sha256
                 && std::fs::read(&path).is_ok_and(|bytes| digest(&bytes) == saved.png_sha256)
+                && saved_raw_matches(&saved, raw, &raw_path)
             {
                 saved.path = path;
+                saved.raw_path = saved.dng_sha256.as_ref().map(|_| raw_path);
                 return Ok(Some(saved));
             }
         }
@@ -170,11 +193,32 @@ fn load_or_save(job: &Job) -> Result<Option<SavedResult>> {
         digest(&bytes) == job.source.sha256,
         "Original file has changed; correction not saved"
     );
+    let corrected_raw = raw
+        .map(|file| -> Result<_> {
+            let bytes = std::fs::read(&file.path)?;
+            ensure!(
+                digest(&bytes) == file.sha256,
+                "Original RAW has changed; correction not saved"
+            );
+            let raw = crate::screen_test::raw::RawFrame::decode(&file.path)?;
+            crate::screen_test::raw_dng::rectify_raw(&raw, geometry)
+        })
+        .transpose()?;
     let (size, rgba, orientation) = decode_photo(&job.source.path)?;
     let pixels = rectify(geometry, size, orientation, rgba)?;
     std::fs::create_dir_all(&folder)?;
     let temp = folder.join("rectified.png.part");
+    let raw_temp = folder.join("rectified.dng.part");
     let result = (|| -> Result<SavedResult> {
+        let dng_sha256 = corrected_raw
+            .as_ref()
+            .map(|corrected| -> Result<String> {
+                crate::screen_test::raw_dng::write_dng(&raw_temp, corrected)?;
+                let hash = digest(&std::fs::read(&raw_temp)?);
+                std::fs::rename(&raw_temp, &raw_path)?;
+                Ok(hash)
+            })
+            .transpose()?;
         pixels.save_with_format(&temp, image::ImageFormat::Png)?;
         std::fs::File::open(&temp)?.sync_all()?;
         let png_sha256 = digest(&std::fs::read(&temp)?);
@@ -186,6 +230,10 @@ fn load_or_save(job: &Job) -> Result<Option<SavedResult>> {
             size: geometry.screen_size,
             png_sha256,
             path,
+            raw_path: corrected_raw.as_ref().map(|_| raw_path.clone()),
+            raw_source: raw.map(|f| f.path.clone()),
+            raw_source_sha256: raw.map(|f| f.sha256.clone()),
+            dng_sha256,
             display_source: if job.source.remote.extension() == "cr2" {
                 "camera-embedded-jpeg"
             } else {
@@ -201,8 +249,26 @@ fn load_or_save(job: &Job) -> Result<Option<SavedResult>> {
     })();
     if result.is_err() {
         let _ = std::fs::remove_file(temp);
+        let _ = std::fs::remove_file(raw_temp);
     }
     result.map(Some)
+}
+
+fn saved_raw_matches(saved: &SavedResult, raw: Option<&CapturedFile>, path: &Path) -> bool {
+    match (
+        raw,
+        &saved.raw_source,
+        &saved.raw_source_sha256,
+        &saved.dng_sha256,
+    ) {
+        (None, None, None, None) => true,
+        (Some(raw), Some(source), Some(source_hash), Some(dng_hash)) => {
+            source == &raw.path
+                && source_hash == &raw.sha256
+                && std::fs::read(path).is_ok_and(|bytes| &digest(&bytes) == dng_hash)
+        }
+        _ => false,
+    }
 }
 
 fn rectify(
@@ -544,6 +610,28 @@ mod tests {
             (input.screen_size[0], input.screen_size[1])
         );
         assert_eq!(digest(&std::fs::read(source).unwrap()), saved.source_sha256);
-        println!("Saved corrected result: {}", saved.path.display());
+        let raw_path = saved.raw_path.as_ref().unwrap();
+        let corrected = crate::screen_test::raw::RawFrame::decode(raw_path).unwrap();
+        assert_eq!(
+            [corrected.metadata.width, corrected.metadata.height],
+            input.screen_size
+        );
+        assert_eq!(digest(&std::fs::read(raw_path).unwrap()), saved.dng_sha256.unwrap());
+        let mut reopened = Results::default();
+        reopened.observe(&job.record, None);
+        wait(&mut reopened);
+        assert_eq!(
+            reopened
+                .saved("offline-result-validation")
+                .unwrap()
+                .raw_path
+                .as_ref(),
+            Some(raw_path)
+        );
+        println!(
+            "Saved corrected RAW: {}; preview: {}",
+            raw_path.display(),
+            saved.path.display()
+        );
     }
 }

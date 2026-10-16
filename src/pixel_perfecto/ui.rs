@@ -2396,6 +2396,12 @@ mod interaction_tests {
             device: (*gpu.device).clone(),
             queue: (*gpu.queue).clone(),
             target_format: wgpu::TextureFormat::Rgba16Float,
+            surface_output: Arc::new(egui::mutex::RwLock::new(egui_wgpu::SurfaceOutputConfig {
+                format: wgpu::TextureFormat::Rgba16Float,
+                color_space: wgpu::SurfaceColorSpace::ExtendedSrgbLinear,
+            })),
+            supported_surface_formats: vec![],
+            active_surface_output: Default::default(),
             renderer: Arc::new(egui::mutex::RwLock::new(renderer)),
         };
         let mut w = Workspace::new(state);

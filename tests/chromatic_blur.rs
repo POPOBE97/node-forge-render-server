@@ -127,7 +127,7 @@ fn small_scene(w: u32, h: u32) -> (SceneDSL, AssetStore, Vec<f32>) {
         },
     );
     let scene = serde_json::from_value(json!({
-        "version": "6.0", "metadata": {"name": "chromatic-contract"},
+        "version": "6.0", "workingColorSpace": "linear-srgb", "metadata": {"name": "chromatic-contract"},
         "nodes": [
             {"id":"image", "type":"ImageTexture", "params": {"assetId":"pixels", "encoderSpace":"linear", "alphaMode":"straight", "aspectCorrection":"off"}},
             {"id":"blur", "type":"ChromaticBlur", "params": {
@@ -137,7 +137,7 @@ fn small_scene(w: u32, h: u32) -> (SceneDSL, AssetStore, Vec<f32>) {
             }},
             {"id":"target", "type":"RenderTexture", "params":{"width":w,"height":h,"format":"rgba16float"}},
             {"id":"composite", "type":"Composite"},
-            {"id":"screen", "type":"Screen", "params":{"width":w,"height":h}}
+            {"id":"screen", "type":"Screen", "params":{ "outputColorSpace": "srgb","width":w,"height":h}}
         ],
         "connections": [
             {"id":"source", "from":{"nodeId":"image","portId":"texture"}, "to":{"nodeId":"blur","portId":"texture"}},

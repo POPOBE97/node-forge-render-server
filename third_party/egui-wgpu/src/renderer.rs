@@ -149,6 +149,8 @@ struct UniformBuffer {
     ///
     /// See also <https://github.com/emilk/egui/issues/5295>.
     predictable_texture_filtering: u32,
+    /// x = 1 when the linear composition target uses Display P3 primaries.
+    output_color_space: [u32; 4],
 }
 
 struct SlicedBuffer {
@@ -235,6 +237,10 @@ impl Default for RendererOptions {
 /// Renderer for a egui based GUI.
 pub struct Renderer {
     pipeline: wgpu::RenderPipeline,
+    linear_srgb_texture_pipeline: wgpu::RenderPipeline,
+    linear_p3_texture_pipeline: wgpu::RenderPipeline,
+    native_texture_spaces: HashMap<epaint::TextureId, bool>,
+    compositing_display_p3: bool,
 
     index_buffer: SlicedBuffer,
     vertex_buffer: SlicedBuffer,
@@ -293,6 +299,7 @@ impl Renderer {
                 screen_size_in_points: [0.0, 0.0],
                 dithering: u32::from(options.dithering),
                 predictable_texture_filtering: u32::from(options.predictable_texture_filtering),
+                output_color_space: [0; 4],
             }]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
@@ -374,7 +381,7 @@ impl Renderer {
                 bias: wgpu::DepthBiasState::default(),
             });
 
-        let pipeline = {
+        let make_pipeline = |entry_point: &str| {
             profiling::scope!("create_render_pipeline");
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("egui_pipeline"),
@@ -401,7 +408,7 @@ impl Renderer {
                     polygon_mode: wgpu::PolygonMode::default(),
                     strip_index_format: None,
                 },
-                depth_stencil,
+                depth_stencil: depth_stencil.clone(),
                 multisample: wgpu::MultisampleState {
                     alpha_to_coverage_enabled: false,
                     count: options.msaa_samples.max(1),
@@ -410,16 +417,7 @@ impl Renderer {
 
                 fragment: Some(wgpu::FragmentState {
                     module: &module,
-                    entry_point: Some(if output_color_format.is_srgb() {
-                        log::warn!("Detected a linear (sRGBA aware) framebuffer {output_color_format:?}. egui prefers Rgba8Unorm or Bgra8Unorm");
-                        "fs_main_linear_framebuffer"
-                    } else if output_color_format == wgpu::TextureFormat::Rgba16Float {
-                        // HDR-capable linear surface, e.g. macOS EDR. Vertex colors are sRGB gamma.
-                        log::info!("Using linear framebuffer shader for HDR surface {output_color_format:?}");
-                        "fs_main_linear_framebuffer"
-                    } else {
-                        "fs_main_gamma_framebuffer" // this is what we prefer
-                    }),
+                    entry_point: Some(entry_point),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: output_color_format,
                         blend: Some(wgpu::BlendState {
@@ -444,6 +442,11 @@ impl Renderer {
         )
         };
 
+        let linear_target = output_color_format.is_srgb() || output_color_format == wgpu::TextureFormat::Rgba16Float;
+        let pipeline = make_pipeline(if linear_target { "fs_main_linear_framebuffer" } else { "fs_main_gamma_framebuffer" });
+        let linear_srgb_texture_pipeline = make_pipeline(if linear_target { "fs_canvas_srgb_linear" } else { "fs_canvas_srgb_gamma" });
+        let linear_p3_texture_pipeline = make_pipeline(if linear_target { "fs_canvas_p3_linear" } else { "fs_canvas_p3_gamma" });
+
         const VERTEX_BUFFER_START_CAPACITY: wgpu::BufferAddress =
             (std::mem::size_of::<Vertex>() * 1024) as _;
         const INDEX_BUFFER_START_CAPACITY: wgpu::BufferAddress =
@@ -451,6 +454,10 @@ impl Renderer {
 
         Self {
             pipeline,
+            linear_srgb_texture_pipeline,
+            linear_p3_texture_pipeline,
+            native_texture_spaces: HashMap::default(),
+            compositing_display_p3: false,
             vertex_buffer: SlicedBuffer {
                 buffer: create_vertex_buffer(device, VERTEX_BUFFER_START_CAPACITY),
                 slices: Vec::with_capacity(64),
@@ -552,6 +559,11 @@ impl Renderer {
                         .expect("You must call .update_buffers() before .render()");
 
                     if let Some(Texture { bind_group, .. }) = self.textures.get(&mesh.texture_id) {
+                        render_pass.set_pipeline(match self.native_texture_spaces.get(&mesh.texture_id) {
+                            Some(true) => &self.linear_p3_texture_pipeline,
+                            Some(false) => &self.linear_srgb_texture_pipeline,
+                            None => &self.pipeline,
+                        });
                         render_pass.set_bind_group(1, bind_group, &[]);
                         render_pass.set_index_buffer(
                             self.index_buffer.buffer.slice(
@@ -763,7 +775,20 @@ impl Renderer {
         );
     }
 
+    /// Mark a native texture as linear premultiplied RGB with explicit primaries.
+    /// This canvas path converts primaries before blending and never dithers or clamps HDR.
+    pub fn set_native_texture_linear_color_space(&mut self, id: epaint::TextureId, display_p3: bool) {
+        self.native_texture_spaces.insert(id, display_p3);
+    }
+
+    /// Set the primaries of the linear composition target. Transfer encoding is
+    /// applied after blending by the native surface presenter.
+    pub fn set_compositing_display_p3(&mut self, display_p3: bool) {
+        self.compositing_display_p3 = display_p3;
+    }
+
     pub fn free_texture(&mut self, id: &epaint::TextureId) {
+        self.native_texture_spaces.remove(id);
         if let Some(texture) = self.textures.remove(id).and_then(|t| t.texture) {
             texture.destroy();
         }
@@ -939,6 +964,7 @@ impl Renderer {
             screen_size_in_points,
             dithering: u32::from(self.options.dithering),
             predictable_texture_filtering: u32::from(self.options.predictable_texture_filtering),
+            output_color_space: [u32::from(self.compositing_display_p3), 0, 0, 0],
         };
         if uniform_buffer_content != self.previous_uniform_buffer_content {
             profiling::scope!("update uniforms");

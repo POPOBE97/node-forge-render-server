@@ -59,6 +59,7 @@ fn pass_nodes_expose_premul_blend_defaults_in_scheme() {
 #[test]
 fn normalization_merges_premul_blend_defaults_for_pass_nodes() {
     let mut scene = SceneDSL {
+        working_color_space: node_forge_render_server::color::WorkingColorSpace::Srgb,
         version: "1".to_string(),
         metadata: Metadata {
             name: "pass-blend-defaults".to_string(),
@@ -230,6 +231,7 @@ fn processing_nodes_are_texture_only() {
 #[test]
 fn normalization_merges_input_defaults_before_default_params() {
     let mut scene = SceneDSL {
+        working_color_space: node_forge_render_server::color::WorkingColorSpace::Srgb,
         version: "1".to_string(),
         metadata: Metadata {
             name: "input-default-merge".to_string(),
@@ -253,6 +255,7 @@ fn normalization_merges_input_defaults_before_default_params() {
 #[test]
 fn resolve_input_uses_port_default_when_param_missing() {
     let scene = SceneDSL {
+        working_color_space: node_forge_render_server::color::WorkingColorSpace::Srgb,
         version: "1".to_string(),
         metadata: Metadata {
             name: "port-default-resolve".to_string(),

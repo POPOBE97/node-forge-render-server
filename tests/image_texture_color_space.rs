@@ -2,7 +2,7 @@ use image::ImageEncoder;
 use node_forge_render_server::{
     asset_store::{AssetData, AssetStore},
     dsl::SceneDSL,
-    reference_image::linear_p3_to_linear_srgb,
+    color::WorkingColorSpace,
     renderer::ShaderSpaceBuilder,
 };
 use rust_wgpu_fiber::{HeadlessRenderer, HeadlessRendererConfig, eframe::wgpu};
@@ -21,7 +21,7 @@ const PIXELS: [[u8; 4]; 8] = [
 
 fn scene(encoding: &str, alpha: &str, output: &str) -> SceneDSL {
     serde_json::from_value(json!({
-        "version": "6.0",
+        "version": "6.0", "workingColorSpace": "linear-srgb",
         "metadata": { "name": "image-texture-color-space" },
         "nodes": [
             { "id": "image", "type": "ImageTexture", "params": {
@@ -32,7 +32,7 @@ fn scene(encoding: &str, alpha: &str, output: &str) -> SceneDSL {
                 "width": 4, "height": 2, "format": "rgba16float"
             } },
             { "id": "composite", "type": "Composite" },
-            { "id": "screen", "type": "Screen", "params": { "width": 4, "height": 2 } }
+            { "id": "screen", "type": "Screen", "params": { "outputColorSpace": "srgb", "width": 4, "height": 2 } }
         ],
         "connections": [
             { "id": "image-pass", "from": { "nodeId": "image", "portId": output },
@@ -83,14 +83,17 @@ fn image_texture_gpu_decodes_color_spaces_and_alpha_without_clipping_p3() {
         },
     );
 
+    for working in [WorkingColorSpace::Srgb, WorkingColorSpace::DisplayP3] {
     for encoding in ["srgb", "linear", "display-p3"] {
         for alpha_mode in ["straight", "premultiplied"] {
             for output in ["color", "texture"] {
+                let mut scene = scene(encoding, alpha_mode, output);
+                scene.working_color_space = working;
                 let build =
                     ShaderSpaceBuilder::new(headless.device.clone(), headless.queue.clone())
                         .with_adapter(headless.adapter.clone())
                         .with_asset_store(assets.clone())
-                        .build(&scene(encoding, alpha_mode, output))
+                        .build(&scene)
                         .expect("build image texture color space");
                 build.shader_space.render();
                 let image = build
@@ -107,9 +110,8 @@ fn image_texture_gpu_decodes_color_spaces_and_alpha_without_clipping_p3() {
                             decode(value)
                         }
                     });
-                    if encoding == "display-p3" {
-                        rgb = linear_p3_to_linear_srgb(rgb);
-                    }
+                    let source_space = if encoding == "display-p3" { WorkingColorSpace::DisplayP3 } else { WorkingColorSpace::Srgb };
+                    rgb = source_space.convert(working, rgb);
                     if alpha_mode == "straight" {
                         rgb = rgb.map(|value| value * alpha);
                     }
@@ -126,4 +128,5 @@ fn image_texture_gpu_decodes_color_spaces_and_alpha_without_clipping_p3() {
             }
         }
     }
+}
 }

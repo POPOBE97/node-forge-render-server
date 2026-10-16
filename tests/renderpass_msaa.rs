@@ -8,6 +8,7 @@ use serde_json::json;
 
 fn make_render_pass_scene(msaa_sample_count: serde_json::Value) -> SceneDSL {
     SceneDSL {
+        working_color_space: node_forge_render_server::color::WorkingColorSpace::Srgb,
         version: "1".to_string(),
         metadata: Metadata {
             name: "renderpass-msaa".to_string(),
@@ -50,6 +51,7 @@ fn node(id: &str, node_type: &str, params: serde_json::Value) -> Node {
 
 fn scene(nodes: Vec<Node>, connections: Vec<Connection>) -> SceneDSL {
     SceneDSL {
+        working_color_space: node_forge_render_server::color::WorkingColorSpace::Srgb,
         version: "1".to_string(),
         metadata: Metadata {
             name: "renderpass-schema".to_string(),
@@ -99,6 +101,7 @@ fn render_pass_scheme_exposes_msaa_input_and_default() {
 #[test]
 fn render_pass_msaa_default_is_applied_by_normalization() {
     let mut scene = SceneDSL {
+        working_color_space: node_forge_render_server::color::WorkingColorSpace::Srgb,
         version: "1".to_string(),
         metadata: Metadata {
             name: "renderpass-msaa-default".to_string(),

@@ -6626,7 +6626,9 @@
         }
       ],
       "outputs": [],
-      "defaultParams": {}
+      "defaultParams": {
+        "outputColorSpace": "srgb"
+      }
     },
     {
       "type": "Sdf2D",

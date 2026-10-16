@@ -1237,6 +1237,7 @@ mod tests {
         nodes.extend(extra_nodes);
 
         SceneDSL {
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1".to_string(),
             metadata: Metadata {
                 name: "ilight".to_string(),

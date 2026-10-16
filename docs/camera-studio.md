@@ -241,14 +241,19 @@ Each new capture keeps its session geometry association, so recalibrating does n
 appearance of earlier captures. Imported files and captures from a previous App session are not
 silently assigned the current placement. Geometry and its prior revisions remain in memory only.
 
-Each calibrated capture also saves a corrected image in its capture folder at
-`results/rectified.png`. This happens asynchronously after download; the card shows **Correcting…**
-until the PNG and its provenance sidecar are saved. Review and thumbnails use the saved result,
-and Capture details offers **Open result** separately from **Open original**. The result survives
-App restart without restoring a calibration session. Failed writes expose **Retry correction**,
-which only reprocesses the downloaded image and never triggers a shutter. Closing waits for
-pending result writes. Older captures with only an expired session association explicitly show
-that no corrected result was saved; a new placement is never applied to them automatically.
+Each calibrated capture also saves corrected output in its capture folder. A capture containing
+CR2 produces `results/rectified.dng`: a 16-bit Bayer CFA RAW with the original camera color
+matrix, white balance, black/white levels and capture EXIF. Geometric resampling reconstructs each
+output value only from photosites of the same color; it never substitutes a demosaiced PNG for RAW.
+The original CR2 remains byte-for-byte unchanged. `results/rectified.png` is also written as the
+review/thumbnail preview, and `results/rectified.json` records hashes and provenance for both
+outputs. JPEG-only captures produce only the PNG. Processing happens asynchronously after
+download; the card shows **Correcting…** until the files are saved. Capture details offers **Open
+corrected RAW**, **Open preview** and **Open original** separately. Saved results survive App
+restart without restoring a calibration session. Failed writes expose **Retry correction**, which
+only reprocesses downloaded images and never triggers a shutter. Closing waits for pending result
+writes. Older captures with only an expired session association explicitly show that no corrected
+result was saved; a new placement is never applied to them automatically.
 
 RAW-only captures can be reviewed using the CR2's embedded JPEG. This is a display proxy only:
 original JPEG/CR2 bytes remain intact, and color measurements continue to use unprocessed CFA data.

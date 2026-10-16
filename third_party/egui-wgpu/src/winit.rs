@@ -18,6 +18,8 @@ struct SurfaceState {
     height: u32,
     resizing: bool,
     needs_reconfigure: bool,
+    output: Option<crate::SurfaceOutputConfig>,
+    output_presenter: Option<crate::EncodedSurfacePresenter>,
 
     // Set when the previous frame observed `wgpu::CurrentSurfaceTexture::Lost`. Triggers a
     // full surface recreation at the start of the next frame (see `recreate_surface`).
@@ -103,7 +105,7 @@ impl Painter {
     }
 
     fn configure_surface(
-        surface_state: &SurfaceState,
+        surface_state: &mut SurfaceState,
         render_state: &RenderState,
         config: &WgpuConfiguration,
     ) {
@@ -111,13 +113,14 @@ impl Painter {
 
         let width = surface_state.width;
         let height = surface_state.height;
+        let output = *render_state.surface_output.read();
 
         let mut surf_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: render_state.target_format,
+            format: output.format,
             present_mode: config.present_mode,
             alpha_mode: surface_state.alpha_mode,
-            view_formats: vec![render_state.target_format],
+            view_formats: vec![output.format],
             ..surface_state
                 .surface
                 .get_default_config(&render_state.adapter, width, height)
@@ -127,13 +130,44 @@ impl Painter {
         if let Some(desired_maximum_frame_latency) = config.desired_maximum_frame_latency {
             surf_config.desired_maximum_frame_latency = desired_maximum_frame_latency;
         }
-        if let Some(color_space) = config.preferred_surface_color_space {
-            surf_config.color_space = color_space;
-        }
+        surf_config.color_space = output.color_space;
 
         surface_state
             .surface
             .configure(&render_state.device, &surf_config);
+        if surface_state.output != Some(output) {
+            log::info!(
+                "Window output: {:?} + {:?}", output.format, output.color_space
+            );
+        }
+        surface_state.output = Some(output);
+        *render_state.active_surface_output.write() = surface_state.surface.get_configuration()
+            .map(|configured| crate::SurfaceOutputConfig {
+                format: configured.format,
+                color_space: configured.color_space,
+            });
+        let needs_encoding = render_state.target_format == wgpu::TextureFormat::Rgba16Float
+            && matches!(
+                output.color_space,
+                wgpu::SurfaceColorSpace::Srgb
+                    | wgpu::SurfaceColorSpace::DisplayP3
+                    | wgpu::SurfaceColorSpace::ExtendedDisplayP3
+            );
+        if needs_encoding {
+            if surface_state.output_presenter.as_ref()
+                .map(|presenter| (presenter.size(), presenter.output_format()))
+                != Some(([width, height], output.format))
+            {
+                surface_state.output_presenter = Some(crate::EncodedSurfacePresenter::new(
+                    &render_state.device,
+                    width,
+                    height,
+                    output.format,
+                ));
+            }
+        } else {
+            surface_state.output_presenter = None;
+        }
     }
 
     /// Updates (or clears) the [`winit::window::Window`] associated with the [`Painter`]
@@ -281,6 +315,8 @@ impl Painter {
                 alpha_mode,
                 resizing,
                 needs_reconfigure: false,
+                output: None,
+                output_presenter: None,
                 needs_recreate: false,
                 window_for_surface_recreation,
             },
@@ -547,6 +583,13 @@ impl Painter {
             return vsync_sec;
         };
 
+        if surface_state.needs_reconfigure
+            || surface_state.output != Some(*render_state.surface_output.read())
+        {
+            Self::configure_surface(surface_state, render_state, &self.configuration);
+            surface_state.needs_reconfigure = false;
+        }
+
         let mut encoder =
             render_state
                 .device
@@ -562,6 +605,10 @@ impl Painter {
 
         let user_cmd_bufs = {
             let mut renderer = render_state.renderer.write();
+            renderer.set_compositing_display_p3(surface_state.output.is_some_and(|output| {
+                matches!(output.color_space,
+                    wgpu::SurfaceColorSpace::DisplayP3 | wgpu::SurfaceColorSpace::ExtendedDisplayP3)
+            }));
             for (id, image_delta) in &textures_delta.set {
                 renderer.update_texture(
                     &render_state.device,
@@ -579,11 +626,6 @@ impl Painter {
                 &screen_descriptor,
             )
         };
-
-        if surface_state.needs_reconfigure {
-            Self::configure_surface(surface_state, render_state, &self.configuration);
-            surface_state.needs_reconfigure = false;
-        }
 
         let output_frame = {
             profiling::scope!("get_current_texture");
@@ -641,13 +683,28 @@ impl Painter {
                 &output_frame.texture
             };
             let target_view = target_texture.create_view(&wgpu::TextureViewDescriptor::default());
+            let composition_view = surface_state.output_presenter.as_ref()
+                .map_or(&target_view, |presenter| presenter.linear_view());
 
             let (view, resolve_target) = (self.options.msaa_samples > 1)
                 .then_some(self.msaa_texture_view.get(&viewport_id))
                 .flatten()
-                .map_or((&target_view, None), |texture_view| {
-                    (texture_view, Some(&target_view))
+                .map_or((composition_view, None), |texture_view| {
+                    (texture_view, Some(composition_view))
                 });
+
+            let mut clear_color = clear_color;
+            if surface_state.output.is_some_and(|output| matches!(output.color_space,
+                wgpu::SurfaceColorSpace::DisplayP3 | wgpu::SurfaceColorSpace::ExtendedDisplayP3))
+            {
+                let [r, g, b, a] = clear_color;
+                clear_color = [
+                    0.82246196 * r + 0.17753804 * g,
+                    0.0331942 * r + 0.9668058 * g,
+                    0.01708263 * r + 0.07239744 * g + 0.9105199 * b,
+                    a,
+                ];
+            }
 
             let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("egui_render"),
@@ -705,6 +762,10 @@ impl Painter {
                 clipped_primitives,
                 &screen_descriptor,
             );
+
+            if let Some(presenter) = &surface_state.output_presenter {
+                presenter.encode(&mut encoder, &target_view);
+            }
 
             if capture && let Some(capture_state) = &mut self.screen_capture_state {
                 capture_buffer = Some(capture_state.copy_textures(

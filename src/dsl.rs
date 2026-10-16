@@ -114,6 +114,8 @@ pub struct DebugTargetAnchor {
 pub struct SceneDSL {
     #[serde(deserialize_with = "deserialize_scene_version")]
     pub version: String,
+    #[serde(rename = "workingColorSpace")]
+    pub working_color_space: crate::color::WorkingColorSpace,
     pub metadata: Metadata,
     pub nodes: Vec<Node>,
     pub connections: Vec<Connection>,
@@ -212,6 +214,7 @@ pub fn treeshake_unlinked_nodes(scene: &SceneDSL) -> SceneDSL {
 
     SceneDSL {
         version: scene.version.clone(),
+        working_color_space: scene.working_color_space,
         metadata: scene.metadata.clone(),
         nodes,
         connections: scene.connections.clone(),
@@ -456,8 +459,47 @@ pub fn materialize_node_labels_from_raw_nodes(nodes: &mut [Node], raw_nodes: &[s
 
 pub fn normalize_scene_defaults(scene: &mut SceneDSL) -> Result<()> {
     let scheme = schema::load_default_scheme()?;
+    screen_color_space(scene)?;
     apply_node_default_params(scene, &scheme);
+    normalize_scene_color_literals(scene, &scheme);
     Ok(())
+}
+
+/// Source-tagged colors are converted exactly once; linear numeric values are untouched.
+pub(crate) fn normalize_scene_color_literals(scene: &mut SceneDSL, scheme: &schema::NodeScheme) {
+    fn normalize(value: &mut serde_json::Value, space: crate::color::WorkingColorSpace, packed: bool) {
+        if packed {
+            if let Some(items) = value.as_array_mut() {
+                for item in items { normalize(item, space, false); }
+            }
+        } else if let Some(rgba) = value.as_str().and_then(|s| crate::color::hex_to_working(s, space)) {
+            *value = serde_json::json!(rgba);
+        }
+    }
+    fn node_colors(node: &mut Node, scheme: &schema::NodeScheme, space: crate::color::WorkingColorSpace) {
+        let mut ports = Vec::new();
+        if let Some(def) = scheme.nodes.get(&node.node_type) {
+            for (id, ty) in &def.inputs {
+                if let schema::PortTypeSpec::One(ty) = ty { ports.push((id.clone(), ty.clone())); }
+            }
+        }
+        ports.extend(node.inputs.iter().filter_map(|p| p.port_type.as_ref().map(|ty| (p.id.clone(), ty.clone()))));
+        ports.extend(node.input_bindings.iter().filter_map(|p| p.binding_type.as_ref().map(|ty| (p.port_id.clone(), ty.clone()))));
+        match node.node_type.as_str() {
+            "ColorInput" => ports.push(("value".into(), "color".into())),
+            "ColorArrayInput" => ports.push(("value".into(), "packed<color>".into())),
+            _ => {}
+        }
+        for (id, ty) in ports {
+            if matches!(ty.as_str(), "color" | "packed<color>") {
+                if let Some(value) = node.params.get_mut(&id) { normalize(value, space, ty == "packed<color>"); }
+            }
+        }
+    }
+    for node in &mut scene.nodes { node_colors(node, scheme, scene.working_color_space); }
+    for group in &mut scene.groups {
+        for node in &mut group.nodes { node_colors(node, scheme, scene.working_color_space); }
+    }
 }
 
 fn apply_node_default_params(scene: &mut SceneDSL, scheme: &schema::NodeScheme) {
@@ -676,6 +718,18 @@ pub fn screen_resolution(scene: &SceneDSL) -> Option<[u32; 2]> {
         return None;
     }
     Some([w, h])
+}
+
+pub fn screen_color_space(scene: &SceneDSL) -> anyhow::Result<crate::color::WorkingColorSpace> {
+    use crate::color::WorkingColorSpace;
+    let Some(screen) = scene.nodes.iter().find(|node| node.node_type == "Screen") else {
+        return Ok(scene.working_color_space);
+    };
+    match screen.params.get("outputColorSpace").and_then(|value| value.as_str()) {
+        Some("srgb") => Ok(WorkingColorSpace::Srgb),
+        Some("display-p3") => Ok(WorkingColorSpace::DisplayP3),
+        _ => anyhow::bail!("Screen.outputColorSpace must be srgb or display-p3"),
+    }
 }
 
 fn parse_f64(params: &HashMap<String, serde_json::Value>, key: &str) -> Option<f64> {
@@ -1289,7 +1343,7 @@ mod tests {
     #[test]
     fn data_parse_scalar_reads_edges_and_rejects_cycles_and_script_errors() {
         let mut scene: SceneDSL = serde_json::from_value(json!({
-            "version":"6.0", "metadata":{"name":"CPU layout"}, "nodes":[
+            "version":"6.0", "workingColorSpace": "linear-srgb", "metadata":{"name":"CPU layout"}, "nodes":[
                 {"id":"width","type":"IntInput","params":{"value":1279}},
                 {"id":"enabled","type":"BoolInput","params":{"value":true}},
                 {"id":"layout","type":"DataParse", "inputs":[{"id":"w","type":"float"},{"id":"enabled","type":"bool"}],

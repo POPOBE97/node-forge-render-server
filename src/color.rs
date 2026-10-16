@@ -1,6 +1,70 @@
 #[cfg(any(feature = "native", feature = "web-core"))]
 use rust_wgpu_fiber::eframe::egui::Color32;
 
+/// Primaries of linear RGB values. Transfer functions and alpha are independent.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum WorkingColorSpace {
+    #[default]
+    #[serde(rename = "linear-srgb")]
+    Srgb,
+    #[serde(rename = "linear-display-p3")]
+    DisplayP3,
+}
+
+impl WorkingColorSpace {
+    /// Window range follows the authored Screen render target, before any float
+    /// intermediate used for primary conversion. UNORM targets request SDR.
+    pub fn window_color_space(
+        self,
+        target_format: rust_wgpu_fiber::wgpu::TextureFormat,
+    ) -> rust_wgpu_fiber::wgpu::SurfaceColorSpace {
+        use rust_wgpu_fiber::wgpu::{SurfaceColorSpace as Space, TextureFormat as Format};
+        let extended = matches!(
+            target_format,
+            Format::R16Float
+                | Format::Rg16Float
+                | Format::Rgba16Float
+                | Format::R32Float
+                | Format::Rg32Float
+                | Format::Rgba32Float
+                | Format::Rg11b10Ufloat
+                | Format::Rgb9e5Ufloat
+        );
+        match (self, extended) {
+            (Self::Srgb, false) => Space::Srgb,
+            (Self::DisplayP3, false) => Space::DisplayP3,
+            (Self::Srgb, true) => Space::ExtendedSrgbLinear,
+            (Self::DisplayP3, true) => Space::ExtendedDisplayP3,
+        }
+    }
+
+    pub fn convert(self, target: Self, rgb: [f32; 3]) -> [f32; 3] {
+        match (self, target) {
+            (Self::Srgb, Self::DisplayP3) => linear_srgb_to_linear_p3(rgb),
+            (Self::DisplayP3, Self::Srgb) => linear_p3_to_linear_srgb(rgb),
+            _ => rgb,
+        }
+    }
+
+    pub fn wgsl_transform(self, target: Self, value: &str) -> String {
+        if self == target {
+            return value.to_owned();
+        }
+        let columns = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+            .map(|v| self.convert(target, v));
+        format!("(mat3x3f(vec3f({:?}, {:?}, {:?}), vec3f({:?}, {:?}, {:?}), vec3f({:?}, {:?}, {:?})) * {value})",
+            columns[0][0], columns[0][1], columns[0][2], columns[1][0], columns[1][1], columns[1][2], columns[2][0], columns[2][1], columns[2][2])
+    }
+}
+
+pub fn linear_srgb_to_linear_p3([r, g, b]: [f32; 3]) -> [f32; 3] {
+    [
+        0.822_461_96 * r + 0.177_538_04 * g,
+        0.033_194_2 * r + 0.966_805_8 * g,
+        0.017_082_63 * r + 0.072_397_44 * g + 0.910_519_9 * b,
+    ]
+}
+
 fn clamp01(x: f32) -> f32 {
     x.clamp(0.0, 1.0)
 }
@@ -125,3 +189,37 @@ pub fn linear_p3_to_linear_srgb([r, g, b]: [f32; 3]) -> [f32; 3] {
     ]
 }
 
+
+#[cfg(test)]
+mod working_space_tests {
+    use super::*;
+
+    #[test]
+    fn linear_primary_conversion_preserves_white_and_extended_range() {
+        for space in [WorkingColorSpace::Srgb, WorkingColorSpace::DisplayP3] {
+            let other = if space == WorkingColorSpace::Srgb { WorkingColorSpace::DisplayP3 } else { WorkingColorSpace::Srgb };
+            for rgb in [[1.0, 1.0, 1.0], [1.0, 0.0, 0.0], [-0.25, 2.0, 0.5]] {
+                assert_eq!(space.convert(space, rgb), rgb);
+                let roundtrip = other.convert(space, space.convert(other, rgb));
+                for (actual, expected) in roundtrip.into_iter().zip(rgb) {
+                    assert!((actual - expected).abs() < 2e-6);
+                }
+            }
+        }
+        let red = WorkingColorSpace::DisplayP3.convert(WorkingColorSpace::Srgb, [1.0, 0.0, 0.0]);
+        assert!(red[0] > 1.0 && red[1] < 0.0 && red[2] < 0.0);
+    }
+}
+
+/// Decode explicit sRGB HEX input into the scene's linear working primaries.
+/// Numeric tuples are already in working space and must never pass through this boundary.
+pub fn hex_to_working(value: &str, target: WorkingColorSpace) -> Option<[f32; 4]> {
+    let hex = value.trim().strip_prefix('#')?;
+    if !matches!(hex.len(), 6 | 8) || !hex.is_ascii() {
+        return None;
+    }
+    let byte = |start| u8::from_str_radix(&hex[start..start + 2], 16).ok().map(|v| v as f32 / 255.0);
+    let rgb = [byte(0)?, byte(2)?, byte(4)?].map(srgb_to_linear_channel);
+    let rgb = WorkingColorSpace::Srgb.convert(target, rgb);
+    Some([rgb[0], rgb[1], rgb[2], if hex.len() == 8 { byte(6)? } else { 1.0 }])
+}

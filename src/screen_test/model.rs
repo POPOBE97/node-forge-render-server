@@ -242,9 +242,22 @@ pub struct RawMetadata {
     pub iso: f64,
     pub aperture: f64,
     pub focal_length: f64,
+    #[serde(default)]
+    pub make: String,
     pub camera: String,
     pub lens: String,
     pub orientation: i32,
+    /// XYZ D65 to camera RGB, as required by DNG ColorMatrix1.
+    #[serde(default = "identity_color_matrix")]
+    pub color_matrix: [f64; 9],
+    #[serde(default = "unit_as_shot_neutral")]
+    pub as_shot_neutral: [f64; 3],
+}
+fn identity_color_matrix() -> [f64; 9] {
+    [1., 0., 0., 0., 1., 0., 0., 0., 1.]
+}
+fn unit_as_shot_neutral() -> [f64; 3] {
+    [1.; 3]
 }
 impl RawMetadata {
     pub fn geometry_key(&self) -> String {

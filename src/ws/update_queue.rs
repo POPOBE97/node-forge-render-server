@@ -272,6 +272,7 @@ mod tests {
         SceneUpdate::Parsed {
             scene: SceneDSL {
                 version: "6.0".into(),
+            working_color_space: crate::color::WorkingColorSpace::Srgb,
                 metadata: Metadata {
                     name: "queue-test".into(),
                     created: None,
