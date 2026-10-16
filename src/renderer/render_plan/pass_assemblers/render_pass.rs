@@ -278,6 +278,7 @@ pub(crate) fn assemble_render_pass(
 
     let mut baked = prepared.baked_data_parse.clone();
     baked.extend(bake_data_parse_nodes(
+        sc.scene(),
         nodes_by_id,
         layer_id,
         instance_count,

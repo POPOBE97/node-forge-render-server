@@ -13,7 +13,7 @@ use super::{
     mesh_gradient::parse_color_value,
 };
 use crate::{
-    dsl::{Node, incoming_connection},
+    dsl::{Node, data_parse_output, evaluate_data_parse, incoming_connection},
     renderer::{
         camera::{legacy_projection_camera_matrix, resolve_effective_camera_for_pass_node},
         text::{FontSource, TextRequest, format_numbers, prepare_text},
@@ -26,26 +26,33 @@ pub(crate) fn build_text_wgsl() -> String {
 }
 
 fn vec2(sc: &SceneContext<'_>, node: &Node, port: &str) -> Result<Option<[f32; 2]>> {
-    if let Some(edge) = incoming_connection(sc.scene(), &node.id, port) {
+    let computed;
+    let value = if let Some(edge) = incoming_connection(sc.scene(), &node.id, port) {
         let source = sc
             .nodes_by_id()
             .get(&edge.from.node_id)
             .context("missing TextPass vector source")?;
-        ensure!(
-            source.node_type == "Vector2Input" && edge.from.port_id == "vector",
-            "TextPass.{port} requires a CPU Vector2Input, got {}.{}",
-            source.node_type,
-            edge.from.port_id
-        );
-        return Ok(Some([
-            cpu_num_f32(sc.scene(), sc.nodes_by_id(), source, "x", 0.0)?,
-            cpu_num_f32(sc.scene(), sc.nodes_by_id(), source, "y", 0.0)?,
-        ]));
-    }
-    let Some(value) = node.params.get(port) else {
-        return Ok(None);
+        match source.node_type.as_str() {
+            "Vector2Input" if edge.from.port_id == "vector" => return Ok(Some([
+                cpu_num_f32(sc.scene(), sc.nodes_by_id(), source, "x", 0.0)?,
+                cpu_num_f32(sc.scene(), sc.nodes_by_id(), source, "y", 0.0)?,
+            ])),
+            "DataParse" => {
+                computed = evaluate_data_parse(
+                    sc.scene(), sc.nodes_by_id(), source, 0,
+                    &mut crate::renderer::scene_prep::data_parse_runtime::TsRuntime::new(),
+                )?;
+                data_parse_output(source, &computed, &edge.from.port_id)?
+            }
+            _ => bail!("TextPass.{port} requires a CPU Vector2Input or DataParse, got {}.{}",
+                source.node_type, edge.from.port_id),
+        }
+    } else {
+        let Some(value) = node.params.get(port) else { return Ok(None) };
+        value
     };
     let xy = if let Some(a) = value.as_array() {
+        ensure!(a.len() == 2, "TextPass.{port} requires exactly two components");
         [
             a.first().and_then(|v| v.as_f64()),
             a.get(1).and_then(|v| v.as_f64()),

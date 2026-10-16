@@ -171,7 +171,7 @@ pub(crate) fn prepare_scene_with_report(
     let height = cpu_num_u32_min_1(&scene, &nodes_by_id, output_texture_node, "height", 1024)?;
     let resolution = [width, height];
 
-    let baked_data_parse = bake_data_parse_nodes(&nodes_by_id, "__global", 1)?;
+    let baked_data_parse = bake_data_parse_nodes(&scene, &nodes_by_id, "__global", 1)?;
 
     let prepared = PreparedScene {
         matrix_source_scene,

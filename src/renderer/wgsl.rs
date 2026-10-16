@@ -1452,12 +1452,14 @@ pub fn build_all_pass_wgsl_bundles_from_scene_with_assets(
                 let is_instanced = instance_count > 1;
 
                 baked_data_parse.extend(crate::renderer::scene_prep::bake_data_parse_nodes(
+                    &prepared.scene,
                     nodes_by_id,
                     &layer_id,
                     instance_count,
                 )?);
 
                 baked_data_parse.extend(crate::renderer::scene_prep::bake_data_parse_nodes(
+                    &prepared.scene,
                     nodes_by_id,
                     "__global",
                     instance_count,

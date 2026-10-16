@@ -795,36 +795,43 @@ fn strip_data_parse_type_assertions(src: &str) -> String {
         .replace(" as boolean", "")
 }
 
-fn eval_data_parse_scalar(
-    _scene: &SceneDSL,
+pub(crate) fn evaluate_data_parse(
+    scene: &SceneDSL,
     nodes_by_id: &HashMap<String, Node>,
     node: &Node,
-    out_port: &str,
-) -> Result<f64> {
+    index: u32,
+    runtime: &mut crate::renderer::scene_prep::data_parse_runtime::TsRuntime,
+) -> Result<serde_json::Value> {
+    evaluate_data_parse_inner(
+        scene, nodes_by_id, node, index, runtime, &mut HashMap::new(), &mut HashSet::new(),
+    )
+}
+
+fn evaluate_data_parse_inner(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, Node>,
+    node: &Node,
+    index: u32,
+    runtime: &mut crate::renderer::scene_prep::data_parse_runtime::TsRuntime,
+    cache: &mut HashMap<(String, String), f64>,
+    visiting: &mut HashSet<(String, String)>,
+) -> Result<serde_json::Value> {
+    let key = (node.id.clone(), "@data-parse".to_string());
+    if !visiting.insert(key.clone()) {
+        bail!("cycle detected while evaluating DataParse {}", node.id);
+    }
     let src = node
         .params
         .get("source")
         .and_then(|v| v.as_str())
         .unwrap_or("");
 
-    if src.trim().is_empty() {
-        return Ok(0.0);
-    }
-
     let mut bindings_src = String::new();
     for b in &node.input_bindings {
-        let val = match b
-            .source_binding
-            .as_ref()
-            .map(|sb| sb.output_port_id.as_str())
-        {
-            Some("data") => {
-                let data_node_id = b
-                    .source_binding
-                    .as_ref()
-                    .map(|sb| sb.node_id.as_str())
-                    .unwrap_or("");
-                let data_node = find_node(nodes_by_id, data_node_id)?;
+        let connection = incoming_connection(scene, &node.id, &b.port_id);
+        let val = match connection.map(|edge| &edge.from) {
+            Some(source) if source.port_id == "data" => {
+                let data_node = find_node(nodes_by_id, &source.node_id)?;
                 let text = data_node
                     .params
                     .get("text")
@@ -836,8 +843,18 @@ fn eval_data_parse_scalar(
                     serde_json::from_str(text)?
                 }
             }
-            Some("index") => serde_json::json!(0u32),
-            _ => serde_json::Value::Null,
+            Some(source) if source.port_id == "index" => serde_json::json!(index),
+            Some(source) => {
+                let value = resolve_output_f64_inner(
+                    scene, nodes_by_id, &source.node_id, &source.port_id, cache, visiting,
+                )?;
+                if b.binding_type.as_deref() == Some("bool") {
+                    serde_json::json!(value != 0.0)
+                } else {
+                    serde_json::json!(value)
+                }
+            }
+            None => node.params.get(&b.port_id).cloned().unwrap_or(serde_json::Value::Null),
         };
 
         let json = serde_json::to_string(&val)?;
@@ -849,7 +866,7 @@ fn eval_data_parse_scalar(
         .iter()
         .any(|b| b.variable_name == "index")
     {
-        bindings_src.push_str("const index = 0;\n");
+        bindings_src.push_str(&format!("const index = {index};\n"));
     }
 
     let user_src = strip_data_parse_type_assertions(src);
@@ -857,23 +874,24 @@ fn eval_data_parse_scalar(
     let script_body = format!("{bindings_src}\n{user_src}\n");
     let script = format!("(function() {{\n{}\n}})()", script_body);
 
-    let mut rt = crate::renderer::scene_prep::data_parse_runtime::TsRuntime::new();
-    let out: serde_json::Value = rt
-        .eval_script(&script)
-        .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+    let result = runtime.eval_script(&script)
+        .with_context(|| format!("evaluating DataParse {}", node.id));
+    visiting.remove(&key);
+    result
+}
 
-    let out_obj = out.as_object();
-
-    let out_value = node
+pub(crate) fn data_parse_output<'a>(
+    node: &Node,
+    output: &'a serde_json::Value,
+    port_id: &str,
+) -> Result<&'a serde_json::Value> {
+    let port = node
         .outputs
         .iter()
-        .find(|p| p.id == out_port)
-        .and_then(|p| p.name.as_deref())
-        .and_then(|name| out_obj.and_then(|o| o.get(name)))
-        .or_else(|| out_obj.and_then(|o| o.get(out_port)))
-        .unwrap_or(&serde_json::Value::Null);
-
-    Ok(out_value.as_f64().unwrap_or(0.0))
+        .find(|port| port.id == port_id)
+        .with_context(|| format!("DataParse {} has no output {port_id}", node.id))?;
+    output.get(port.name.as_deref().unwrap_or(port_id))
+        .with_context(|| format!("DataParse {} did not return {port_id}", node.id))
 }
 
 fn resolve_input_f64_inner(
@@ -1166,7 +1184,15 @@ This node contains user-provided source code; render-time evaluation must be san
                 }
             }
         }
-        "DataParse" => eval_data_parse_scalar(scene, nodes_by_id, node, out_port).unwrap_or(0.0),
+        "DataParse" => {
+            let output = evaluate_data_parse_inner(
+                scene, nodes_by_id, node, 0,
+                &mut crate::renderer::scene_prep::data_parse_runtime::TsRuntime::new(),
+                cache, visiting,
+            )?;
+            data_parse_output(node, &output, out_port)?.as_f64()
+                .with_context(|| format!("DataParse {node_id}.{out_port} must return a number"))?
+        }
         // For scalar parameter resolution, allow a fallback where the output port is stored in params.
         // (Useful for very simple constant nodes or hand-written DSL.)
         _ => parse_f64(&node.params, out_port).ok_or_else(|| {
@@ -1258,5 +1284,35 @@ mod tests {
         let err = parse_texture_format(&params).unwrap_err().to_string();
         assert!(err.contains("unsupported RenderTexture.format"));
         assert!(err.contains("rgb16float"));
+    }
+
+    #[test]
+    fn data_parse_scalar_reads_edges_and_rejects_cycles_and_script_errors() {
+        let mut scene: SceneDSL = serde_json::from_value(json!({
+            "version":"6.0", "metadata":{"name":"CPU layout"}, "nodes":[
+                {"id":"width","type":"IntInput","params":{"value":1279}},
+                {"id":"enabled","type":"BoolInput","params":{"value":true}},
+                {"id":"layout","type":"DataParse", "inputs":[{"id":"w","type":"float"},{"id":"enabled","type":"bool"}],
+                    "inputBindings":[{"portId":"w","variableName":"width","type":"float"},
+                        {"portId":"enabled","variableName":"enabled","type":"bool"}],
+                    "outputs":[{"id":"x","name":"center","type":"float"}],
+                    "params":{"source":"return { center: enabled === true ? width * 0.5 : -1 };"}},
+                {"id":"vector","type":"Vector2Input"}
+            ], "connections":[
+                {"id":"w","from":{"nodeId":"width","portId":"value"},"to":{"nodeId":"layout","portId":"w"}},
+                {"id":"enabled","from":{"nodeId":"enabled","portId":"value"},"to":{"nodeId":"layout","portId":"enabled"}},
+                {"id":"x","from":{"nodeId":"layout","portId":"x"},"to":{"nodeId":"vector","portId":"x"}}
+            ], "outputs":null
+        })).unwrap();
+        let resolve = |scene: &SceneDSL| {
+            let nodes = scene.nodes.iter().map(|node| (node.id.clone(), node.clone())).collect();
+            resolve_input_f64(scene, &nodes, "vector", "x")
+        };
+        assert_eq!(resolve(&scene).unwrap(), Some(639.5));
+        scene.connections[0].from = Endpoint { node_id: "layout".into(), port_id: "x".into() };
+        assert!(format!("{:#}", resolve(&scene).unwrap_err()).contains("cycle detected"));
+        scene.connections[0].from = Endpoint { node_id: "width".into(), port_id: "value".into() };
+        scene.nodes[2].params.insert("source".into(), json!("throw new Error('invalid layout');"));
+        assert!(format!("{:#}", resolve(&scene).unwrap_err()).contains("invalid layout"));
     }
 }

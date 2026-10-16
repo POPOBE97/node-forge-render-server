@@ -215,3 +215,62 @@ fn native_text_preserves_pixels_premultiplication_and_dual_output_domains() {
     let visible = shared_pixels.chunks_exact(4).filter(|p|p[3]>0.01).count();
     assert!(delta < 0.002, "sampling pass must preserve its composition layer: max delta {delta}, visible {visible}");
 }
+
+#[test]
+fn data_parse_layout_matches_inline_text_after_dimension_edits() {
+    let renderer = HeadlessRenderer::new(HeadlessRendererConfig::default()).unwrap();
+    let build = |scene: &SceneDSL| {
+        ShaderSpaceBuilder::new(renderer.device.clone(), renderer.queue.clone())
+            .with_adapter(renderer.adapter.clone())
+            .with_asset_store(assets())
+            .build(scene)
+    };
+    let mut connected = scene(300, 120);
+    for node in [
+        json!({"id":"width","type":"IntInput","params":{"value":300}}),
+        json!({"id":"height","type":"IntInput","params":{"value":120}}),
+        json!({"id":"layout","type":"DataParse",
+            "params":{"source":"return { position: [width * 0.5, height * 0.5] as vec2, size: [width - 40, 50] as vec2 };"},
+            "inputs":[{"id":"w","type":"float"},{"id":"h","type":"float"}],
+            "inputBindings":[{"portId":"w","variableName":"width","type":"float"},
+                {"portId":"h","variableName":"height","type":"float"}],
+            "outputs":[{"id":"position","type":"vector2"},{"id":"size","type":"vector2"}]})
+    ] {
+        connected.nodes.push(serde_json::from_value(node).unwrap());
+    }
+    for (id, from, output, to, input) in [
+        ("w", "width", "value", "layout", "w"),
+        ("h", "height", "value", "layout", "h"),
+        ("position", "layout", "position", "text", "position"),
+        ("size", "layout", "size", "text", "size"),
+    ] {
+        connected.connections.push(serde_json::from_value(json!({"id":id,
+            "from":{"nodeId":from,"portId":output},"to":{"nodeId":to,"portId":input}})).unwrap());
+    }
+    for (width, height) in [(300, 120), (600, 240), (317, 131)] {
+        for (id, value) in [("width", width), ("height", height)] {
+            connected.nodes.iter_mut().find(|node| node.id == id).unwrap()
+                .params.insert("value".into(), json!(value));
+        }
+        for id in ["target", "screen"] {
+            let node = connected.nodes.iter_mut().find(|node| node.id == id).unwrap();
+            node.params.insert("width".into(), json!(width));
+            node.params.insert("height".into(), json!(height));
+        }
+        let mut literal = scene(width, height);
+        let text = literal.nodes.iter_mut().find(|node| node.id == "text").unwrap();
+        text.params.insert("position".into(), json!([width as f64 * 0.5, height as f64 * 0.5]));
+        text.params.insert("size".into(), json!([width - 40, 50]));
+        let actual = build(&connected).unwrap();
+        actual.shader_space.render();
+        let expected = build(&literal).unwrap();
+        expected.shader_space.render();
+        assert_eq!(actual.shader_space.read_texture_rgba16f("target").unwrap().channels,
+            expected.shader_space.read_texture_rgba16f("target").unwrap().channels,
+            "DataParse layout must match inline physical pixels at {width}x{height}");
+    }
+    connected.nodes.iter_mut().find(|node| node.id == "layout").unwrap().params
+        .insert("source".into(), json!("return { position: [1, 2, 3], size: [200, 50] };"));
+    let error = match build(&connected) { Ok(_) => panic!("invalid layout accepted"), Err(error) => error };
+    assert!(format!("{error:#}").contains("exactly two components"));
+}

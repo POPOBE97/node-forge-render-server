@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use anyhow::{Context, Result, anyhow, bail};
 
 use crate::{
-    dsl::{InputBinding, Node, SourceBinding, find_node},
+    dsl::{Node, SceneDSL, evaluate_data_parse},
     renderer::types::{BakedValue, ValueType},
 };
 
@@ -24,41 +24,6 @@ fn map_baked_type(s: Option<&str>) -> Result<ValueType> {
         "vector4" | "vec4" | "color" => Ok(ValueType::Vec4),
         "texture" => Ok(ValueType::Texture2D),
         other => bail!("unsupported DataParse port type: {other}"),
-    }
-}
-
-fn string_param<'a>(node: &'a Node, key: &str) -> Option<&'a str> {
-    node.params.get(key)?.as_str()
-}
-
-fn data_node_json(nodes_by_id: &HashMap<String, Node>, id: &str) -> Result<serde_json::Value> {
-    let data_node = find_node(nodes_by_id, id)?;
-    let text = string_param(data_node, "text").unwrap_or("");
-    if text.trim().is_empty() {
-        return Ok(serde_json::Value::Null);
-    }
-    serde_json::from_str(text)
-        .with_context(|| format!("failed to parse DataNode.text as JSON for {id}"))
-}
-
-fn resolve_binding_value(
-    nodes_by_id: &HashMap<String, Node>,
-    binding: &InputBinding,
-    index_value: u32,
-) -> Result<serde_json::Value> {
-    let Some(SourceBinding {
-        node_id,
-        output_port_id,
-        ..
-    }) = binding.source_binding.as_ref()
-    else {
-        return Ok(serde_json::Value::Null);
-    };
-
-    match output_port_id.as_str() {
-        "data" => data_node_json(nodes_by_id, node_id),
-        "index" => Ok(serde_json::json!(index_value)),
-        _ => Ok(serde_json::Value::Null),
     }
 }
 
@@ -118,6 +83,7 @@ fn baked_from_json(ty: ValueType, v: &serde_json::Value) -> Result<BakedValue> {
 }
 
 pub(crate) fn bake_data_parse_nodes(
+    scene: &SceneDSL,
     nodes_by_id: &HashMap<String, Node>,
     pass_id: &str,
     instance_count: u32,
@@ -129,9 +95,6 @@ pub(crate) fn bake_data_parse_nodes(
         if node.node_type != "DataParse" {
             continue;
         }
-
-        let src = string_param(node, "source")
-            .ok_or_else(|| anyhow!("DataParse missing params.source for {}", node.id))?;
 
         let port_types: HashMap<String, ValueType> = node
             .outputs
@@ -146,46 +109,9 @@ pub(crate) fn bake_data_parse_nodes(
 
         let capped_instance_count = instance_count.min(1024);
         for i in 0..capped_instance_count {
-            let mut bindings_src = String::new();
-            for b in &node.input_bindings {
-                let val = resolve_binding_value(nodes_by_id, b, i).with_context(|| {
-                    format!(
-                        "failed to resolve input binding {} for {}",
-                        b.variable_name, node.id
-                    )
-                })?;
-                let json = serde_json::to_string(&val)?;
-                bindings_src.push_str(&format!("const {} = {};\n", b.variable_name, json));
-            }
-            if !node
-                .input_bindings
-                .iter()
-                .any(|b| b.variable_name == "index")
-            {
-                bindings_src.push_str(&format!("const index = {};\n", i));
-            }
-
-            let mut user_src = src.to_string();
-            user_src = user_src.replace(" as vec2", "");
-            user_src = user_src.replace(" as vec3", "");
-            user_src = user_src.replace(" as vec4", "");
-            user_src = user_src.replace(" as int", "");
-            user_src = user_src.replace(" as i32", "");
-            user_src = user_src.replace(" as uint", "");
-            user_src = user_src.replace(" as u32", "");
-            user_src = user_src.replace(" as float", "");
-            user_src = user_src.replace(" as f32", "");
-            user_src = user_src.replace(" as number", "");
-            user_src = user_src.replace(" as bool", "");
-            user_src = user_src.replace(" as boolean", "");
-
-            let script_body = format!("{bindings_src}\n{user_src}\n");
-            let script = format!("(function() {{\n{}\n}})()", script_body);
-            let out: serde_json::Value =
-                match rt.get_or_insert_with(TsRuntime::new).eval_script(&script) {
-                    Ok(v) => v,
-                    Err(_) => serde_json::Value::Object(serde_json::Map::new()),
-                };
+            let out = evaluate_data_parse(
+                scene, nodes_by_id, node, i, rt.get_or_insert_with(TsRuntime::new),
+            )?;
             let out_obj = out.as_object();
 
             for p in &node.outputs {
