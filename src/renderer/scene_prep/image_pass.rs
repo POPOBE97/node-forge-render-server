@@ -282,6 +282,7 @@ pub(crate) fn expand_image_passes(scene: &mut SceneDSL) -> Result<usize> {
 
         let render_node_id = if blur_enabled {
             let mut render_params = image_pass.params.clone();
+            render_params.insert("sys.imagePassSource".to_string(), serde_json::json!(true));
             if infer_texture_size {
                 render_params.insert(
                     IMAGE_PASS_TEXTURE_SIZE_SOURCE_PARAM.to_string(),
@@ -1145,8 +1146,8 @@ mod tests {
                 },
                 {
                     "id": "screen-edge",
-                    "from": { "nodeId": "composite", "portId": "pass" },
-                    "to": { "nodeId": "screen", "portId": "pass" }
+                    "from": { "nodeId": "composite", "portId": "texture" },
+                    "to": { "nodeId": "screen", "portId": "texture" }
                 }
             ],
             "outputs": null,

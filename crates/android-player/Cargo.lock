@@ -1415,6 +1415,7 @@ dependencies = [
  "node-forge-resource-store",
  "objc2-app-kit",
  "objc2-foundation",
+ "objc2-metal",
  "png 0.18.0",
  "rquickjs-core",
  "rust-wgpu-fiber",

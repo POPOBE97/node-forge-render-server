@@ -134,7 +134,7 @@ enum HeadlessTextureOutputKind {
 
 fn route_headless_output(format: TextureFormat, output_path: &Path) -> Result<HeadlessOutputKind> {
     match format {
-        TextureFormat::Rgba16Float => {
+        TextureFormat::Rgba16Float | TextureFormat::Rgba32Float => {
             let ext = output_path
                 .extension()
                 .and_then(|v| v.to_str())
@@ -150,7 +150,7 @@ fn route_headless_output(format: TextureFormat, output_path: &Path) -> Result<He
         }
         TextureFormat::Rgba8Unorm | TextureFormat::Rgba8UnormSrgb => Ok(HeadlessOutputKind::Png),
         other => bail!(
-            "headless file export unsupported for scene output format {other:?}; supported: Rgba8Unorm/Rgba8UnormSrgb (png), Rgba16Float (exr)"
+            "headless file export unsupported for scene output format {other:?}; supported: Rgba8Unorm/Rgba8UnormSrgb (png), Rgba16Float/Rgba32Float (exr)"
         ),
     }
 }

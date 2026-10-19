@@ -4,7 +4,7 @@ fn main() -> anyhow::Result<()> {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         println!(
-            "Camera Studio\n\nUsage: camera-studio [--review photo.jpg | --check-connection [--release-occupied]]\n\nIndependent camera window; also available in the Render Server sidebar.\nStarting the window does not access a camera.\n--ui-preview photo.jpg --state live|review|recording|stopping|downloading|error|disconnected|paused renders isolated UI fixtures without USB.\n--check-connection opens and closes a camera session without taking pictures.\n--release-occupied allows that diagnostic to stop competing camera clients.\nRequires libgphoto2 (macOS: brew install libgphoto2 gphoto2).\nNODE_FORGE_CAPTURE_DIR overrides the default Pictures/Node Forge Captures folder.\nNODE_FORGE_GPHOTO2_LIBRARY overrides the runtime library path."
+            "Camera Studio\n\nUsage: camera-studio [--review photo.jpg | --check-connection [--release-occupied]]\n\nIndependent camera window; also available from the Editor's native Window menu.\nStarting the window does not access a camera.\n--ui-preview photo.jpg --state live|review|recording|stopping|downloading|error|disconnected|paused renders isolated UI fixtures without USB.\n--check-connection opens and closes a camera session without taking pictures.\n--release-occupied allows that diagnostic to stop competing camera clients.\nRequires libgphoto2 (macOS: brew install libgphoto2 gphoto2).\nNODE_FORGE_CAPTURE_DIR overrides the default Pictures/Node Forge Captures folder.\nNODE_FORGE_GPHOTO2_LIBRARY overrides the runtime library path."
         );
         return Ok(());
     }

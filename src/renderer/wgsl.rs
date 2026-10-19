@@ -20,7 +20,7 @@ use crate::{
             MaterialCompileContext, TypedExpr, ValueType, WgslShaderBundle,
         },
         utils::{
-            coerce_to_type, cpu_num_f32_min_0, cpu_num_u32_min_1, fmt_f32 as fmt_f32_utils,
+            coerce_to_type, cpu_num_f32_min_0, fmt_f32 as fmt_f32_utils,
             to_vec4_color,
         },
         wgsl_bloom::{
@@ -1384,28 +1384,10 @@ pub fn build_all_pass_wgsl_bundles_from_scene_with_assets(
     scene: &SceneDSL,
     asset_store: Option<&crate::asset_store::AssetStore>,
 ) -> Result<Vec<(String, WgslShaderBundle)>> {
-    let mut execution_scene = scene.clone();
-    crate::renderer::render_plan::coercion::plan_consumer_scoped_coercions(&mut execution_scene)?;
-    let prepared = prepare_scene(&execution_scene)?;
+    let prepared = prepare_scene(scene)?;
     let nodes_by_id = &prepared.nodes_by_id;
     let ids = &prepared.ids;
-    let output_target_node = find_node(nodes_by_id, &prepared.output_texture_node_id)?;
-    let render_target_size = [
-        cpu_num_u32_min_1(
-            &prepared.scene,
-            nodes_by_id,
-            output_target_node,
-            "width",
-            prepared.resolution[0],
-        )? as f32,
-        cpu_num_u32_min_1(
-            &prepared.scene,
-            nodes_by_id,
-            output_target_node,
-            "height",
-            prepared.resolution[1],
-        )? as f32,
-    ];
+    let render_target_size = prepared.resolution.map(|value| value as f32);
 
     let mut baked_data_parse = prepared.baked_data_parse.clone();
 
@@ -1417,6 +1399,8 @@ pub fn build_all_pass_wgsl_bundles_from_scene_with_assets(
     for layer_id in composite_layers_in_draw_order {
         let node = find_node(nodes_by_id, &layer_id)?;
         match node.node_type.as_str() {
+            // Composite registers its explicit target; it does not draw or own a shader.
+            "Composite" => {}
             "RenderPass" => {
                 let render_geo_node_id =
                     incoming_connection(&prepared.scene, &layer_id, "geometry")
@@ -2740,8 +2724,8 @@ mod tests {
                 node("bloom", "BloomNode"),
             ],
             connections: vec![
-                connection("source-bloom", "source", "pass", "bloom", "texture"),
-                connection("tint-sample", "tint_source", "pass", "tint_sample", "l0"),
+                connection("source-bloom", "source", "texture", "bloom", "texture"),
+                connection("tint-sample", "tint_source", "texture", "tint_sample", "l0"),
                 connection("sample-bloom", "tint_sample", "output", "bloom", "tint"),
             ],
             outputs: None,

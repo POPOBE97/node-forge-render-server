@@ -15,6 +15,8 @@ pub mod histogram;
 pub mod parade;
 pub mod pass_debug;
 pub mod pass_debug_window;
+mod pass_graph;
+pub mod pass_graph_window;
 pub mod qualifier_map;
 pub mod resource_tree;
 pub mod state_machine_panel;

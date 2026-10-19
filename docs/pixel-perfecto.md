@@ -12,7 +12,7 @@ cargo run --bin pixel-perfecto -- photo-a.png photo-b.jpg
 cargo run --bin pixel-perfecto -- comparison.pixelperfecto
 ```
 
-Alternatively, choose **Pixel Perfecto** at the top of the Render Server sidebar. This opens an independent native tool window using the existing GPU. `cargo run` still opens the Render Server. The standalone entry does not start the WebSocket server, animation runtime, or scene loader.
+Alternatively, choose **Window → Pixel Perfecto** in the Editor's native menu. This opens an independent native tool window. `cargo run` still opens the Render Server. The standalone entry does not start the WebSocket server, animation runtime, or scene loader.
 
 ## Align photographs
 

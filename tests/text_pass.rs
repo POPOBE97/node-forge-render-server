@@ -46,7 +46,7 @@ fn scene(width: u32, height: u32) -> SceneDSL {
             {"id":"fallback","from":{"nodeId":"fallback","portId":"font"},"to":{"nodeId":"text","portId":"fallbackFont"}},
             {"id":"text","from":{"nodeId":"text","portId":"pass"},"to":{"nodeId":"composite","portId":"pass"}},
             {"id":"target","from":{"nodeId":"target","portId":"texture"},"to":{"nodeId":"composite","portId":"target"}},
-            {"id":"screen","from":{"nodeId":"composite","portId":"pass"},"to":{"nodeId":"screen","portId":"pass"}}
+            {"id":"screen","from":{"nodeId":"composite","portId":"texture"},"to":{"nodeId":"screen","portId":"texture"}}
         ],"outputs":null})).unwrap()
 }
 
@@ -107,8 +107,11 @@ fn native_text_preserves_pixels_premultiplication_and_dual_output_domains() {
         {"id":"pass","type":"pass"},{"id":"dynamic_1","type":"pass"}
     ]))
     .unwrap();
+    dual.nodes.push(serde_json::from_value(json!({"id":"localDraw","type":"ImagePass"})).unwrap());
     dual.connections.push(serde_json::from_value(json!({"id":"localText",
-        "from":{"nodeId":"text","portId":"texture"},"to":{"nodeId":"composite","portId":"dynamic_1"}})).unwrap());
+        "from":{"nodeId":"text","portId":"texture"},"to":{"nodeId":"localDraw","portId":"image"}})).unwrap());
+    dual.connections.push(serde_json::from_value(json!({"id":"localLayer",
+        "from":{"nodeId":"localDraw","portId":"pass"},"to":{"nodeId":"composite","portId":"dynamic_1"}})).unwrap());
     let dual_build = build(&dual);
     dual_build.shader_space.render();
     let local = dual_build
@@ -199,7 +202,7 @@ fn native_text_preserves_pixels_premultiplication_and_dual_output_domains() {
         .unwrap(),
     );
     for (id, from, port, to, input) in [
-        ("sampleText", "text", "pass", "sample", "source"),
+        ("sampleText", "text", "texture", "sample", "source"),
         ("sampleLayer", "sample", "output", "composite", "dynamic_1"),
     ] {
         shared.connections.push(
@@ -213,7 +216,7 @@ fn native_text_preserves_pixels_premultiplication_and_dual_output_domains() {
     let shared_pixels = shared_build.shader_space.read_texture_rgba16f("target").unwrap().channels;
     let delta = pixels.iter().zip(&shared_pixels).map(|(a,b)|(a-b).abs()).fold(0.0_f32,f32::max);
     let visible = shared_pixels.chunks_exact(4).filter(|p|p[3]>0.01).count();
-    assert!(delta < 0.002, "sampling pass must preserve its composition layer: max delta {delta}, visible {visible}");
+    assert!(delta < 0.002, "sampling the explicit texture must preserve the independent draw: max delta {delta}, visible {visible}");
 }
 
 #[test]

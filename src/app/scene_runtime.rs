@@ -503,6 +503,7 @@ fn commit_shader_space_rebuild(
     }
     app.shell.frame_freeze_status = None;
     app.core.shader_space = result.shader_space;
+    app.runtime.performance.reset_scene();
     app.core.resolution = result.resolution;
     app.core.passes = result.pass_bindings;
     app.core.output_texture_name = result.present_output_texture;
@@ -1002,6 +1003,7 @@ pub fn apply_scene_update(
             match build_result {
                 Ok(Ok(result)) => {
                     app.core.shader_space = result.shader_space;
+                    app.runtime.performance.reset_scene();
                     app.core.resolution = result.resolution;
                     app.core.passes = result.pass_bindings;
                     app.core.output_texture_name = result.present_output_texture;
@@ -1230,6 +1232,7 @@ fn apply_error_plane(app: &mut App, render_state: &egui_wgpu::RenderState) {
     .build_error(app.core.resolution)
     {
         app.core.shader_space = result.shader_space;
+        app.runtime.performance.reset_scene();
         app.core.resolution = result.resolution;
         app.core.output_texture_name = result.present_output_texture;
         app.core.scene_output_texture_name = result.scene_output_texture;

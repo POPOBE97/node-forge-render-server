@@ -6,6 +6,12 @@ use crate::app::types::App;
 
 /// Render the live scene and refresh the selected draw-call capture, when active.
 pub(crate) fn render_profiled(app: &mut App, wait_for_gpu: bool) -> RenderProfile {
+    let profile = render_scene(app, wait_for_gpu);
+    app.runtime.performance.record_submission(&profile);
+    profile
+}
+
+fn render_scene(app: &mut App, wait_for_gpu: bool) -> RenderProfile {
     let request = app
         .canvas
         .display
@@ -14,14 +20,23 @@ pub(crate) fn render_profiled(app: &mut App, wait_for_gpu: bool) -> RenderProfil
         .map(|capture| PassCaptureRequest::new(capture.pass_name.as_str(), capture.mode));
 
     let Some(request) = request else {
-        return app.core.shader_space.render_profiled(wait_for_gpu);
+        return if wait_for_gpu {
+            app.core.shader_space.render_profiled(true)
+        } else {
+            app.core.shader_space.render_profiled_async(None)
+        };
     };
 
     match app.core.shader_space.prepare_pass_capture(&request) {
-        Ok(_) => app
-            .core
-            .shader_space
-            .render_profiled_with_pass_capture(wait_for_gpu, &request),
+        Ok(_) => {
+            if wait_for_gpu {
+                app.core
+                    .shader_space
+                    .render_profiled_with_pass_capture(true, &request)
+            } else {
+                app.core.shader_space.render_profiled_async(Some(&request))
+            }
+        }
         Err(err) => {
             eprintln!("[draw-capture] disabled: {err}");
             app.canvas.display.pass_capture = None;
@@ -34,7 +49,11 @@ pub(crate) fn render_profiled(app: &mut App, wait_for_gpu: bool) -> RenderProfil
             {
                 app.canvas.display.preview_texture_name = None;
             }
-            app.core.shader_space.render_profiled(wait_for_gpu)
+            if wait_for_gpu {
+                app.core.shader_space.render_profiled(true)
+            } else {
+                app.core.shader_space.render_profiled_async(None)
+            }
         }
     }
 }

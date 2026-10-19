@@ -1,37 +1,37 @@
 {
-  "fill" : {
-    "automatic-gradient" : "extended-srgb:0.01961,0.07059,0.15686,1.00000"
+  "fill": {
+    "automatic-gradient": "extended-srgb:0.03529,0.03922,0.04706,1.00000"
   },
-  "groups" : [
+  "groups": [
     {
-      "layers" : [
+      "layers": [
         {
-          "image-name" : "05-wireframe.svg",
-          "name" : "05-wireframe"
-        },
-        {
-          "image-name" : "04-sphere-rim.svg",
-          "name" : "04-sphere-rim"
-        },
-        {
-          "image-name" : "03-sphere-body.svg",
-          "name" : "03-sphere-body"
+          "image-name": "01-forge-spark.png",
+          "name": "Liquid Chrome Spark",
+          "position": {
+            "scale": 0.66,
+            "translation-in-points": [
+              0,
+              0
+            ]
+          }
         }
       ],
-      "shadow" : {
-        "kind" : "neutral",
-        "opacity" : 0.26
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.22
       },
-      "translucency" : {
-        "enabled" : true,
-        "value" : 0.05
-      }
+      "translucency": {
+        "enabled": true,
+        "value": 0.05
+      },
+      "name": "Forge Spark"
     }
   ],
-  "supported-platforms" : {
-    "circles" : [
+  "supported-platforms": {
+    "circles": [
       "watchOS"
     ],
-    "squares" : "shared"
+    "squares": "shared"
   }
 }

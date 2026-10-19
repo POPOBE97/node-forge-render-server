@@ -68,18 +68,18 @@ fn mc_math_closure(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>) -> vec2<f32> {
     return _e12;
 }
 
-fn mc_math_closure_f6b31d5e(uv: vec2<f32>, uv_1: vec2<f32>) -> vec4<f32> {
-    var uv_2: vec2<f32>;
-    var uv_3: vec2<f32>;
+fn mc_math_closure_f6b31d5e(uv: vec2<f32>, sampleUV: vec2<f32>) -> vec4<f32> {
+    var uv_1: vec2<f32>;
+    var sampleUV_1: vec2<f32>;
     var output: vec4<f32> = vec4(0f);
 
-    uv_2 = uv;
-    uv_3 = uv_1;
-    let _e8: vec2<f32> = uv_3;
+    uv_1 = uv;
+    sampleUV_1 = sampleUV;
+    let _e8: vec2<f32> = sampleUV_1;
     let _e9: vec4<f32> = sample_pass_texture(_e8);
-    output = _e9;
-    let _e10: vec4<f32> = output;
-    return _e10;
+    output = vec4<f32>(_e9);
+    let _e11: vec4<f32> = output;
+    return _e11;
 }
 
 fn sample_pass_texture(uv_in: vec2f) -> vec4f {

@@ -229,6 +229,15 @@ pub fn collect_early_canvas_interactions(
     consume_clipboard_paste_key_events: bool,
 ) -> Vec<protocol::InteractionEventPayload> {
     let mut frame_events = ctx.input(|i| i.events.clone());
+    if app.shell.command_palette.captures_input() {
+        // Preserve releases of keys already held by the scene, but do not send
+        // palette typing, clicks, or scrolling to the animation runtime.
+        frame_events.retain(|event| {
+            matches!(event,
+                egui::Event::Key { pressed: false, .. } | egui::Event::WindowFocused(false)
+            )
+        });
+    }
     if consume_clipboard_paste_key_events {
         frame_events.retain(|event| !is_clipboard_paste_v_key_event(event));
         app.canvas

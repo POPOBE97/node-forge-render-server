@@ -33,6 +33,16 @@ pub(super) fn run(app: &mut App, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
     let render_state = frame.wgpu_render_state().unwrap();
     let mut renderer_guard = render_state.renderer.as_ref().write();
 
+    if let Some(command) = crate::app::command_palette::show(app, &ctx) {
+        if let Err(error) = commands::dispatch(
+            app, &ctx, render_state, &mut renderer_guard, frame_time, command,
+        ) {
+            eprintln!("[command-palette] {error:#}");
+        }
+    }
+
+    crate::app::performance::poll(app, &ctx);
+
     let t0 = Instant::now();
     let ingest = ingest::run(app, &ctx, render_state, &mut renderer_guard, frame_time);
     if let Some(scene) = app.runtime.uniform_scene.as_ref() {
@@ -115,10 +125,11 @@ pub(super) fn run(app: &mut App, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
     let finalize_ms = t4.elapsed().as_secs_f64() * 1000.0;
 
     drop(renderer_guard);
-    crate::pixel_perfecto::show_tool_window(&ctx, &mut app.shell.pixel_perfecto_window);
-    crate::camera_studio::show_tool_window(&ctx, &mut app.shell.camera_studio_window);
-
     let total_ms = timer.elapsed_ms();
+    app.runtime.performance.record_phases([
+        total_ms, ingest_ms, advance_ms, analysis_ms, present_ms, finalize_ms,
+    ]);
+    crate::app::performance::show_window(app, &ctx);
     metric_log!(
         "[frame] #{} total={:.2}ms | ingest={:.2}ms advance={:.2}ms analysis={:.2}ms present={:.2}ms finalize={:.2}ms",
         timer.frame_number(),

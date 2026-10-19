@@ -45,7 +45,7 @@ fn canvas_keyboard_events_enabled_state(
 }
 
 pub(super) fn debug_shortcuts_enabled(app: &App, ctx: &egui::Context) -> bool {
-    if ctx.text_edit_focused() {
+    if app.shell.command_palette.captures_input() || ctx.text_edit_focused() {
         return false;
     }
     debug_shortcut_scope_enabled_state(
@@ -56,11 +56,12 @@ pub(super) fn debug_shortcuts_enabled(app: &App, ctx: &egui::Context) -> bool {
 }
 
 pub(super) fn canvas_keyboard_events_enabled(app: &App, pointer_pos: Option<egui::Pos2>) -> bool {
-    canvas_keyboard_events_enabled_state(
-        animation_canvas_input_active(app),
-        pointer_pos,
-        app.canvas.interactions.last_debug_sidebar_rect,
-    )
+    !app.shell.command_palette.captures_input()
+        && canvas_keyboard_events_enabled_state(
+            animation_canvas_input_active(app),
+            pointer_pos,
+            app.canvas.interactions.last_debug_sidebar_rect,
+        )
 }
 
 #[cfg(test)]

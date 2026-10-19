@@ -23,8 +23,7 @@ pub enum AppCommand {
     ForceState(String),
     ClearStateControl,
     OpenAnimationCurves,
-    OpenPixelPerfecto,
-    OpenCameraStudio,
+    OpenPassGraph,
     Canvas(CanvasAction),
     PickReferenceImage,
     ClearReference,
@@ -45,6 +44,14 @@ pub enum AppCommand {
         content_text: String,
     },
     ToggleCanvasOnly,
+    ToggleStatistics,
+    ToggleTimeline,
+    ClearTimelineAnchor,
+    PasteReference,
+    CopyAndroidScreenshot {
+        srgb: bool,
+    },
+    CancelPreview,
     SetTestMode(crate::app::TestMode),
     ActivateFrameFreeze(String),
     ToggleMatrixPool(String),
@@ -60,8 +67,7 @@ pub fn from_sidebar_action(action: ui::debug_sidebar::SidebarAction) -> AppComma
         ui::debug_sidebar::SidebarAction::ForceState(state_id) => AppCommand::ForceState(state_id),
         ui::debug_sidebar::SidebarAction::ClearStateControl => AppCommand::ClearStateControl,
         ui::debug_sidebar::SidebarAction::OpenAnimationCurves => AppCommand::OpenAnimationCurves,
-        ui::debug_sidebar::SidebarAction::OpenPixelPerfecto => AppCommand::OpenPixelPerfecto,
-        ui::debug_sidebar::SidebarAction::OpenCameraStudio => AppCommand::OpenCameraStudio,
+        ui::debug_sidebar::SidebarAction::OpenPassGraph => AppCommand::OpenPassGraph,
         ui::debug_sidebar::SidebarAction::PreviewTexture(name) => AppCommand::Canvas(
             CanvasAction::SetPreviewTexture(ResourceName::from(name.as_str())),
         ),
@@ -208,20 +214,13 @@ pub fn dispatch(
             scene_runtime::clear_state_control(app);
             ctx.request_repaint();
         }
-        AppCommand::OpenPixelPerfecto => {
-            crate::pixel_perfecto::open_tool_window(&mut app.shell.pixel_perfecto_window, render_state);
-            ctx.request_repaint();
-        }
-        AppCommand::OpenCameraStudio => {
-            crate::camera_studio::open_tool_window(&mut app.shell.camera_studio_window);
-            ctx.request_repaint();
-        }
         AppCommand::OpenAnimationCurves => {
             ui::animation_curve_window::open_animation_curve_window(
                 &mut app.shell.animation_curve_window,
             );
             ctx.request_repaint();
         }
+        AppCommand::OpenPassGraph => app.shell.pass_graph_window.open(ctx),
         AppCommand::Canvas(action) => {
             let _ = canvas::reducer::apply_action(app, render_state, renderer, action)?;
         }
@@ -397,6 +396,57 @@ pub fn dispatch(
         }
         AppCommand::UpsertDebugArtifact { item, content_text } => {
             upsert_debug_artifact(app, item, content_text);
+        }
+        AppCommand::ToggleStatistics => {
+            app.shell.statistics_visible = !app.shell.statistics_visible;
+            ctx.request_repaint();
+        }
+        AppCommand::ToggleTimeline => {
+            app.shell.timeline_visible = !app.shell.timeline_visible;
+        }
+        AppCommand::ClearTimelineAnchor => {
+            super::present::apply_timeline_interaction(
+                app,
+                ui::timeline_panel::TimelineInteraction {
+                    delete_anchor: true,
+                    ..Default::default()
+                },
+            );
+        }
+        AppCommand::PasteReference => {
+            super::ingest::handle_clipboard_reference_paste(app, ctx, render_state);
+        }
+        AppCommand::CopyAndroidScreenshot { srgb } => {
+            if srgb {
+                canvas::ops::begin_android_screencap_srgb_clipboard_copy(
+                    &mut app.canvas.async_ops,
+                    now,
+                );
+            } else {
+                canvas::ops::begin_android_screencap_clipboard_copy(
+                    &mut app.canvas.async_ops,
+                    now,
+                );
+            }
+            ctx.request_repaint();
+        }
+        AppCommand::CancelPreview => {
+            if let Some(session) = app.canvas.design.active.as_mut() {
+                let result = canvas::design::handle_escape(session);
+                if result.consumed {
+                    for patch in result.patches {
+                        crate::ws::broadcast_design_param_patch(&app.core.ws_hub, patch);
+                    }
+                } else {
+                    canvas::reducer::apply_action(
+                        app, render_state, renderer, CanvasAction::ExitPassDesign,
+                    )?;
+                }
+            } else {
+                canvas::reducer::apply_action(
+                    app, render_state, renderer, CanvasAction::ClearPreviewTexture,
+                )?;
+            }
         }
         AppCommand::ToggleCanvasOnly => {
             window_mode::toggle_canvas_only(app, now);

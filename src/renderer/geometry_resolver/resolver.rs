@@ -391,7 +391,6 @@ mod tests {
     fn coord_inference_uses_closest_downstream_composition_on_branch() {
         let nodes = vec![
             node("rp", "RenderPass", json!({})),
-            node("ds", "Downsample", json!({})),
             node("comp_a", "Composite", json!({})),
             node("comp_b", "Composite", json!({})),
             node(
@@ -409,8 +408,7 @@ mod tests {
         let scene = scene(
             nodes.clone(),
             vec![
-                conn("c1", "rp", "pass", "ds", "pass"),
-                conn("c2", "ds", "pass", "comp_a", "pass"),
+                conn("c1", "rp", "pass", "comp_a", "pass"),
                 conn("c3", "rp", "pass", "comp_b", "pass"),
                 conn("c4", "rt_a", "texture", "comp_a", "target"),
                 conn("c5", "rt_b", "texture", "comp_b", "target"),
@@ -421,13 +419,13 @@ mod tests {
 
         let resolved =
             resolve_scene_draw_contexts(&scene, &nodes_by_id, &ids, [1920, 1080], None).unwrap();
-        let rp_to_ds = resolved
+        let rp_to_comp_a = resolved
             .draw_contexts
             .iter()
-            .find(|c| c.pass_node_id == "rp" && c.downstream_node_id == "ds")
+            .find(|c| c.pass_node_id == "rp" && c.downstream_node_id == "comp_a")
             .unwrap();
-        assert_eq!(rp_to_ds.coord_domain.composition_node_id, "comp_a");
-        assert_eq!(rp_to_ds.coord_domain.size_px, [100.0, 200.0]);
+        assert_eq!(rp_to_comp_a.coord_domain.composition_node_id, "comp_a");
+        assert_eq!(rp_to_comp_a.coord_domain.size_px, [100.0, 200.0]);
 
         let rp_to_comp_b = resolved
             .draw_contexts
@@ -470,7 +468,7 @@ mod tests {
     }
 
     #[test]
-    fn processing_edges_preserve_render_pass_geometry_center() {
+    fn explicit_composite_preserves_render_pass_geometry_center() {
         let nodes = vec![
             node(
                 "rect",
@@ -490,8 +488,8 @@ mod tests {
             nodes.clone(),
             vec![
                 conn("c1", "rect", "geometry", "rp", "geometry"),
-                conn("c2", "rp", "pass", "ds", "pass"),
-                conn("c3", "ds", "pass", "comp", "pass"),
+                conn("c2", "rp", "pass", "comp", "pass"),
+                conn("c3", "comp", "texture", "ds", "texture"),
                 conn("c4", "rt", "texture", "comp", "target"),
             ],
         );
@@ -500,13 +498,13 @@ mod tests {
 
         let resolved =
             resolve_scene_draw_contexts(&scene, &nodes_by_id, &ids, [1920, 1080], None).unwrap();
-        let rp_to_ds = resolved
+        let rp_to_comp = resolved
             .draw_contexts
             .iter()
-            .find(|c| c.pass_node_id == "rp" && c.downstream_node_id == "ds")
+            .find(|c| c.pass_node_id == "rp" && c.downstream_node_id == "comp")
             .unwrap();
-        assert_eq!(rp_to_ds.geometry.size_px, [40.0, 30.0]);
-        assert_eq!(rp_to_ds.geometry.center_px, [12.0, 18.0]);
+        assert_eq!(rp_to_comp.geometry.size_px, [40.0, 30.0]);
+        assert_eq!(rp_to_comp.geometry.center_px, [12.0, 18.0]);
     }
 
     #[test]
@@ -524,7 +522,7 @@ mod tests {
             vec![
                 conn("c1", "rp_live", "pass", "comp", "pass"),
                 conn("c2", "rt", "texture", "comp", "target"),
-                conn("c3", "rp_dead", "pass", "ds_dead", "pass"),
+                conn("c3", "rp_dead", "texture", "ds_dead", "texture"),
             ],
         );
         let nodes_by_id: HashMap<String, Node> =

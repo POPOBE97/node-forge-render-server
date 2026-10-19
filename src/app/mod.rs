@@ -1,10 +1,12 @@
 mod canvas;
+mod command_palette;
 pub(crate) mod display_metrics;
 mod frame;
 pub(crate) mod frame_freeze;
 mod input_scope;
 mod interaction_report;
 mod layout_math;
+mod performance;
 pub(crate) mod matrix_render;
 mod scene_runtime;
 mod texture_bridge;

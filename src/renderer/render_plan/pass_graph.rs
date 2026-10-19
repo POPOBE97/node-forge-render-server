@@ -372,7 +372,7 @@ mod tests {
 
     #[test]
     fn upsample_depends_on_source_pass_in_render_order() -> Result<()> {
-        let scene = SceneDSL {
+        let mut scene = SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1".to_string(),
             metadata: Metadata {
@@ -383,14 +383,14 @@ mod tests {
             nodes: vec![
                 node("source_comp", "Composite"),
                 node("upsample", "Upsample"),
-                node("out_comp", "Composite"),
+                node("out_draw", "ImagePass"),
             ],
             connections: vec![
                 Connection {
                     id: "c_source".to_string(),
                     from: Endpoint {
                         node_id: "source_comp".to_string(),
-                        port_id: "pass".to_string(),
+                        port_id: "texture".to_string(),
                     },
                     to: Endpoint {
                         node_id: "upsample".to_string(),
@@ -404,8 +404,8 @@ mod tests {
                         port_id: "texture".to_string(),
                     },
                     to: Endpoint {
-                        node_id: "out_comp".to_string(),
-                        port_id: "pass".to_string(),
+                        node_id: "out_draw".to_string(),
+                        port_id: "image".to_string(),
                     },
                 },
             ],
@@ -416,6 +416,7 @@ mod tests {
             debug_artifacts: None,
         };
 
+        crate::renderer::scene_prep::image_pass::expand_image_passes(&mut scene)?;
         let nodes_by_id: HashMap<String, Node> = scene
             .nodes
             .iter()
@@ -423,14 +424,14 @@ mod tests {
             .map(|n| (n.id.clone(), n))
             .collect();
 
-        let order = compute_pass_render_order(&scene, &nodes_by_id, &[String::from("out_comp")])?;
-        assert_eq!(order, vec!["source_comp", "upsample", "out_comp"]);
+        let order = compute_pass_render_order(&scene, &nodes_by_id, &[String::from("out_draw")])?;
+        assert_eq!(order, vec!["source_comp", "upsample", "out_draw"]);
         Ok(())
     }
 
     #[test]
     fn convolution_depends_on_and_samples_source_pass() -> Result<()> {
-        let scene = SceneDSL {
+        let mut scene = SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1".to_string(),
             metadata: Metadata {
@@ -441,14 +442,14 @@ mod tests {
             nodes: vec![
                 node("source_comp", "Composite"),
                 node("convolution", "Convolution"),
-                node("out_comp", "Composite"),
+                node("out_draw", "ImagePass"),
             ],
             connections: vec![
                 Connection {
                     id: "c_source".to_string(),
                     from: Endpoint {
                         node_id: "source_comp".to_string(),
-                        port_id: "pass".to_string(),
+                        port_id: "texture".to_string(),
                     },
                     to: Endpoint {
                         node_id: "convolution".to_string(),
@@ -462,8 +463,8 @@ mod tests {
                         port_id: "texture".to_string(),
                     },
                     to: Endpoint {
-                        node_id: "out_comp".to_string(),
-                        port_id: "pass".to_string(),
+                        node_id: "out_draw".to_string(),
+                        port_id: "image".to_string(),
                     },
                 },
             ],
@@ -474,6 +475,7 @@ mod tests {
             debug_artifacts: None,
         };
 
+        crate::renderer::scene_prep::image_pass::expand_image_passes(&mut scene)?;
         let nodes_by_id: HashMap<String, Node> = scene
             .nodes
             .iter()
@@ -481,8 +483,8 @@ mod tests {
             .map(|n| (n.id.clone(), n))
             .collect();
 
-        let order = compute_pass_render_order(&scene, &nodes_by_id, &[String::from("out_comp")])?;
-        assert_eq!(order, vec!["source_comp", "convolution", "out_comp"]);
+        let order = compute_pass_render_order(&scene, &nodes_by_id, &[String::from("out_draw")])?;
+        assert_eq!(order, vec!["source_comp", "convolution", "out_draw"]);
 
         let sampled =
             sampled_pass_node_ids_from_roots(&scene, &nodes_by_id, &[String::from("convolution")])?;
@@ -492,7 +494,7 @@ mod tests {
 
     #[test]
     fn bloom_depends_on_pass_input_in_render_order() -> Result<()> {
-        let scene = SceneDSL {
+        let mut scene = SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1".to_string(),
             metadata: Metadata {
@@ -503,14 +505,14 @@ mod tests {
             nodes: vec![
                 node("source_comp", "Composite"),
                 node("bloom", "BloomNode"),
-                node("out_comp", "Composite"),
+                node("out_draw", "ImagePass"),
             ],
             connections: vec![
                 Connection {
                     id: "c_source".to_string(),
                     from: Endpoint {
                         node_id: "source_comp".to_string(),
-                        port_id: "pass".to_string(),
+                        port_id: "texture".to_string(),
                     },
                     to: Endpoint {
                         node_id: "bloom".to_string(),
@@ -524,8 +526,8 @@ mod tests {
                         port_id: "texture".to_string(),
                     },
                     to: Endpoint {
-                        node_id: "out_comp".to_string(),
-                        port_id: "pass".to_string(),
+                        node_id: "out_draw".to_string(),
+                        port_id: "image".to_string(),
                     },
                 },
             ],
@@ -536,6 +538,7 @@ mod tests {
             debug_artifacts: None,
         };
 
+        crate::renderer::scene_prep::image_pass::expand_image_passes(&mut scene)?;
         let nodes_by_id: HashMap<String, Node> = scene
             .nodes
             .iter()
@@ -543,14 +546,14 @@ mod tests {
             .map(|n| (n.id.clone(), n))
             .collect();
 
-        let order = compute_pass_render_order(&scene, &nodes_by_id, &[String::from("out_comp")])?;
-        assert_eq!(order, vec!["source_comp", "bloom", "out_comp"]);
+        let order = compute_pass_render_order(&scene, &nodes_by_id, &[String::from("out_draw")])?;
+        assert_eq!(order, vec!["source_comp", "bloom", "out_draw"]);
         Ok(())
     }
 
     #[test]
     fn sampled_pass_ids_from_roots_marks_reachable_processing_dependencies() -> Result<()> {
-        let scene = SceneDSL {
+        let mut scene = SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1".to_string(),
             metadata: Metadata {
@@ -574,8 +577,14 @@ mod tests {
                 },
                 node("p_live", "RenderPass"),
                 node("ds_live", "Downsample"),
+                node("draw", "ImagePass"),
             ],
             connections: vec![
+                Connection {
+                    id: "draw-layer".to_string(),
+                    from: Endpoint { node_id: "draw".to_string(), port_id: "pass".to_string() },
+                    to: Endpoint { node_id: "out".to_string(), port_id: "pass".to_string() },
+                },
                 Connection {
                     id: "c_target".to_string(),
                     from: Endpoint {
@@ -591,7 +600,7 @@ mod tests {
                     id: "c_source".to_string(),
                     from: Endpoint {
                         node_id: "p_live".to_string(),
-                        port_id: "pass".to_string(),
+                        port_id: "texture".to_string(),
                     },
                     to: Endpoint {
                         node_id: "ds_live".to_string(),
@@ -605,8 +614,8 @@ mod tests {
                         port_id: "texture".to_string(),
                     },
                     to: Endpoint {
-                        node_id: "out".to_string(),
-                        port_id: "pass".to_string(),
+                        node_id: "draw".to_string(),
+                        port_id: "image".to_string(),
                     },
                 },
             ],
@@ -620,6 +629,7 @@ mod tests {
             debug_artifacts: None,
         };
 
+        crate::renderer::scene_prep::image_pass::expand_image_passes(&mut scene)?;
         let nodes_by_id: HashMap<String, Node> = scene
             .nodes
             .iter()
@@ -642,7 +652,7 @@ mod tests {
 
     #[test]
     fn sampled_pass_ids_from_roots_tracks_materialized_blur_source_transitive_deps() -> Result<()> {
-        let scene = SceneDSL {
+        let mut scene = SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1".to_string(),
             metadata: Metadata {
@@ -693,7 +703,7 @@ mod tests {
                     id: "c_p0".to_string(),
                     from: Endpoint {
                         node_id: "p0".to_string(),
-                        port_id: "pass".to_string(),
+                        port_id: "texture".to_string(),
                     },
                     to: Endpoint {
                         node_id: "mc".to_string(),
@@ -704,7 +714,7 @@ mod tests {
                     id: "c_p1".to_string(),
                     from: Endpoint {
                         node_id: "p1".to_string(),
-                        port_id: "pass".to_string(),
+                        port_id: "texture".to_string(),
                     },
                     to: Endpoint {
                         node_id: "mc".to_string(),
@@ -726,7 +736,7 @@ mod tests {
                     id: "c_blur".to_string(),
                     from: Endpoint {
                         node_id: "materialized".to_string(),
-                        port_id: "pass".to_string(),
+                        port_id: "texture".to_string(),
                     },
                     to: Endpoint {
                         node_id: "blur".to_string(),
@@ -741,6 +751,7 @@ mod tests {
             debug_artifacts: None,
         };
 
+        crate::renderer::scene_prep::image_pass::expand_image_passes(&mut scene)?;
         let nodes_by_id: HashMap<String, Node> = scene
             .nodes
             .iter()
@@ -768,7 +779,7 @@ mod tests {
 
     #[test]
     fn sampled_pass_ids_from_roots_ignores_dead_branch_sampling() -> Result<()> {
-        let scene = SceneDSL {
+        let mut scene = SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1".to_string(),
             metadata: Metadata {
@@ -820,11 +831,11 @@ mod tests {
                     id: "c_dead_source".to_string(),
                     from: Endpoint {
                         node_id: "p_live".to_string(),
-                        port_id: "pass".to_string(),
+                        port_id: "texture".to_string(),
                     },
                     to: Endpoint {
                         node_id: "ds_dead".to_string(),
-                        port_id: "pass".to_string(),
+                        port_id: "texture".to_string(),
                     },
                 },
             ],
@@ -838,6 +849,7 @@ mod tests {
             debug_artifacts: None,
         };
 
+        crate::renderer::scene_prep::image_pass::expand_image_passes(&mut scene)?;
         let nodes_by_id: HashMap<String, Node> = scene
             .nodes
             .iter()
@@ -856,7 +868,7 @@ mod tests {
 
     #[test]
     fn strict_root_order_keeps_non_root_dependencies_before_each_root() -> Result<()> {
-        let scene = SceneDSL {
+        let mut scene = SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1".to_string(),
             metadata: Metadata {
@@ -865,7 +877,7 @@ mod tests {
                 modified: None,
             },
             nodes: vec![
-                node("shared", "Composite"),
+                node("shared", "RenderPass"),
                 node("first", "Composite"),
                 node("second", "Composite"),
             ],
@@ -900,6 +912,7 @@ mod tests {
             debug_artifacts: None,
         };
 
+        crate::renderer::scene_prep::image_pass::expand_image_passes(&mut scene)?;
         let nodes_by_id: HashMap<String, Node> = scene
             .nodes
             .iter()
@@ -918,7 +931,7 @@ mod tests {
 
     #[test]
     fn forward_root_dependency_is_collected_for_warmup() -> Result<()> {
-        let scene = SceneDSL {
+        let mut scene = SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1".to_string(),
             metadata: Metadata {
@@ -926,7 +939,7 @@ mod tests {
                 created: None,
                 modified: None,
             },
-            nodes: vec![node("first", "Composite"), node("later", "Composite")],
+            nodes: vec![node("first", "Composite"), node("later", "RenderPass")],
             connections: vec![Connection {
                 id: "c1".to_string(),
                 from: Endpoint {
@@ -945,6 +958,7 @@ mod tests {
             debug_artifacts: None,
         };
 
+        crate::renderer::scene_prep::image_pass::expand_image_passes(&mut scene)?;
         let nodes_by_id: HashMap<String, Node> = scene
             .nodes
             .iter()
@@ -973,7 +987,7 @@ mod tests {
 
     #[test]
     fn pass_order_supports_nested_composition_routing_nodes() -> Result<()> {
-        let scene = SceneDSL {
+        let mut scene = SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
             version: "1".to_string(),
             metadata: Metadata {
@@ -1009,8 +1023,14 @@ mod tests {
                     wgsl_override: None,
                 },
                 node("ds", "Downsample"),
+                node("draw", "ImagePass"),
             ],
             connections: vec![
+                Connection {
+                    id: "draw-layer".to_string(),
+                    from: Endpoint { node_id: "draw".to_string(), port_id: "pass".to_string() },
+                    to: Endpoint { node_id: "comp_b".to_string(), port_id: "pass".to_string() },
+                },
                 Connection {
                     id: "c_ta".to_string(),
                     from: Endpoint {
@@ -1037,7 +1057,7 @@ mod tests {
                     id: "c_source".to_string(),
                     from: Endpoint {
                         node_id: "comp_a".to_string(),
-                        port_id: "pass".to_string(),
+                        port_id: "texture".to_string(),
                     },
                     to: Endpoint {
                         node_id: "ds".to_string(),
@@ -1051,8 +1071,8 @@ mod tests {
                         port_id: "texture".to_string(),
                     },
                     to: Endpoint {
-                        node_id: "comp_b".to_string(),
-                        port_id: "pass".to_string(),
+                        node_id: "draw".to_string(),
+                        port_id: "image".to_string(),
                     },
                 },
             ],
@@ -1062,6 +1082,7 @@ mod tests {
             state_machine: None,
             debug_artifacts: None,
         };
+        crate::renderer::scene_prep::image_pass::expand_image_passes(&mut scene)?;
         let nodes_by_id: HashMap<String, Node> = scene
             .nodes
             .iter()
@@ -1070,7 +1091,7 @@ mod tests {
             .collect();
 
         let order = compute_pass_render_order(&scene, &nodes_by_id, &[String::from("comp_b")])?;
-        assert_eq!(order, vec!["comp_a", "ds", "comp_b"]);
+        assert_eq!(order, vec!["comp_a", "ds", "draw", "comp_b"]);
 
         // Use all pass-like nodes as roots to check sampled detection.
         let all_roots: Vec<String> = nodes_by_id
@@ -1080,9 +1101,7 @@ mod tests {
             .collect();
         let sampled = sampled_pass_node_ids_from_roots(&scene, &nodes_by_id, &all_roots)?;
         assert!(sampled.contains("comp_a"), "sampled={sampled:?}");
-        // ds is consumed by comp_b (a Composite), and the canonical algorithm
-        // does not mark inputs to Composites as sampled — only non-Composite
-        // pass nodes that sample textures trigger the sampled flag.
+        assert!(sampled.contains("ds"), "explicit ImagePass samples ds: {sampled:?}");
 
         Ok(())
     }

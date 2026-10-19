@@ -29,7 +29,7 @@ fn scene(working: WorkingColorSpace, output: &str, rgba: [f32; 4]) -> SceneDSL {
             { "id": "geometry", "from": {"nodeId":"geometry", "portId":"geometry"}, "to":{"nodeId":"pass", "portId":"geometry"} },
             { "id": "pass", "from": {"nodeId":"pass", "portId":"pass"}, "to":{"nodeId":"composite", "portId":"pass"} },
             { "id": "target", "from": {"nodeId":"target", "portId":"texture"}, "to":{"nodeId":"composite", "portId":"target"} },
-            { "id": "screen", "from": {"nodeId":"composite", "portId":"pass"}, "to":{"nodeId":"screen", "portId":"pass"} }
+            { "id": "screen", "from": {"nodeId":"composite", "portId":"texture"}, "to":{"nodeId":"screen", "portId":"texture"} }
         ]
     })).unwrap()
 }

@@ -1015,14 +1015,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn pass_texture_compatibility_is_bidirectional_but_color_is_not_texture() -> Result<()> {
+    fn pass_and_texture_are_separate_domains() -> Result<()> {
         let scheme = load_default_scheme()?;
         let pass = PortTypeSpec::One("pass".to_string());
         let texture = PortTypeSpec::One("texture".to_string());
         let color = PortTypeSpec::One("color".to_string());
 
-        assert!(port_types_compatible(&scheme, &pass, &texture));
-        assert!(port_types_compatible(&scheme, &texture, &pass));
+        assert!(!port_types_compatible(&scheme, &pass, &texture));
+        assert!(!port_types_compatible(&scheme, &texture, &pass));
         assert!(port_types_compatible(&scheme, &texture, &texture));
         assert!(!port_types_compatible(&scheme, &color, &texture));
         Ok(())

@@ -1,0 +1,17 @@
+{
+  "tool": "built-in image_gen",
+  "prompt": "Use case: logo-brand. Create a premium macOS app icon foreground asset for Node Forge Render Server, isolated on actual transparent alpha. Subject: one proprietary sculptural six-ray forge spark, a compact asymmetric optical star with broad inflated arms and a small clean rounded-diamond aperture through its center. The six rays have intentionally different lengths; dominant upper-right and lower-left diagonals, with shorter left/right rays, giving a subtle forward energy. One continuous cast-metal object, simple strong silhouette, no extra separate sparks. Shape has softly rounded tips, smoothly concave joins, thick liquid-metal bevels, gently convex faces; almost frontal with a tiny perspective tilt to reveal thickness. Style based on the user's attached references: lustrous liquid chrome and smoked optical glass, high-fashion industrial product render, impeccable polished silver face with bold black reflected bands, crisp white studio-strip reflections, subtle cyan, amber and violet thin-film spectral glints ONLY on some beveled edges (less than 10% of material). Main face should be silver, not rainbow or blue. Center object within square canvas, entire silhouette occupies 76% width and 76% height with generous transparent margin, no cropping. Reflections should describe organic inflated volume, not flat vector strokes. Lighting is graphic high-contrast studio product lighting suitable for viewing on near-black graphite. No background, no tile, no floor, no cast shadow outside the object, no text, no letters, no sphere, no wireframe, no server hardware, no lightning bolt. This is a production foreground layer to place in Apple Icon Composer, retain actual transparency including the center aperture. Render at high resolution.",
+  "composition": {
+    "source": "../../NodeForgeRenderServer.icon",
+    "foregroundScale": 0.66,
+    "background": "#090A0C",
+    "exportTool": "Apple Icon Composer ictool",
+    "designGeneration": 27,
+    "platform": "macOS",
+    "rendition": "Default",
+    "size": [
+      1024,
+      1024
+    ]
+  }
+}

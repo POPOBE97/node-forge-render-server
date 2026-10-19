@@ -136,14 +136,16 @@ fn small_scene(w: u32, h: u32) -> (SceneDSL, AssetStore, Vec<f32>) {
                 "rgbOffset":4, "rgbFixedDirection":true, "rgbAngle":90
             }},
             {"id":"target", "type":"RenderTexture", "params":{"width":w,"height":h,"format":"rgba16float"}},
+            {"id":"draw", "type":"ImagePass", "params":{"loadOp":"none"}},
             {"id":"composite", "type":"Composite"},
             {"id":"screen", "type":"Screen", "params":{ "outputColorSpace": "srgb","width":w,"height":h}}
         ],
         "connections": [
             {"id":"source", "from":{"nodeId":"image","portId":"texture"}, "to":{"nodeId":"blur","portId":"texture"}},
-            {"id":"result", "from":{"nodeId":"blur","portId":"texture"}, "to":{"nodeId":"composite","portId":"pass"}},
+            {"id":"result", "from":{"nodeId":"blur","portId":"texture"}, "to":{"nodeId":"draw","portId":"image"}},
+            {"id":"draw", "from":{"nodeId":"draw","portId":"pass"}, "to":{"nodeId":"composite","portId":"pass"}},
             {"id":"target", "from":{"nodeId":"target","portId":"texture"}, "to":{"nodeId":"composite","portId":"target"}},
-            {"id":"screen", "from":{"nodeId":"composite","portId":"pass"}, "to":{"nodeId":"screen","portId":"pass"}}
+            {"id":"screen", "from":{"nodeId":"composite","portId":"texture"}, "to":{"nodeId":"screen","portId":"texture"}}
         ]
     })).unwrap();
     (scene, assets, expected)

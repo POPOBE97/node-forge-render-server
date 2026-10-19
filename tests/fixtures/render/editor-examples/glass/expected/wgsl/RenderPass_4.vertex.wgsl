@@ -52,10 +52,10 @@ var pass_tex_sys_group_BackgroundPass_GuassianBlurPass_42: texture_2d<f32>;
 var pass_samp_sys_group_BackgroundPass_GuassianBlurPass_42: sampler;
 
 @group(1) @binding(2)
-var pass_tex_GroupInstance_79_RenderPass_72: texture_2d<f32>;
+var pass_tex_TextureRender_GroupInstance_79_out_0: texture_2d<f32>;
 
 @group(1) @binding(3)
-var pass_samp_GroupInstance_79_RenderPass_72: sampler;
+var pass_samp_TextureRender_GroupInstance_79_out_0: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---

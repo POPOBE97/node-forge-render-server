@@ -25,12 +25,12 @@ const HOVER_RADIUS: u8 = design_tokens::BORDER_RADIUS_SMALL as u8;
 // Colours
 const COLOR_HOVER_BG: Color32 = Color32::from_gray(32);
 const COLOR_SELECTED_BG: Color32 = design_tokens::RESOURCE_ACTIVE_BG;
-const COLOR_ACCENT: Color32 = Color32::from_rgb(80, 140, 220);
+const COLOR_ACCENT: Color32 = design_tokens::RESOURCE_ACCENT;
 const COLOR_CHEVRON: Color32 = Color32::from_gray(110);
 const COLOR_ICON_FOLDER: Color32 = Color32::from_rgb(100, 140, 200);
-const COLOR_ICON_PASS: Color32 = Color32::from_rgb(130, 180, 100);
-const COLOR_ICON_TEXTURE: Color32 = Color32::from_rgb(200, 150, 80);
-const COLOR_ICON_BUFFER: Color32 = Color32::from_rgb(160, 100, 160);
+const COLOR_ICON_PASS: Color32 = design_tokens::RESOURCE_PASS_FG;
+const COLOR_ICON_TEXTURE: Color32 = design_tokens::RESOURCE_TEXTURE_FG;
+const COLOR_ICON_BUFFER: Color32 = design_tokens::RESOURCE_BUFFER_FG;
 const COLOR_ICON_SAMPLER: Color32 = Color32::from_rgb(100, 160, 160);
 
 // ---------------------------------------------------------------------------

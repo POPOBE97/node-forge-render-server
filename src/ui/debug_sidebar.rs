@@ -281,8 +281,8 @@ pub enum SidebarAction {
     SetPlaybackRate(PlaybackRate),
     /// Open or focus the standalone animation curve window.
     OpenAnimationCurves,
-    OpenPixelPerfecto,
-    OpenCameraStudio,
+    /// Open or focus the live GPU pass dependency diagram.
+    OpenPassGraph,
     /// User clicked a readable texture — preview it in the canvas.
     PreviewTexture(String),
     /// Capture and preview one render pass independently of later target writers.
@@ -484,15 +484,47 @@ pub fn show_in_rect(
                         bottom: SECTION_BOTTOM_PADDING as i8,
                     })
                     .show(ui, |ui| {
+                        with_sidebar_content_padding(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.label(design_tokens::rich_text(
+                                    "Render Server",
+                                    TextRole::SectionTitle,
+                                ));
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        let response = button::button(
+                                            ui,
+                                            ButtonOptions {
+                                                variant: ButtonVariant::Icon,
+                                                size: ButtonSize::Small,
+                                                icon: Some(" "),
+                                                tooltip: Some("Open render pass dependencies"),
+                                                ..ButtonOptions::new("")
+                                            },
+                                        );
+                                        response.widget_info(|| {
+                                            egui::WidgetInfo::labeled(
+                                                egui::WidgetType::Button,
+                                                true,
+                                                "Render pass dependencies",
+                                            )
+                                        });
+                                        super::pass_graph_window::paint_graph_icon(
+                                            ui.painter(),
+                                            response.rect,
+                                            design_tokens::white(70),
+                                        );
+                                        if response.clicked() {
+                                            sidebar_action = Some(SidebarAction::OpenPassGraph);
+                                        }
+                                    },
+                                );
+                            });
+                        });
+                        section_divider(ui);
                         egui::ScrollArea::vertical().show(ui, |ui| {
                             with_sidebar_content_padding(ui, |ui| {
-                                if button::button(ui, ButtonOptions::new("Pixel Perfecto")).clicked() {
-                                    sidebar_action = Some(SidebarAction::OpenPixelPerfecto);
-                                }
-                                if button::button(ui, ButtonOptions::new("Camera Studio")).clicked() {
-                                    sidebar_action = Some(SidebarAction::OpenCameraStudio);
-                                }
-                                ui.add_space(SIDEBAR_GRID_ROW_GAP);
                                 show_state_section(ui, &state_control, &mut sidebar_action);
                             });
                             section_divider(ui);

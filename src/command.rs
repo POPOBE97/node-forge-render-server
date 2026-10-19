@@ -15,6 +15,32 @@ use node_forge_render_server::state_machine::types::AnimationStateType;
 use node_forge_render_server::{app, asset_store, dsl, profile, renderer, ws};
 use rust_wgpu_fiber::eframe::{self, egui, egui_wgpu, wgpu};
 
+fn render_server_icon() -> egui::IconData {
+    let icon = eframe::icon_data::from_png_bytes(include_bytes!(
+        "../assets/icons/node-forge-icon.png"
+    ))
+    .expect("embedded render server icon must be a valid PNG");
+
+    // Icon Composer exports the tile edge-to-edge. eframe sets NSApplication's
+    // icon directly, so supply the macOS safe area: the tile occupies 80%.
+    #[cfg(target_os = "macos")]
+    {
+        let inset_x = icon.width / 8;
+        let inset_y = icon.height / 8;
+        let width = icon.width + 2 * inset_x;
+        let height = icon.height + 2 * inset_y;
+        let mut rgba = vec![0; (width * height * 4) as usize];
+        let row_bytes = (icon.width * 4) as usize;
+        for (y, row) in icon.rgba.chunks_exact(row_bytes).enumerate() {
+            let start = (((y as u32 + inset_y) * width + inset_x) * 4) as usize;
+            rgba[start..start + row_bytes].copy_from_slice(row);
+        }
+        egui::IconData { rgba, width, height }
+    }
+    #[cfg(not(target_os = "macos"))]
+    icon
+}
+
 #[derive(Debug, Default, Clone)]
 struct Cli {
     android_screencap_clipboard: Option<AndroidScreencapClipboardMode>,
@@ -1858,12 +1884,7 @@ pub(crate) fn run() -> Result<()> {
             .with_resizable(true)
             .with_transparent(false)
             .with_decorations(true)
-            .with_icon(
-                eframe::icon_data::from_png_bytes(
-                    &include_bytes!("../assets/icons/node-forge-icon.png")[..],
-                )
-                .expect("embedded render server icon must be a valid PNG"),
-            )
+            .with_icon(render_server_icon())
             .with_fullsize_content_view(false)
             .with_titlebar_shown(true)
             .with_title_shown(true)

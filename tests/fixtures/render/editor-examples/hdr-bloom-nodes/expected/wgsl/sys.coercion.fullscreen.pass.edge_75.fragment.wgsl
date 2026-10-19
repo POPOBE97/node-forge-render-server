@@ -35,10 +35,10 @@ var<uniform> params: Params;
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;
 @group(1) @binding(0)
-var pass_tex_RenderPass_4: texture_2d<f32>;
+var pass_tex_TextureRender_RenderPass_4_pass: texture_2d<f32>;
 
 @group(1) @binding(1)
-var pass_samp_RenderPass_4: sampler;
+var pass_samp_TextureRender_RenderPass_4_pass: sampler;
 
 @group(1) @binding(2)
 var pass_tex_Upsample_41: texture_2d<f32>;
@@ -69,7 +69,7 @@ fn mc_math_closure(uv: vec2<f32>) -> vec4<f32> {
 }
 
 fn sample_pass_l0_(uv_in: vec2f) -> vec4f {
-    return textureSample(pass_tex_RenderPass_4, pass_samp_RenderPass_4, uv_in);
+    return textureSample(pass_tex_TextureRender_RenderPass_4_pass, pass_samp_TextureRender_RenderPass_4_pass, uv_in);
 }
 
 fn sample_pass_l1_(uv_in: vec2f) -> vec4f {

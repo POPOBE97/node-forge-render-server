@@ -62,7 +62,7 @@ fn scene(shader_input: NodePort, to_port: &str) -> SceneDSL {
             connection(
                 "sys.group.edge.4",
                 "IntelligentLight_30",
-                "pass",
+                "texture",
                 "TextureSampler_31",
                 "texture",
             ),
@@ -83,7 +83,7 @@ fn scene(shader_input: NodePort, to_port: &str) -> SceneDSL {
 }
 
 #[test]
-fn accepts_direct_pass_to_shader_material_resource() {
+fn accepts_explicit_texture_to_shader_material_resource() {
     let mut scene = scene(
         NodePort {
             id: "resource:intelli_tex".to_string(),
@@ -97,13 +97,24 @@ fn accepts_direct_pass_to_shader_material_resource() {
     scene.connections = vec![connection(
         "sys.group.edge.5",
         "IntelligentLight_30",
-        "pass",
+        "texture",
         "GroupInstance_32/ShaderMaterial_32",
         "resource:intelli_tex",
     )];
 
     validate_scene_against(&scene, &load_default_scheme().expect("load scheme"))
-        .expect("direct pass should satisfy a custom shader resource");
+        .expect("explicit texture should satisfy a custom shader resource");
+}
+
+#[test]
+fn rejects_draw_output_as_shader_texture_resource() {
+    let mut scene = scene(NodePort {
+        id: "resource:intelli_tex".into(), name: Some("intelli_tex".into()),
+        port_type: Some("texture".into()), array_length: None,
+    }, "resource:intelli_tex");
+    scene.connections[0].from.port_id = "pass".into();
+    let error = validate_scene_against(&scene, &load_default_scheme().unwrap()).unwrap_err();
+    assert!(error.to_string().contains("type mismatch"));
 }
 
 #[test]
@@ -187,7 +198,7 @@ fn accepts_reflected_shader_material_resource_port_after_group_expansion() {
     );
 
     validate_scene_against(&scene, &load_default_scheme().expect("load scheme"))
-        .expect("reflected pass resource port should validate");
+        .expect("reflected texture resource port should validate");
 }
 
 #[test]

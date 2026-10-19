@@ -80,6 +80,7 @@
     "PackedInput",
     "PerspectiveCamera",
     "PrincipledBSDF",
+    "ProceduralTestTexture",
     "Rect2DGeometry",
     "ReferenceImage",
     "Refract",
@@ -495,8 +496,7 @@
       "motion": "none",
       "editor": null,
       "acceptedOutputs": [
-        "texture",
-        "pass"
+        "texture"
       ]
     },
     "depthTexture": {
@@ -594,7 +594,6 @@
       "editor": null,
       "acceptedOutputs": [
         "pass",
-        "texture",
         "float",
         "int",
         "bool",
@@ -893,8 +892,7 @@
       "vector4[]"
     ],
     "texture": [
-      "texture",
-      "pass"
+      "texture"
     ],
     "depthTexture": [
       "depthTexture"
@@ -929,7 +927,6 @@
     ],
     "pass": [
       "pass",
-      "texture",
       "float",
       "int",
       "bool",
@@ -1758,7 +1755,7 @@
       "type": "Composite",
       "label": "Composite",
       "category": "Output",
-      "description": "Final composite output",
+      "description": "Execute ordered draws into an explicit render target and return its texture",
       "inputs": [
         {
           "id": "pass",
@@ -1800,11 +1797,6 @@
         }
       ],
       "outputs": [
-        {
-          "id": "pass",
-          "name": "Pass",
-          "type": "pass"
-        },
         {
           "id": "texture",
           "name": "Texture",
@@ -2100,12 +2092,12 @@
       "type": "File",
       "label": "File",
       "category": "RenderTarget",
-      "description": "Render a pass to an output file",
+      "description": "Export a texture to an output file",
       "inputs": [
         {
-          "id": "pass",
-          "name": "Pass",
-          "type": "pass"
+          "id": "texture",
+          "name": "Texture",
+          "type": "texture"
         }
       ],
       "outputs": [],
@@ -6243,6 +6235,47 @@
       "defaultParams": {}
     },
     {
+      "type": "ProceduralTestTexture",
+      "label": "Procedural Test Texture",
+      "category": "Texture",
+      "description": "Generate the complete rendering test chart, including text, at native pixel resolution",
+      "inputs": [
+        {
+          "id": "width",
+          "name": "Width",
+          "type": "int",
+          "default": 1260,
+          "range": {
+            "min": 1,
+            "max": 8192,
+            "step": 1
+          }
+        },
+        {
+          "id": "height",
+          "name": "Height",
+          "type": "int",
+          "default": 2800,
+          "range": {
+            "min": 1,
+            "max": 8192,
+            "step": 1
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "id": "texture",
+          "name": "Texture",
+          "type": "texture"
+        }
+      ],
+      "defaultParams": {
+        "width": 1260,
+        "height": 2800
+      }
+    },
+    {
       "type": "Rect2DGeometry",
       "label": "2D Rect",
       "category": "Geometry",
@@ -6605,12 +6638,12 @@
       "type": "Screen",
       "label": "Screen",
       "category": "RenderTarget",
-      "description": "Present a pass to the default screen framebuffer",
+      "description": "Present a texture at its producer's resolution",
       "inputs": [
         {
-          "id": "pass",
-          "name": "Pass",
-          "type": "pass"
+          "id": "texture",
+          "name": "Texture",
+          "type": "texture"
         },
         {
           "id": "width",

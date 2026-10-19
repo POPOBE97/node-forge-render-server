@@ -500,7 +500,7 @@ mod tests {
             project_selected_resource_pools(&mut non_pass, "composite")
                 .unwrap_err()
                 .to_string()
-                .contains("must resolve to a pass producer")
+                .contains("must use a pass output")
         );
     }
 

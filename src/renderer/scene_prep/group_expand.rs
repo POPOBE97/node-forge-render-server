@@ -595,14 +595,14 @@ mod tests {
             ],
             "connections": [{
                 "id": "group_to_screen",
-                "from": { "nodeId": "GroupInstance_32", "portId": "pass" },
-                "to": { "nodeId": "screen", "portId": "pass" }
+                "from": { "nodeId": "GroupInstance_32", "portId": "texture" },
+                "to": { "nodeId": "screen", "portId": "texture" }
             }],
             "groups": [{
                 "id": "light_effect",
                 "name": "Light Effect Definition",
                 "inputs": [],
-                "outputs": [{ "id": "pass", "type": "pass" }],
+                "outputs": [{ "id": "texture", "type": "texture" }],
                 "nodes": [{
                     "id": "RenderPass_26",
                     "type": "RenderPass",
@@ -612,8 +612,8 @@ mod tests {
                 "connections": [],
                 "inputBindings": [],
                 "outputBindings": [{
-                    "groupPortId": "pass",
-                    "from": { "nodeId": "RenderPass_26", "portId": "pass" }
+                    "groupPortId": "texture",
+                    "from": { "nodeId": "RenderPass_26", "portId": "texture" }
                 }]
             }]
         }))

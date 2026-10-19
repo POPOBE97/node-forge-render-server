@@ -11,9 +11,10 @@ pub(crate) mod data_parse_runtime;
 pub(crate) mod graph;
 mod group_expand;
 mod image_inline;
-mod image_pass;
+pub(crate) mod image_pass;
 mod pass_dedup;
 mod pipeline;
+pub(crate) mod procedural_test_texture;
 mod resource_pool;
 mod types;
 

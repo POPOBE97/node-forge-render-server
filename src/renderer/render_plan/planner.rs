@@ -70,10 +70,7 @@ impl RenderPlanner {
         asset_store: Option<&AssetStore>,
         adapter: Option<&wgpu::Adapter>,
     ) -> Result<RenderPlan> {
-        let mut execution_scene = scene.clone();
-        let coercion_count = super::coercion::plan_consumer_scoped_coercions(&mut execution_scene)?;
-        let (prepared, mut scene_report) = prepare_scene_with_report(&execution_scene)?;
-        scene_report.consumer_scoped_coercions = coercion_count;
+        let (prepared, scene_report) = prepare_scene_with_report(scene)?;
         self.plan_prepared(prepared, scene_report, asset_store, adapter)
     }
 
@@ -87,8 +84,6 @@ impl RenderPlanner {
         let resolution = prepared.resolution;
         let nodes_by_id = &prepared.nodes_by_id;
         let ids = &prepared.ids;
-        let output_texture_node_id = &prepared.output_texture_node_id;
-        let output_texture_name = prepared.output_texture_name.clone();
         let composite_layers_in_order = &prepared.composite_layers_in_draw_order;
         let order = &prepared.topo_order;
         let presentation_mode = self.options.presentation_mode;
@@ -113,36 +108,15 @@ impl RenderPlanner {
                 .insert(draw_ctx.pass_node_id.clone(), draw_ctx.coord_domain.size_px);
         }
 
-        let target_texture_id = output_texture_node_id.clone();
-        let target_node = find_node(nodes_by_id, &target_texture_id)?;
-        if target_node.node_type != "RenderTexture" {
-            bail!(
-                "Composite.target must come from RenderTexture, got {}",
-                target_node.node_type
-            );
-        }
-
-        let tgt_w_u = cpu_num_u32_min_1(
-            &prepared.scene,
-            nodes_by_id,
-            target_node,
-            "width",
-            resolution[0],
-        )?;
-        let tgt_h_u = cpu_num_u32_min_1(
-            &prepared.scene,
-            nodes_by_id,
-            target_node,
-            "height",
-            resolution[1],
-        )?;
+        let [tgt_w_u, tgt_h_u] = resolution;
         let tgt_w = tgt_w_u as f32;
         let tgt_h = tgt_h_u as f32;
-        let target_texture_name = ids
-            .get(&target_texture_id)
-            .cloned()
-            .ok_or_else(|| anyhow!("missing name for node: {}", target_texture_id))?;
-        let target_format = parse_texture_format(&target_node.params)?;
+        let (target_texture_name, target_format) = if let Some(target_id) = &prepared.output_target_node_id {
+            let node = find_node(nodes_by_id, target_id)?;
+            (ids[target_id].clone(), parse_texture_format(&node.params)?)
+        } else {
+            (ResourceName::from("sys.output.context"), TextureFormat::Rgba16Float)
+        };
         let sampled_pass_format = match target_format {
             TextureFormat::Rgba8UnormSrgb => TextureFormat::Rgba8Unorm,
             TextureFormat::Bgra8UnormSrgb => TextureFormat::Bgra8Unorm,
@@ -274,87 +248,6 @@ impl RenderPlanner {
                 _ => {}
             }
         }
-
-        let working_space = prepared.scene.working_color_space;
-        let output_space = crate::dsl::screen_color_space(&prepared.scene)?;
-        let screen_output_texture = if presentation_mode == ShaderSpacePresentationMode::UiHdrNative
-            && working_space != output_space
-        {
-            let name: ResourceName =
-                format!("{}.present.screen.linear", target_texture_name.as_str()).into();
-            textures.push(TextureDecl {
-                name: name.clone(),
-                size: [tgt_w_u, tgt_h_u],
-                format: TextureFormat::Rgba16Float,
-                sample_count: 1,
-                needs_sampling: false,
-            });
-            Some(name)
-        } else {
-            None
-        };
-        let is_hdr_native = presentation_mode == ShaderSpacePresentationMode::UiHdrNative;
-        let hdr_gamma_texture = if enable_display_encode
-            && is_hdr_native
-            && target_format == TextureFormat::Rgba16Float
-        {
-            let name: ResourceName = format!(
-                "{}{}",
-                target_texture_name.as_str(),
-                UI_PRESENT_HDR_GAMMA_SUFFIX
-            )
-            .into();
-            textures.push(TextureDecl {
-                name: name.clone(),
-                size: [tgt_w_u, tgt_h_u],
-                format: TextureFormat::Rgba16Float,
-                sample_count: 1,
-                needs_sampling: false,
-            });
-            Some(name)
-        } else {
-            None
-        };
-
-        let sdr_srgb_texture = if enable_display_encode {
-            let needs_sdr = if is_hdr_native {
-                matches!(
-                    target_format,
-                    TextureFormat::Rgba8Unorm
-                        | TextureFormat::Bgra8Unorm
-                        | TextureFormat::Rgba16Float
-                )
-            } else {
-                matches!(
-                    target_format,
-                    TextureFormat::Rgba8UnormSrgb
-                        | TextureFormat::Bgra8UnormSrgb
-                        | TextureFormat::Rgba8Unorm
-                        | TextureFormat::Bgra8Unorm
-                        | TextureFormat::Rgba16Float
-                )
-            };
-            if needs_sdr {
-                let name: ResourceName = format!(
-                    "{}{}",
-                    target_texture_name.as_str(),
-                    UI_PRESENT_SDR_SRGB_SUFFIX
-                )
-                .into();
-                textures.push(TextureDecl {
-                    name: name.clone(),
-                    size: [tgt_w_u, tgt_h_u],
-                    format: TextureFormat::Rgba8Unorm,
-                    sample_count: 1,
-                    needs_sampling: false,
-                });
-                Some(name)
-            } else {
-                None
-            }
-        } else {
-            None
-        };
 
         let pass_nodes_in_order =
             compute_pass_render_order(&prepared.scene, nodes_by_id, composite_layers_in_order)?;
@@ -552,6 +445,114 @@ impl RenderPlanner {
             }
         }
 
+        let output = super::resource_naming::resolve_sampled_source(
+            &prepared.scene, nodes_by_id, ids, &pass_output_registry,
+            &prepared.output, asset_store,
+        )?;
+        plan_image_textures(
+            &prepared, asset_store, &render_pass_specs, Some(&output.binding),
+            &mut image_textures, &mut textures, &mut geometry_buffers,
+            &mut image_prepasses, &mut prepass_texture_samples,
+        )?;
+        let output_texture_name = output.texture;
+        let target_texture_name = output_texture_name.clone();
+        let resolution = output.resolution;
+        let [tgt_w_u, tgt_h_u] = resolution;
+        let tgt_w = tgt_w_u as f32;
+        let tgt_h = tgt_h_u as f32;
+        let target_format = textures.iter().find(|texture| texture.name == target_texture_name)
+            .map(|texture| texture.format)
+            .or_else(|| image_textures.iter().find(|texture| texture.name == target_texture_name)
+                .map(|texture| match texture.image.color() {
+                    image::ColorType::Rgba32F => TextureFormat::Rgba32Float,
+                    _ if texture.srgb => TextureFormat::Rgba8UnormSrgb,
+                    _ => TextureFormat::Rgba8Unorm,
+                }))
+            .unwrap_or(output.format);
+
+        let working_space = prepared.scene.working_color_space;
+        let output_space = crate::dsl::screen_color_space(&prepared.scene)?;
+        let screen_output_texture = if presentation_mode == ShaderSpacePresentationMode::UiHdrNative
+            && working_space != output_space
+        {
+            let name: ResourceName =
+                format!("{}.present.screen.linear", target_texture_name.as_str()).into();
+            textures.push(TextureDecl {
+                name: name.clone(),
+                size: [tgt_w_u, tgt_h_u],
+                format: TextureFormat::Rgba16Float,
+                sample_count: 1,
+                needs_sampling: false,
+            });
+            Some(name)
+        } else {
+            None
+        };
+        let is_hdr_native = presentation_mode == ShaderSpacePresentationMode::UiHdrNative;
+        let hdr_gamma_texture = if enable_display_encode
+            && is_hdr_native
+            && matches!(target_format, TextureFormat::Rgba16Float | TextureFormat::Rgba32Float)
+        {
+            let name: ResourceName = format!(
+                "{}{}",
+                target_texture_name.as_str(),
+                UI_PRESENT_HDR_GAMMA_SUFFIX
+            )
+            .into();
+            textures.push(TextureDecl {
+                name: name.clone(),
+                size: [tgt_w_u, tgt_h_u],
+                format: TextureFormat::Rgba16Float,
+                sample_count: 1,
+                needs_sampling: false,
+            });
+            Some(name)
+        } else {
+            None
+        };
+
+        let sdr_srgb_texture = if enable_display_encode {
+            let needs_sdr = if is_hdr_native {
+                matches!(
+                    target_format,
+                    TextureFormat::Rgba8Unorm
+                        | TextureFormat::Bgra8Unorm
+                        | TextureFormat::Rgba16Float
+                        | TextureFormat::Rgba32Float
+                )
+            } else {
+                matches!(
+                    target_format,
+                    TextureFormat::Rgba8UnormSrgb
+                        | TextureFormat::Bgra8UnormSrgb
+                        | TextureFormat::Rgba8Unorm
+                        | TextureFormat::Bgra8Unorm
+                        | TextureFormat::Rgba16Float
+                        | TextureFormat::Rgba32Float
+                )
+            };
+            if needs_sdr {
+                let name: ResourceName = format!(
+                    "{}{}",
+                    target_texture_name.as_str(),
+                    UI_PRESENT_SDR_SRGB_SUFFIX
+                )
+                .into();
+                textures.push(TextureDecl {
+                    name: name.clone(),
+                    size: [tgt_w_u, tgt_h_u],
+                    format: TextureFormat::Rgba8Unorm,
+                    sample_count: 1,
+                    needs_sampling: false,
+                });
+                Some(name)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         let mut sdr_encode_pass_name: Option<ResourceName> = None;
         let encode_passes: Vec<(&ResourceName, &str, String)> = [
             screen_output_texture.as_ref().map(|tex| {
@@ -653,16 +654,6 @@ impl RenderPlanner {
                 .cloned()
                 .collect();
         }
-        plan_image_textures(
-            &prepared,
-            asset_store,
-            &render_pass_specs,
-            &mut image_textures,
-            &mut textures,
-            &mut geometry_buffers,
-            &mut image_prepasses,
-            &mut prepass_texture_samples,
-        )?;
         let pass_debug_sources =
             collect_pass_debug_sources(&render_pass_specs, &image_prepasses, &depth_resolve_passes);
 
@@ -835,6 +826,7 @@ fn plan_image_textures(
     prepared: &PreparedScene,
     asset_store: Option<&AssetStore>,
     render_pass_specs: &[RenderPassSpec],
+    output_binding: Option<&PassTextureBinding>,
     image_textures: &mut Vec<ImageTextureSpec>,
     textures: &mut Vec<TextureDecl>,
     geometry_buffers: &mut Vec<(ResourceName, Arc<[u8]>)>,
@@ -844,169 +836,170 @@ fn plan_image_textures(
     let rel_base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let mut seen_image_nodes: HashSet<String> = HashSet::new();
 
-    let specs_snapshot = render_pass_specs.to_vec();
-    for pass in &specs_snapshot {
-        for binding in &pass.texture_bindings {
-            let Some(node_id) = binding.image_node_id.as_ref() else {
-                continue;
-            };
-            if !seen_image_nodes.insert(node_id.clone()) {
-                continue;
-            }
+    for binding in render_pass_specs
+        .iter()
+        .flat_map(|pass| &pass.texture_bindings)
+        .chain(output_binding)
+    {
+        let Some(node_id) = binding.image_node_id.as_ref() else {
+            continue;
+        };
+        if !seen_image_nodes.insert(node_id.clone()) {
+            continue;
+        }
 
-            let node = find_node(&prepared.nodes_by_id, node_id)?;
-            if node.node_type != "ImageTexture" && node.node_type != "Matcap" {
-                bail!(
-                    "expected ImageTexture node for {node_id}, got {}",
-                    node.node_type
-                );
-            }
+        let node = find_node(&prepared.nodes_by_id, node_id)?;
+        if node.node_type != "ImageTexture" && node.node_type != "Matcap" {
+            bail!(
+                "expected ImageTexture node for {node_id}, got {}",
+                node.node_type
+            );
+        }
 
-            let asset_id = node
-                .params
-                .get("assetId")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.trim().is_empty());
-            let encoder_space = node
-                .params
-                .get("encoderSpace")
-                .and_then(|v| v.as_str())
-                .unwrap_or("srgb")
-                .trim()
-                .to_ascii_lowercase();
-            let decode_srgb_transfer = match encoder_space.as_str() {
-                "srgb" | "display-p3" => true,
-                "linear" => false,
-                other => bail!("unsupported ImageTexture.encoderSpace: {other}"),
-            };
-            let is_display_p3 = encoder_space == "display-p3";
-            let working_space = prepared.scene.working_color_space;
-            let needs_primary_conversion = is_display_p3 != (working_space == crate::color::WorkingColorSpace::DisplayP3);
+        let asset_id = node
+            .params
+            .get("assetId")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.trim().is_empty());
+        let encoder_space = node
+            .params
+            .get("encoderSpace")
+            .and_then(|v| v.as_str())
+            .unwrap_or("srgb")
+            .trim()
+            .to_ascii_lowercase();
+        let decode_srgb_transfer = match encoder_space.as_str() {
+            "srgb" | "display-p3" => true,
+            "linear" => false,
+            other => bail!("unsupported ImageTexture.encoderSpace: {other}"),
+        };
+        let is_display_p3 = encoder_space == "display-p3";
+        let working_space = prepared.scene.working_color_space;
+        let needs_primary_conversion = is_display_p3 != (working_space == crate::color::WorkingColorSpace::DisplayP3);
 
-            let image = if let Some(asset_id) = asset_id {
-                if let Some(store) = asset_store {
-                    match store.load_image(asset_id)? {
-                        Some(image) => Arc::new(image),
-                        None => bail!(
-                            "ImageTexture node '{node_id}': asset '{asset_id}' not found in asset store"
-                        ),
-                    }
-                } else {
-                    bail!(
-                        "ImageTexture node '{node_id}': has assetId '{asset_id}' but no asset store provided"
-                    )
-                }
-            } else {
-                let data_url = node
-                    .params
-                    .get("dataUrl")
-                    .and_then(|v| v.as_str())
-                    .or_else(|| node.params.get("data_url").and_then(|v| v.as_str()));
-                match data_url {
-                    Some(data_url) if !data_url.trim().is_empty() => {
-                        load_image_from_data_url_checked(data_url, node_id)?
-                    }
-                    _ => {
-                        let path = node.params.get("path").and_then(|v| v.as_str());
-                        load_image_from_path(&rel_base, path, node_id)?
-                    }
-                }
-            };
-
-            let image = normalize_image_channels(image)?;
-            let alpha_mode = node
-                .params
-                .get("alphaMode")
-                .and_then(|v| v.as_str())
-                .unwrap_or("straight")
-                .trim()
-                .to_ascii_lowercase();
-            let needs_premultiply = match alpha_mode.as_str() {
-                "straight" => true,
-                "premultiplied" => false,
-                other => bail!("unsupported ImageTexture.alphaMode: {other}"),
-            };
-
-            let img_w = image.width();
-            let img_h = image.height();
-            let name = prepared
-                .ids
-                .get(node_id)
-                .cloned()
-                .ok_or_else(|| anyhow!("missing name for node: {node_id}"))?;
-
-            if image.color() != image::ColorType::Rgba8 {
-                image_textures.push(ImageTextureSpec {
-                    name,
-                    image: prepare_high_precision_image(
-                        &image, decode_srgb_transfer, is_display_p3, needs_premultiply, working_space,
+        let image = if let Some(asset_id) = asset_id {
+            if let Some(store) = asset_store {
+                match store.load_image(asset_id)? {
+                    Some(image) => Arc::new(image),
+                    None => bail!(
+                        "ImageTexture node '{node_id}': asset '{asset_id}' not found in asset store"
                     ),
-                    usage: TextureUsages::TEXTURE_BINDING
-                        | TextureUsages::COPY_DST
-                        | TextureUsages::COPY_SRC,
-                    // The f32 buffer already contains linear working-space values.
-                    srgb: false,
-                });
-            } else if needs_premultiply || needs_primary_conversion {
-                let src_name: ResourceName = format!("sys.image.{node_id}.src").into();
-                image_textures.push(ImageTextureSpec {
-                    name: src_name.clone(),
-                    image,
-                    usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-                    srgb: decode_srgb_transfer,
-                });
-
-                textures.push(TextureDecl {
-                    name: name.clone(),
-                    size: [img_w, img_h],
-                    // Color conversion and alpha multiplication create values between
-                    // source codes. Do not quantize them back to UNORM8 or float16.
-                    format: TextureFormat::Rgba32Float,
-                    sample_count: 1,
-                    needs_sampling: false,
-                });
-
-                let w = img_w as f32;
-                let h = img_h as f32;
-                let role = if needs_primary_conversion { "color" } else { "premultiply" };
-                let geo: ResourceName = format!("sys.image.{node_id}.{role}.geo").into();
-                geometry_buffers.push((geo.clone(), make_fullscreen_geometry(w, h)));
-
-                let params_buffer: ResourceName =
-                    format!("params.sys.image.{node_id}.{role}").into();
-                let params = make_params(
-                    [w, h],
-                    [w, h],
-                    [w * 0.5, h * 0.5],
-                    legacy_projection_camera_matrix([w, h]),
-                    [0.0, 0.0, 0.0, 0.0],
-                );
-                let tex_var = MaterialCompileContext::tex_var_name(src_name.as_str());
-                let samp_var = MaterialCompileContext::sampler_var_name(src_name.as_str());
-                let shader_wgsl = build_image_prepare_wgsl(
-                    &tex_var, &samp_var, is_display_p3, needs_premultiply, working_space,
-                );
-                let pass_name: ResourceName =
-                    format!("sys.image.{node_id}.{role}.pass").into();
-
-                image_prepasses.push(ImagePrepass {
-                    pass_name: pass_name.clone(),
-                    geometry_buffer: geo,
-                    params_buffer,
-                    params,
-                    src_texture: src_name.clone(),
-                    dst_texture: name,
-                    shader_wgsl,
-                });
-                prepass_texture_samples.push((pass_name.as_str().to_string(), src_name));
+                }
             } else {
-                image_textures.push(ImageTextureSpec {
-                    name,
-                    image,
-                    usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-                    srgb: decode_srgb_transfer,
-                });
+                bail!(
+                    "ImageTexture node '{node_id}': has assetId '{asset_id}' but no asset store provided"
+                )
             }
+        } else {
+            let data_url = node
+                .params
+                .get("dataUrl")
+                .and_then(|v| v.as_str())
+                .or_else(|| node.params.get("data_url").and_then(|v| v.as_str()));
+            match data_url {
+                Some(data_url) if !data_url.trim().is_empty() => {
+                    load_image_from_data_url_checked(data_url, node_id)?
+                }
+                _ => {
+                    let path = node.params.get("path").and_then(|v| v.as_str());
+                    load_image_from_path(&rel_base, path, node_id)?
+                }
+            }
+        };
+
+        let image = normalize_image_channels(image)?;
+        let alpha_mode = node
+            .params
+            .get("alphaMode")
+            .and_then(|v| v.as_str())
+            .unwrap_or("straight")
+            .trim()
+            .to_ascii_lowercase();
+        let needs_premultiply = match alpha_mode.as_str() {
+            "straight" => true,
+            "premultiplied" => false,
+            other => bail!("unsupported ImageTexture.alphaMode: {other}"),
+        };
+
+        let img_w = image.width();
+        let img_h = image.height();
+        let name = prepared
+            .ids
+            .get(node_id)
+            .cloned()
+            .ok_or_else(|| anyhow!("missing name for node: {node_id}"))?;
+
+        if image.color() != image::ColorType::Rgba8 {
+            image_textures.push(ImageTextureSpec {
+                name,
+                image: prepare_high_precision_image(
+                    &image, decode_srgb_transfer, is_display_p3, needs_premultiply, working_space,
+                ),
+                usage: TextureUsages::TEXTURE_BINDING
+                    | TextureUsages::COPY_DST
+                    | TextureUsages::COPY_SRC,
+                // The f32 buffer already contains linear working-space values.
+                srgb: false,
+            });
+        } else if needs_premultiply || needs_primary_conversion {
+            let src_name: ResourceName = format!("sys.image.{node_id}.src").into();
+            image_textures.push(ImageTextureSpec {
+                name: src_name.clone(),
+                image,
+                usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+                srgb: decode_srgb_transfer,
+            });
+
+            textures.push(TextureDecl {
+                name: name.clone(),
+                size: [img_w, img_h],
+                // Color conversion and alpha multiplication create values between
+                // source codes. Do not quantize them back to UNORM8 or float16.
+                format: TextureFormat::Rgba32Float,
+                sample_count: 1,
+                needs_sampling: false,
+            });
+
+            let w = img_w as f32;
+            let h = img_h as f32;
+            let role = if needs_primary_conversion { "color" } else { "premultiply" };
+            let geo: ResourceName = format!("sys.image.{node_id}.{role}.geo").into();
+            geometry_buffers.push((geo.clone(), make_fullscreen_geometry(w, h)));
+
+            let params_buffer: ResourceName =
+                format!("params.sys.image.{node_id}.{role}").into();
+            let params = make_params(
+                [w, h],
+                [w, h],
+                [w * 0.5, h * 0.5],
+                legacy_projection_camera_matrix([w, h]),
+                [0.0, 0.0, 0.0, 0.0],
+            );
+            let tex_var = MaterialCompileContext::tex_var_name(src_name.as_str());
+            let samp_var = MaterialCompileContext::sampler_var_name(src_name.as_str());
+            let shader_wgsl = build_image_prepare_wgsl(
+                &tex_var, &samp_var, is_display_p3, needs_premultiply, working_space,
+            );
+            let pass_name: ResourceName =
+                format!("sys.image.{node_id}.{role}.pass").into();
+
+            image_prepasses.push(ImagePrepass {
+                pass_name: pass_name.clone(),
+                geometry_buffer: geo,
+                params_buffer,
+                params,
+                src_texture: src_name.clone(),
+                dst_texture: name,
+                shader_wgsl,
+            });
+            prepass_texture_samples.push((pass_name.as_str().to_string(), src_name));
+        } else {
+            image_textures.push(ImageTextureSpec {
+                name,
+                image,
+                usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST | TextureUsages::COPY_SRC,
+                srgb: decode_srgb_transfer,
+            });
         }
     }
 
@@ -1208,8 +1201,8 @@ mod tests {
                 },
                 {
                     "id": "present",
-                    "from": { "nodeId": "composite", "portId": "pass" },
-                    "to": { "nodeId": "screen", "portId": "pass" }
+                    "from": { "nodeId": "composite", "portId": "texture" },
+                    "to": { "nodeId": "screen", "portId": "texture" }
                 }
             ],
             "outputs": null,
@@ -1505,9 +1498,9 @@ mod tests {
             .connections
             .iter_mut()
             .find(|connection| {
-                connection.from.node_id == first_id && connection.to.port_id == "pass"
+                connection.from.node_id == first_id && connection.to.port_id == "image"
             })
-            .expect("fixture should connect Downsample to Composite");
+            .expect("fixture should connect Downsample to ImagePass");
         composite_connection.from.node_id = final_id.clone();
 
         scene.connections.push(crate::dsl::Connection {
@@ -1812,14 +1805,14 @@ mod tests {
     export_output_texture: "node_5.present.sdr.srgb",
     export_encode_pass_name: None,
     textures: [
-        "node_15:Rgba16Float:1080x2400:samples=1",
+        "TextureRender.node_11.pass.target:Rgba8Unorm:1080x2400:samples=1",
+        "node_15:Rgba32Float:1080x2400:samples=1",
         "node_5.present.sdr.srgb:Rgba8Unorm:1080x2400:samples=1",
         "node_5:Rgba8UnormSrgb:1080x2400:samples=1",
         "sys.blur.GuassianBlurPass_17.h:Rgba8Unorm:1080x2400:samples=1",
         "sys.blur.GuassianBlurPass_17.v:Rgba8Unorm:1080x2400:samples=1",
         "sys.blur.GuassianBlurPass_18.h:Rgba8Unorm:1080x2400:samples=1",
         "sys.blur.GuassianBlurPass_18.v:Rgba8Unorm:1080x2400:samples=1",
-        "sys.pass.node_11.out:Rgba8Unorm:1080x2400:samples=1",
     ],
     image_textures: [
         "sys.image.node_15.src",
@@ -1833,27 +1826,28 @@ mod tests {
         "sys.blur.GuassianBlurPass_17.v.ds1.pass",
         "sys.blur.GuassianBlurPass_18.h.ds1.pass",
         "sys.blur.GuassianBlurPass_18.v.ds1.pass",
-        "sys.coercion.fullscreen.pass.edge_26.pass",
+        "image.pass.edge26.pass",
         "node_2.pass",
         "node_5.present.sdr.srgb.pass",
     ],
     load_ops: [
-        "node_11.pass->sys.pass.node_11.out/Clear",
+        "node_11.pass->TextureRender.node_11.pass.target/Clear",
         "sys.blur.GuassianBlurPass_17.h.ds1.pass->sys.blur.GuassianBlurPass_17.h/Clear",
         "sys.blur.GuassianBlurPass_17.v.ds1.pass->sys.blur.GuassianBlurPass_17.v/Clear",
         "sys.blur.GuassianBlurPass_18.h.ds1.pass->sys.blur.GuassianBlurPass_18.h/Clear",
         "sys.blur.GuassianBlurPass_18.v.ds1.pass->sys.blur.GuassianBlurPass_18.v/Clear",
-        "sys.coercion.fullscreen.pass.edge_26.pass->node_5/Clear",
+        "image.pass.edge26.pass->node_5/Clear",
         "node_2.pass->node_5/Load",
         "node_5.present.sdr.srgb.pass->node_5.present.sdr.srgb/Clear",
     ],
     graph_bound_passes: [
+        "image.pass.edge26.pass",
         "node_2.pass",
     ],
     pass_outputs: [
-        "node_11:pass->sys.pass.node_11.out:1080x2400:Rgba8Unorm",
+        "TextureDraw.edge_26:pass->node_5:1080x2400:Rgba8UnormSrgb",
+        "node_11:pass->TextureRender.node_11.pass.target:1080x2400:Rgba8Unorm",
         "node_2:pass->node_5:1080x2400:Rgba8UnormSrgb",
-        "sys.coercion.fullscreen.pass.edge_26:pass->node_5:1080x2400:Rgba8UnormSrgb",
     ],
 }"#;
         assert_eq!(summary, expected);
@@ -1861,7 +1855,7 @@ mod tests {
     }
 
     #[test]
-    fn texture_coercion_layers_preserve_composite_draw_order() -> Result<()> {
+    fn explicit_texture_draws_preserve_composite_draw_order() -> Result<()> {
         let (scene, assets) = load_case("blend-blurs-alpha")?;
         let plan = planner_for_mode(ShaderSpacePresentationMode::SceneLinear).plan(
             &scene,
@@ -1886,11 +1880,11 @@ mod tests {
             layers,
             vec![
                 (
-                    "sys.coercion.fullscreen.pass.edge_35.pass".to_string(),
-                    "Clear"
+                    "image.pass.314b27.pass".to_string(),
+                    "Load"
                 ),
                 (
-                    "sys.coercion.fullscreen.pass.edge_40.pass".to_string(),
+                    "image.pass.314b24.pass".to_string(),
                     "Load"
                 ),
             ]
@@ -1922,6 +1916,7 @@ mod tests {
         "RenderTexture_6.present.hdr.gamma:Rgba16Float:1080x2400:samples=1",
         "RenderTexture_6.present.sdr.srgb:Rgba8Unorm:1080x2400:samples=1",
         "RenderTexture_6:Rgba16Float:1080x2400:samples=1",
+        "TextureRender.RenderPass_4.pass.target:Rgba16Float:1080x2400:samples=1",
         "sys.blur.GuassianBlurPass_23.h:Rgba16Float:16x37:samples=1",
         "sys.blur.GuassianBlurPass_23.v:Rgba16Float:16x37:samples=1",
         "sys.blur.GuassianBlurPass_27.h:Rgba16Float:33x75:samples=1",
@@ -1940,8 +1935,8 @@ mod tests {
         "sys.downsample.Downsample_16.out:Rgba16Float:67x150:samples=1",
         "sys.downsample.Downsample_18.out:Rgba16Float:33x75:samples=1",
         "sys.downsample.Downsample_20.out:Rgba16Float:16x37:samples=1",
-        "sys.msaa.sys.pass.RenderPass_4.out.4.color:Rgba16Float:1080x2400:samples=4",
-        "sys.pass.RenderPass_4.out:Rgba16Float:1080x2400:samples=1",
+        "sys.msaa.sys.pass.RenderPass_4.msaa.resolve.4.color:Rgba16Float:1080x2400:samples=4",
+        "sys.pass.RenderPass_4.msaa.resolve:Rgba16Float:1080x2400:samples=1",
         "sys.pass.RenderPass_BloomMerge_29.out:Rgba16Float:67x150:samples=1",
         "sys.pass.RenderPass_BloomMerge_30.out:Rgba16Float:33x75:samples=1",
         "sys.pass.RenderPass_BloomMerge_33.out:Rgba16Float:135x300:samples=1",
@@ -1958,6 +1953,7 @@ mod tests {
     image_prepasses: [],
     pass_order: [
         "rende.rpass4.pass",
+        "sys.pass.RenderPass_4.to.TextureRender.RenderPass_4.pass.compose.pass",
         "sys.downsample.Downsample_10.pass",
         "sys.downsample.Downsample_12.pass",
         "sys.downsample.Downsample_14.pass",
@@ -1990,7 +1986,8 @@ mod tests {
         "sys.coercion.fullscreen.pass.edge_75.pass",
     ],
     load_ops: [
-        "rende.rpass4.pass->sys.msaa.sys.pass.RenderPass_4.out.4.color/Clear",
+        "rende.rpass4.pass->sys.msaa.sys.pass.RenderPass_4.msaa.resolve.4.color/Clear",
+        "sys.pass.RenderPass_4.to.TextureRender.RenderPass_4.pass.compose.pass->TextureRender.RenderPass_4.pass.target/Clear",
         "sys.downsample.Downsample_10.pass->sys.downsample.Downsample_10.out/Clear",
         "sys.downsample.Downsample_12.pass->sys.downsample.Downsample_12.out/Clear",
         "sys.downsample.Downsample_14.pass->sys.downsample.Downsample_14.out/Clear",
@@ -2028,7 +2025,7 @@ mod tests {
         "rende.rpass4.pass",
     ],
     pass_outputs: [
-        "RenderPass_4:pass->sys.pass.RenderPass_4.out:1080x2400:Rgba16Float",
+        "RenderPass_4:pass->sys.pass.RenderPass_4.msaa.resolve:1080x2400:Rgba16Float",
         "RenderPass_BloomMerge_29:pass->sys.pass.RenderPass_BloomMerge_29.out:67x150:Rgba16Float",
         "RenderPass_BloomMerge_30:pass->sys.pass.RenderPass_BloomMerge_30.out:33x75:Rgba16Float",
         "RenderPass_BloomMerge_33:pass->sys.pass.RenderPass_BloomMerge_33.out:135x300:Rgba16Float",
@@ -2071,16 +2068,18 @@ mod tests {
         "sys.image.ImageTexture_9.premultiply.pass",
     ],
     pass_order: [
-        "sys.coercion.fullscreen.pass.edge_7.pass",
+        "image.pass.wedge7.pass",
         "RenderTexture_7.present.sdr.srgb.pass",
     ],
     load_ops: [
-        "sys.coercion.fullscreen.pass.edge_7.pass->RenderTexture_7/Clear",
+        "image.pass.wedge7.pass->RenderTexture_7/Clear",
         "RenderTexture_7.present.sdr.srgb.pass->RenderTexture_7.present.sdr.srgb/Clear",
     ],
-    graph_bound_passes: [],
+    graph_bound_passes: [
+        "image.pass.wedge7.pass",
+    ],
     pass_outputs: [
-        "sys.coercion.fullscreen.pass.edge_7:pass->RenderTexture_7:1080x2400:Rgba8UnormSrgb",
+        "TextureDraw.edge_7:pass->RenderTexture_7:1080x2400:Rgba8UnormSrgb",
     ],
 }"#;
         assert_eq!(summary, expected);
@@ -2186,6 +2185,52 @@ mod tests {
     }
 
     #[test]
+    fn group_draw_and_texture_outputs_keep_independent_invocations() -> Result<()> {
+        let scene: SceneDSL = serde_json::from_value(serde_json::json!({
+            "version": "6.0", "workingColorSpace": "linear-srgb",
+            "metadata": { "name": "group dual domain" },
+            "nodes": [
+                { "id": "group", "type": "GroupInstance", "params": { "groupId": "source" } },
+                { "id": "image", "type": "ImagePass" },
+                { "id": "target", "type": "RenderTexture", "params": { "width": 100, "height": 80, "format": "rgba16float" } },
+                { "id": "composite", "type": "Composite", "inputs": [{ "id": "dynamic_1", "type": "pass" }] },
+                { "id": "screen", "type": "Screen", "params": { "outputColorSpace": "srgb" } }
+            ],
+            "connections": [
+                { "id": "draw", "from": { "nodeId": "group", "portId": "pass" }, "to": { "nodeId": "composite", "portId": "pass" } },
+                { "id": "sample", "from": { "nodeId": "group", "portId": "texture" }, "to": { "nodeId": "image", "portId": "image" } },
+                { "id": "image", "from": { "nodeId": "image", "portId": "pass" }, "to": { "nodeId": "composite", "portId": "dynamic_1" } },
+                { "id": "target", "from": { "nodeId": "target", "portId": "texture" }, "to": { "nodeId": "composite", "portId": "target" } },
+                { "id": "screen", "from": { "nodeId": "composite", "portId": "texture" }, "to": { "nodeId": "screen", "portId": "texture" } }
+            ],
+            "groups": [{
+                "id": "source", "name": "Source", "inputs": [],
+                "outputs": [{ "id": "pass", "type": "pass" }, { "id": "texture", "type": "texture" }],
+                "nodes": [
+                    { "id": "geometry", "type": "Rect2DGeometry", "params": { "size": [20, 10], "position": [50, 40] } },
+                    { "id": "color", "type": "ColorInput", "params": { "value": [1, 0, 0, 1] } },
+                    { "id": "draw", "type": "RenderPass" }
+                ],
+                "connections": [
+                    { "id": "geometry", "from": { "nodeId": "geometry", "portId": "geometry" }, "to": { "nodeId": "draw", "portId": "geometry" } },
+                    { "id": "color", "from": { "nodeId": "color", "portId": "color" }, "to": { "nodeId": "draw", "portId": "material" } }
+                ],
+                "inputBindings": [],
+                "outputBindings": [
+                    { "groupPortId": "pass", "from": { "nodeId": "draw", "portId": "pass" } },
+                    { "groupPortId": "texture", "from": { "nodeId": "draw", "portId": "texture" } }
+                ]
+            }]
+        }))?;
+        let plan = planner_for_mode(ShaderSpacePresentationMode::SceneLinear).plan(&scene, None, None)?;
+        let outputs = &plan.resources.pass_output_registry;
+        assert_eq!(outputs.get_for_port("group/draw", "pass").unwrap().resolution, [100, 80]);
+        assert_eq!(outputs.get_for_port("sys.route.texture.group/draw", "texture").unwrap().resolution, [20, 10]);
+        assert_eq!(plan.resolution, [100, 80]);
+        Ok(())
+    }
+
+    #[test]
     fn nested_composite_layers_write_to_their_own_render_texture() -> Result<()> {
         let scene: SceneDSL = serde_json::from_value(serde_json::json!({
             "version": "6.0", "workingColorSpace": "linear-srgb",
@@ -2217,6 +2262,7 @@ mod tests {
                 },
                 { "id": "child_pass", "type": "RenderPass" },
                 { "id": "child_comp", "type": "Composite" },
+                { "id": "child_draw", "type": "ImagePass", "params": { "loadOp": "none" } },
                 { "id": "child_texture", "type": "TextureSampler" },
                 {
                     "id": "child_sample",
@@ -2265,6 +2311,11 @@ mod tests {
                 {
                     "id": "child_layer",
                     "from": { "nodeId": "child_pass", "portId": "texture" },
+                    "to": { "nodeId": "child_draw", "portId": "image" }
+                },
+                {
+                    "id": "child_draw_layer",
+                    "from": { "nodeId": "child_draw", "portId": "pass" },
                     "to": { "nodeId": "child_comp", "portId": "pass" }
                 },
                 {
@@ -2274,7 +2325,7 @@ mod tests {
                 },
                 {
                     "id": "sample_child",
-                    "from": { "nodeId": "child_comp", "portId": "pass" },
+                    "from": { "nodeId": "child_comp", "portId": "texture" },
                     "to": { "nodeId": "child_texture", "portId": "texture" }
                 },
                 {
@@ -2314,8 +2365,8 @@ mod tests {
                 },
                 {
                     "id": "screen_output",
-                    "from": { "nodeId": "root_comp", "portId": "pass" },
-                    "to": { "nodeId": "screen", "portId": "pass" }
+                    "from": { "nodeId": "root_comp", "portId": "texture" },
+                    "to": { "nodeId": "screen", "portId": "texture" }
                 }
             ],
             "outputs": null,
@@ -2339,8 +2390,8 @@ mod tests {
         let child_fullscreen = plan
             .resources
             .pass_output_registry
-            .get_for_port("sys.coercion.fullscreen.pass.child_layer", "pass")
-            .expect("texture-to-pass fullscreen invocation");
+            .get_for_port("child_draw", "pass")
+            .expect("explicit ImagePass invocation");
         assert_eq!(child_fullscreen.texture_name.as_str(), "child_rt");
         assert_eq!(child_fullscreen.resolution, [100, 50]);
 

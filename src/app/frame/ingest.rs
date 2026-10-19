@@ -124,7 +124,7 @@ fn clipboard_paste_input(app: &mut App, ctx: &egui::Context) -> ClipboardPasteIn
         });
     let scope_enabled = canvas_clipboard_paste_scope_enabled(
         window_focused,
-        ctx.text_edit_focused(),
+        app.shell.command_palette.captures_input() || ctx.text_edit_focused(),
         pointer_pos,
         canvas_rect,
         projected_focus,
@@ -163,7 +163,7 @@ fn clipboard_paste_input(app: &mut App, ctx: &egui::Context) -> ClipboardPasteIn
     }
 }
 
-fn handle_clipboard_reference_paste(
+pub(super) fn handle_clipboard_reference_paste(
     app: &mut App,
     ctx: &egui::Context,
     render_state: &egui_wgpu::RenderState,

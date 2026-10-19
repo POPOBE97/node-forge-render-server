@@ -863,58 +863,12 @@ fn draw_badges(
         badge_y += badge_size.y + 6.0;
     }
 
-    draw_profile_text(app, ui, &badge_font, badge_x, badge_y);
+    if app.shell.statistics_visible {
+        crate::app::performance::draw_summary(app, ui, pos2(badge_x, badge_y));
+    }
 
     if ref_tag_anim_t > 0.001 && ref_tag_anim_t < 0.999 {
         ctx.request_repaint();
-    }
-}
-
-fn draw_profile_text(
-    app: &App,
-    ui: &egui::Ui,
-    badge_font: &egui::FontId,
-    badge_x: f32,
-    badge_y: f32,
-) {
-    let Some(profile) = app.runtime.latest_render_profile.as_ref() else {
-        return;
-    };
-    if profile.passes.is_empty() {
-        return;
-    }
-
-    let mut lines = vec![
-        format!("Frame CPU encode {:.2} ms", profile.frame_cpu_encode_ms),
-        format!("Frame wall {:.2} ms", profile.frame_wall_ms),
-    ];
-    if let Some(wait_ms) = profile.queue_wait_ms {
-        lines.push(format!("Queue wait {:.2} ms", wait_ms));
-    }
-
-    let mut passes = profile.passes.iter().collect::<Vec<_>>();
-    passes.sort_by(|a, b| {
-        b.cpu_encode_ms
-            .total_cmp(&a.cpu_encode_ms)
-            .then_with(|| a.pass_name.cmp(&b.pass_name))
-    });
-    for pass in passes.into_iter().take(3) {
-        let pass_name = compact_pass_name(pass.pass_name.as_str(), 34);
-        lines.push(format!(
-            "Pass {} {} CPU encode {:.2} ms",
-            pass.order_index + 1,
-            pass_name,
-            pass.cpu_encode_ms,
-        ));
-    }
-
-    let color = Color32::from_rgb(210, 224, 255);
-    let mut y = badge_y;
-    for line in lines {
-        let galley = ui.painter().layout_no_wrap(line, badge_font.clone(), color);
-        ui.painter()
-            .galley(pos2(badge_x, y), galley.clone(), Color32::PLACEHOLDER);
-        y += galley.size().y + 2.0;
     }
 }
 
@@ -1037,7 +991,8 @@ pub fn show_canvas(
     let mut frame_result = CanvasFrameResult::default();
     let current_display_metrics = display_metrics::current_display_metrics(ctx);
     let animation_input_active = input_scope::animation_canvas_input_active(app);
-    let normal_canvas_interactions_enabled = !animation_input_active;
+    let palette_active = app.shell.command_palette.captures_input();
+    let normal_canvas_interactions_enabled = !animation_input_active && !palette_active;
     let debug_shortcuts_enabled = input_scope::debug_shortcuts_enabled(app, ctx);
 
     if debug_shortcuts_enabled
@@ -1268,7 +1223,7 @@ pub fn show_canvas(
     if response.clicked() {
         app.canvas.interactions.canvas_event_focus_latched = true;
     }
-    if animation_input_active {
+    if animation_input_active || palette_active {
         apply_action(
             &mut frame_result,
             app,
@@ -1623,7 +1578,8 @@ pub fn show_canvas(
         let design_suppresses_sampling = design_claims.suppress_pixel_sampling
             || design_claims.primary_pointer
             || design_claims.suppress_reference_drag
-            || animation_input_active;
+            || animation_input_active
+            || palette_active;
         if !design_suppresses_sampling {
             maybe_sample_clicked_pixel(
                 app,

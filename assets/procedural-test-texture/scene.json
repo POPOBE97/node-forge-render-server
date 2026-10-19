@@ -1,0 +1,4031 @@
+{
+  "version": "6.0",
+  "workingColorSpace": "linear-display-p3",
+  "metadata": {
+    "name": "Procedural Test Texture (generated from procedural-rendering-test.nforge)"
+  },
+  "nodes": [
+    {
+      "id": "chart.output",
+      "type": "Composite",
+      "label": "Chart + TextPass layers · working RGB",
+      "params": {
+        "alpha": 1,
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "src_factor": "one"
+      },
+      "inputs": [
+        {
+          "id": "dynamic_text_0",
+          "name": "resolution",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_text_1",
+          "name": "team",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_text_2",
+          "name": "title",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_text_3",
+          "name": "stroke025",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_text_4",
+          "name": "stroke05",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_text_5",
+          "name": "stroke1",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_text_6",
+          "name": "stroke2",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_text_7",
+          "name": "stroke4",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_text_8",
+          "name": "stroke8",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_text_9",
+          "name": "stroke16",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_text_10",
+          "name": "sample32",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_text_11",
+          "name": "sample28",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_text_12",
+          "name": "sample23",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_text_13",
+          "name": "sample18",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_text_14",
+          "name": "sample14",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_text_15",
+          "name": "sample9",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_text_16",
+          "name": "email",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_text_17",
+          "name": "date",
+          "type": "pass"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_text_0",
+          "label": "resolution",
+          "variableName": "resolution",
+          "type": "pass"
+        },
+        {
+          "portId": "dynamic_text_1",
+          "label": "team",
+          "variableName": "team",
+          "type": "pass"
+        },
+        {
+          "portId": "dynamic_text_2",
+          "label": "title",
+          "variableName": "title",
+          "type": "pass"
+        },
+        {
+          "portId": "dynamic_text_3",
+          "label": "stroke025",
+          "variableName": "stroke025",
+          "type": "pass"
+        },
+        {
+          "portId": "dynamic_text_4",
+          "label": "stroke05",
+          "variableName": "stroke05",
+          "type": "pass"
+        },
+        {
+          "portId": "dynamic_text_5",
+          "label": "stroke1",
+          "variableName": "stroke1",
+          "type": "pass"
+        },
+        {
+          "portId": "dynamic_text_6",
+          "label": "stroke2",
+          "variableName": "stroke2",
+          "type": "pass"
+        },
+        {
+          "portId": "dynamic_text_7",
+          "label": "stroke4",
+          "variableName": "stroke4",
+          "type": "pass"
+        },
+        {
+          "portId": "dynamic_text_8",
+          "label": "stroke8",
+          "variableName": "stroke8",
+          "type": "pass"
+        },
+        {
+          "portId": "dynamic_text_9",
+          "label": "stroke16",
+          "variableName": "stroke16",
+          "type": "pass"
+        },
+        {
+          "portId": "dynamic_text_10",
+          "label": "sample32",
+          "variableName": "sample32",
+          "type": "pass"
+        },
+        {
+          "portId": "dynamic_text_11",
+          "label": "sample28",
+          "variableName": "sample28",
+          "type": "pass"
+        },
+        {
+          "portId": "dynamic_text_12",
+          "label": "sample23",
+          "variableName": "sample23",
+          "type": "pass"
+        },
+        {
+          "portId": "dynamic_text_13",
+          "label": "sample18",
+          "variableName": "sample18",
+          "type": "pass"
+        },
+        {
+          "portId": "dynamic_text_14",
+          "label": "sample14",
+          "variableName": "sample14",
+          "type": "pass"
+        },
+        {
+          "portId": "dynamic_text_15",
+          "label": "sample9",
+          "variableName": "sample9",
+          "type": "pass"
+        },
+        {
+          "portId": "dynamic_text_16",
+          "label": "email",
+          "variableName": "email",
+          "type": "pass"
+        },
+        {
+          "portId": "dynamic_text_17",
+          "label": "date",
+          "variableName": "date",
+          "type": "pass"
+        }
+      ]
+    },
+    {
+      "id": "chart.target",
+      "label": "Chart · linear P3 / HDR · FP16",
+      "params": {
+        "format": "rgba16float",
+        "height": 2800,
+        "width": 1260
+      },
+      "type": "RenderTexture"
+    },
+    {
+      "id": "chart.width",
+      "label": "width · physical pixels",
+      "params": {
+        "value": 1260
+      },
+      "type": "IntInput"
+    },
+    {
+      "id": "chart.height",
+      "label": "height · physical pixels",
+      "params": {
+        "value": 2800
+      },
+      "type": "IntInput"
+    },
+    {
+      "id": "chart.show_grid",
+      "label": "Grid · 2px",
+      "params": {
+        "value": true
+      },
+      "type": "BoolInput"
+    },
+    {
+      "id": "chart.show_patterns",
+      "label": "Patterns / curves / blur",
+      "params": {
+        "value": true
+      },
+      "type": "BoolInput"
+    },
+    {
+      "id": "chart.show_colors",
+      "type": "BoolInput",
+      "label": "Working RGB bars / ramps",
+      "params": {
+        "value": true
+      }
+    },
+    {
+      "id": "chart.patterns",
+      "inputBindings": [
+        {
+          "label": "show_colors",
+          "portId": "in_0",
+          "type": "bool",
+          "variableName": "show_colors"
+        },
+        {
+          "label": "show_grid",
+          "portId": "in_1",
+          "type": "bool",
+          "variableName": "show_grid"
+        },
+        {
+          "label": "show_patterns",
+          "portId": "in_2",
+          "type": "bool",
+          "variableName": "show_patterns"
+        }
+      ],
+      "inputs": [
+        {
+          "id": "in_0",
+          "name": "show_colors",
+          "type": "bool"
+        },
+        {
+          "id": "in_1",
+          "name": "show_grid",
+          "type": "bool"
+        },
+        {
+          "id": "in_2",
+          "name": "show_patterns",
+          "type": "bool"
+        }
+      ],
+      "label": "Procedural chart · native pixels",
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Pass",
+          "type": "pass"
+        }
+      ],
+      "params": {
+        "groupId": "procedural-chart"
+      },
+      "type": "GroupInstance"
+    },
+    {
+      "id": "chart.show_text",
+      "label": "Native text · on/off",
+      "params": {
+        "value": true
+      },
+      "type": "BoolInput"
+    },
+    {
+      "id": "chart.text",
+      "type": "GroupInstance",
+      "label": "Title",
+      "params": {
+        "groupId": "chart-text"
+      },
+      "inputs": [
+        {
+          "id": "in_0",
+          "name": "Show text",
+          "type": "float"
+        },
+        {
+          "id": "in_2",
+          "name": "Width",
+          "type": "float"
+        },
+        {
+          "id": "in_3",
+          "name": "Height",
+          "type": "float"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "out_2",
+          "name": "Pass (3)",
+          "type": "pass"
+        },
+        {
+          "id": "out_16",
+          "name": "Pass (17)",
+          "type": "pass"
+        },
+        {
+          "id": "out_17",
+          "name": "Pass (18)",
+          "type": "pass"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "in_0",
+          "label": "Show text",
+          "variableName": "Show_text",
+          "type": "float"
+        },
+        {
+          "portId": "in_2",
+          "label": "Width",
+          "variableName": "Width",
+          "type": "float"
+        },
+        {
+          "portId": "in_3",
+          "label": "Height",
+          "variableName": "Height",
+          "type": "float"
+        }
+      ]
+    },
+    {
+      "id": "chart.text.strokes",
+      "inputBindings": [
+        {
+          "label": "Height",
+          "portId": "in_0",
+          "type": "float",
+          "variableName": "Height"
+        },
+        {
+          "label": "Width",
+          "portId": "in_1",
+          "type": "float",
+          "variableName": "Width"
+        },
+        {
+          "label": "Show text",
+          "portId": "in_2",
+          "type": "float",
+          "variableName": "Show_text"
+        }
+      ],
+      "inputs": [
+        {
+          "id": "in_0",
+          "name": "Height",
+          "type": "float"
+        },
+        {
+          "id": "in_1",
+          "name": "Width",
+          "type": "float"
+        },
+        {
+          "id": "in_2",
+          "name": "Show text",
+          "type": "float"
+        }
+      ],
+      "label": "Stroke",
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Pass",
+          "type": "pass"
+        },
+        {
+          "id": "out_1",
+          "name": "Pass (2)",
+          "type": "pass"
+        },
+        {
+          "id": "out_2",
+          "name": "Pass (3)",
+          "type": "pass"
+        },
+        {
+          "id": "out_3",
+          "name": "Pass (4)",
+          "type": "pass"
+        },
+        {
+          "id": "out_4",
+          "name": "Pass (5)",
+          "type": "pass"
+        },
+        {
+          "id": "out_5",
+          "name": "Pass (6)",
+          "type": "pass"
+        },
+        {
+          "id": "out_6",
+          "name": "Pass (7)",
+          "type": "pass"
+        }
+      ],
+      "params": {
+        "groupId": "chart-text-strokes"
+      },
+      "type": "GroupInstance"
+    },
+    {
+      "id": "chart.text.samples",
+      "inputBindings": [
+        {
+          "label": "Show text",
+          "portId": "in_0",
+          "type": "float",
+          "variableName": "Show_text"
+        },
+        {
+          "label": "Height",
+          "portId": "in_2",
+          "type": "float",
+          "variableName": "Height"
+        },
+        {
+          "label": "Width",
+          "portId": "in_3",
+          "type": "float",
+          "variableName": "Width"
+        }
+      ],
+      "inputs": [
+        {
+          "id": "in_0",
+          "name": "Show text",
+          "type": "float"
+        },
+        {
+          "id": "in_2",
+          "name": "Height",
+          "type": "float"
+        },
+        {
+          "id": "in_3",
+          "name": "Width",
+          "type": "float"
+        }
+      ],
+      "label": "Samples",
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Pass",
+          "type": "pass"
+        },
+        {
+          "id": "out_1",
+          "name": "Pass (2)",
+          "type": "pass"
+        },
+        {
+          "id": "out_2",
+          "name": "Pass (3)",
+          "type": "pass"
+        },
+        {
+          "id": "out_3",
+          "name": "Pass (4)",
+          "type": "pass"
+        },
+        {
+          "id": "out_4",
+          "name": "Pass (5)",
+          "type": "pass"
+        },
+        {
+          "id": "out_5",
+          "name": "Pass (6)",
+          "type": "pass"
+        },
+        {
+          "id": "out_6",
+          "name": "Pass (7)",
+          "type": "pass"
+        },
+        {
+          "id": "out_7",
+          "name": "Pass (8)",
+          "type": "pass"
+        }
+      ],
+      "params": {
+        "groupId": "chart-text-samples"
+      },
+      "type": "GroupInstance"
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "nodeId": "chart.target",
+        "portId": "texture"
+      },
+      "id": "chart.edge.16",
+      "to": {
+        "nodeId": "chart.output",
+        "portId": "target"
+      }
+    },
+    {
+      "id": "chart.edge.22",
+      "from": {
+        "nodeId": "chart.width",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "chart.target",
+        "portId": "width"
+      }
+    },
+    {
+      "id": "chart.edge.25",
+      "from": {
+        "nodeId": "chart.height",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "chart.target",
+        "portId": "height"
+      }
+    },
+    {
+      "id": "chart.edge.30",
+      "from": {
+        "nodeId": "chart.show_colors",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "chart.patterns",
+        "portId": "in_0"
+      }
+    },
+    {
+      "id": "chart.edge.28",
+      "from": {
+        "nodeId": "chart.show_grid",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "chart.patterns",
+        "portId": "in_1"
+      }
+    },
+    {
+      "id": "chart.edge.29",
+      "from": {
+        "nodeId": "chart.show_patterns",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "chart.patterns",
+        "portId": "in_2"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "chart.patterns",
+        "portId": "out_0"
+      },
+      "id": "chart.edge.15",
+      "to": {
+        "nodeId": "chart.output",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "chart.show_text.value.to.chart.text.date.alpha",
+      "from": {
+        "nodeId": "chart.show_text",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "chart.text",
+        "portId": "in_0"
+      }
+    },
+    {
+      "id": "chart.width.value.to.chart.text.layout.0.a",
+      "from": {
+        "nodeId": "chart.width",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "chart.text",
+        "portId": "in_2"
+      }
+    },
+    {
+      "id": "chart.height.value.to.chart.text.layout.11.a",
+      "from": {
+        "nodeId": "chart.height",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "chart.text",
+        "portId": "in_3"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "chart.text",
+        "portId": "out_2"
+      },
+      "id": "chart.text.resolution.pass.to.chart.output.dynamic_text_0",
+      "to": {
+        "nodeId": "chart.output",
+        "portId": "dynamic_text_0"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "chart.text",
+        "portId": "out_16"
+      },
+      "id": "chart.text.team.pass.to.chart.output.dynamic_text_1",
+      "to": {
+        "nodeId": "chart.output",
+        "portId": "dynamic_text_1"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "chart.text",
+        "portId": "out_17"
+      },
+      "id": "chart.text.title.pass.to.chart.output.dynamic_text_2",
+      "to": {
+        "nodeId": "chart.output",
+        "portId": "dynamic_text_2"
+      }
+    },
+    {
+      "id": "chart.height.value.to.chart.text.layout.strokes.height.strokes",
+      "from": {
+        "nodeId": "chart.height",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "chart.text.strokes",
+        "portId": "in_0"
+      }
+    },
+    {
+      "id": "chart.width.value.to.chart.text.layout.strokes.width.strokes",
+      "from": {
+        "nodeId": "chart.width",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "chart.text.strokes",
+        "portId": "in_1"
+      }
+    },
+    {
+      "id": "chart.show_text.value.to.chart.text.stroke025.alpha.strokes",
+      "from": {
+        "nodeId": "chart.show_text",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "chart.text.strokes",
+        "portId": "in_2"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "chart.text.strokes",
+        "portId": "out_0"
+      },
+      "id": "chart.text.stroke025.pass.to.chart.output.dynamic_text_3.strokes",
+      "to": {
+        "nodeId": "chart.output",
+        "portId": "dynamic_text_3"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "chart.text.strokes",
+        "portId": "out_1"
+      },
+      "id": "chart.text.stroke05.pass.to.chart.output.dynamic_text_4.strokes",
+      "to": {
+        "nodeId": "chart.output",
+        "portId": "dynamic_text_4"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "chart.text.strokes",
+        "portId": "out_2"
+      },
+      "id": "chart.text.stroke16.pass.to.chart.output.dynamic_text_9.strokes",
+      "to": {
+        "nodeId": "chart.output",
+        "portId": "dynamic_text_9"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "chart.text.strokes",
+        "portId": "out_3"
+      },
+      "id": "chart.text.stroke1.pass.to.chart.output.dynamic_text_5.strokes",
+      "to": {
+        "nodeId": "chart.output",
+        "portId": "dynamic_text_5"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "chart.text.strokes",
+        "portId": "out_4"
+      },
+      "id": "chart.text.stroke2.pass.to.chart.output.dynamic_text_6.strokes",
+      "to": {
+        "nodeId": "chart.output",
+        "portId": "dynamic_text_6"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "chart.text.strokes",
+        "portId": "out_5"
+      },
+      "id": "chart.text.stroke4.pass.to.chart.output.dynamic_text_7.strokes",
+      "to": {
+        "nodeId": "chart.output",
+        "portId": "dynamic_text_7"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "chart.text.strokes",
+        "portId": "out_6"
+      },
+      "id": "chart.text.stroke8.pass.to.chart.output.dynamic_text_8.strokes",
+      "to": {
+        "nodeId": "chart.output",
+        "portId": "dynamic_text_8"
+      }
+    },
+    {
+      "id": "chart.show_text.value.to.chart.text.date.alpha.samples",
+      "from": {
+        "nodeId": "chart.show_text",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "chart.text.samples",
+        "portId": "in_0"
+      }
+    },
+    {
+      "id": "chart.height.value.to.chart.text.layout.samples.height.samples",
+      "from": {
+        "nodeId": "chart.height",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "chart.text.samples",
+        "portId": "in_2"
+      }
+    },
+    {
+      "id": "chart.width.value.to.chart.text.layout.samples.width.samples",
+      "from": {
+        "nodeId": "chart.width",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "chart.text.samples",
+        "portId": "in_3"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "chart.text.samples",
+        "portId": "out_0"
+      },
+      "id": "chart.text.date.pass.to.chart.output.dynamic_text_17.samples",
+      "to": {
+        "nodeId": "chart.output",
+        "portId": "dynamic_text_17"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "chart.text.samples",
+        "portId": "out_1"
+      },
+      "id": "chart.text.email.pass.to.chart.output.dynamic_text_16.samples",
+      "to": {
+        "nodeId": "chart.output",
+        "portId": "dynamic_text_16"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "chart.text.samples",
+        "portId": "out_2"
+      },
+      "id": "chart.text.sample14.pass.to.chart.output.dynamic_text_14.samples",
+      "to": {
+        "nodeId": "chart.output",
+        "portId": "dynamic_text_14"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "chart.text.samples",
+        "portId": "out_3"
+      },
+      "id": "chart.text.sample18.pass.to.chart.output.dynamic_text_13.samples",
+      "to": {
+        "nodeId": "chart.output",
+        "portId": "dynamic_text_13"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "chart.text.samples",
+        "portId": "out_4"
+      },
+      "id": "chart.text.sample23.pass.to.chart.output.dynamic_text_12.samples",
+      "to": {
+        "nodeId": "chart.output",
+        "portId": "dynamic_text_12"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "chart.text.samples",
+        "portId": "out_5"
+      },
+      "id": "chart.text.sample28.pass.to.chart.output.dynamic_text_11.samples",
+      "to": {
+        "nodeId": "chart.output",
+        "portId": "dynamic_text_11"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "chart.text.samples",
+        "portId": "out_6"
+      },
+      "id": "chart.text.sample32.pass.to.chart.output.dynamic_text_10.samples",
+      "to": {
+        "nodeId": "chart.output",
+        "portId": "dynamic_text_10"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "chart.text.samples",
+        "portId": "out_7"
+      },
+      "id": "chart.text.sample9.pass.to.chart.output.dynamic_text_15.samples",
+      "to": {
+        "nodeId": "chart.output",
+        "portId": "dynamic_text_15"
+      }
+    }
+  ],
+  "groups": [
+    {
+      "id": "procedural-chart",
+      "name": "Procedural chart · native pixels",
+      "inputs": [
+        {
+          "id": "in_0",
+          "name": "show_colors",
+          "type": "bool"
+        },
+        {
+          "id": "in_1",
+          "name": "show_grid",
+          "type": "bool"
+        },
+        {
+          "id": "in_2",
+          "name": "show_patterns",
+          "type": "bool"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Pass",
+          "type": "pass"
+        }
+      ],
+      "inputBindings": [
+        {
+          "groupPortId": "in_0",
+          "to": {
+            "nodeId": "chart.pattern.material",
+            "portId": "param:show_colors"
+          }
+        },
+        {
+          "groupPortId": "in_1",
+          "to": {
+            "nodeId": "chart.pattern.material",
+            "portId": "param:show_grid"
+          }
+        },
+        {
+          "groupPortId": "in_2",
+          "to": {
+            "nodeId": "chart.pattern.material",
+            "portId": "param:show_patterns"
+          }
+        }
+      ],
+      "outputBindings": [
+        {
+          "groupPortId": "out_0",
+          "from": {
+            "nodeId": "chart.pattern.pass",
+            "portId": "pass"
+          }
+        }
+      ],
+      "nodes": [
+        {
+          "id": "chart.blur.horizontal.material",
+          "inputBindings": [],
+          "inputs": [],
+          "label": "chart.blur.horizontal.material",
+          "params": {},
+          "shaderMaterial": {
+            "parameters": [],
+            "sourceHash": "1496668cd68df8e4"
+          },
+          "type": "ShaderMaterial",
+          "wgslOverride": "builtin:procedural-test-texture/chart.blur.horizontal.material.wgsl"
+        },
+        {
+          "id": "chart.blur.horizontal.geometry",
+          "label": "Atlas · native pixel quad",
+          "params": {
+            "radius": 0,
+            "smooth": 1
+          },
+          "type": "Rect2DGeometry"
+        },
+        {
+          "id": "chart.blur.horizontal.pass",
+          "label": "chart.blur.horizontal",
+          "params": {
+            "blend_preset": "replace",
+            "blendfunc": "add",
+            "camera": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ],
+            "clearColor": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "culling": "none",
+            "depthTest": false,
+            "dst_alpha_factor": "zero",
+            "dst_factor": "zero",
+            "loadOp": "clear",
+            "msaaSampleCount": 1,
+            "name": "chart.blur.horizontal",
+            "src_alpha_factor": "one",
+            "src_factor": "one"
+          },
+          "type": "RenderPass"
+        },
+        {
+          "id": "chart.blur.horizontal.target",
+          "label": "6 × 320px · scalar coverage · FP16",
+          "params": {
+            "format": "rgba16float",
+            "height": 320,
+            "width": 1920
+          },
+          "type": "RenderTexture"
+        },
+        {
+          "id": "chart.blur.horizontal.output",
+          "label": "chart.blur.horizontal output",
+          "params": {
+            "alpha": 1,
+            "blend_preset": "replace",
+            "blendfunc": "add",
+            "camera": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ],
+            "dst_alpha_factor": "zero",
+            "dst_factor": "zero",
+            "src_alpha_factor": "one",
+            "src_factor": "one"
+          },
+          "type": "Composite"
+        },
+        {
+          "id": "chart.blur.horizontal.sampler",
+          "label": "Native 1:1 · nearest",
+          "params": {
+            "addressModeU": "clamp-to-edge",
+            "addressModeV": "clamp-to-edge",
+            "magFilter": "nearest",
+            "minFilter": "nearest",
+            "mipmapFilter": "nearest"
+          },
+          "type": "TextureSampler"
+        },
+        {
+          "id": "chart.blur.vertical.material",
+          "type": "ShaderMaterial",
+          "label": "chart.blur.vertical.material",
+          "params": {},
+          "inputs": [
+            {
+              "id": "resource:horizontal",
+              "name": "horizontal",
+              "type": "texture"
+            }
+          ],
+          "inputBindings": [
+            {
+              "portId": "resource:horizontal",
+              "label": "horizontal",
+              "variableName": "horizontal",
+              "type": "texture"
+            }
+          ],
+          "wgslOverride": "builtin:procedural-test-texture/chart.blur.vertical.material.wgsl",
+          "shaderMaterial": {
+            "sourceHash": "d11e0d12f988c0f6",
+            "parameters": [
+              {
+                "id": "resource:horizontal",
+                "name": "horizontal",
+                "kind": "resource",
+                "portType": "texture",
+                "wgslType": "texture_2d<f32> + sampler",
+                "textureParameter": "horizontal",
+                "samplerParameter": "horizontal_sampler"
+              }
+            ]
+          }
+        },
+        {
+          "id": "chart.blur.vertical.geometry",
+          "label": "Atlas · native pixel quad",
+          "params": {
+            "radius": 0,
+            "smooth": 1
+          },
+          "type": "Rect2DGeometry"
+        },
+        {
+          "id": "chart.blur.vertical.pass",
+          "label": "chart.blur.vertical",
+          "params": {
+            "blend_preset": "replace",
+            "blendfunc": "add",
+            "camera": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ],
+            "clearColor": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "culling": "none",
+            "depthTest": false,
+            "dst_alpha_factor": "zero",
+            "dst_factor": "zero",
+            "loadOp": "clear",
+            "msaaSampleCount": 1,
+            "name": "chart.blur.vertical",
+            "src_alpha_factor": "one",
+            "src_factor": "one"
+          },
+          "type": "RenderPass"
+        },
+        {
+          "id": "chart.blur.vertical.target",
+          "label": "6 × 320px · scalar coverage · FP16",
+          "params": {
+            "format": "rgba16float",
+            "height": 320,
+            "width": 1920
+          },
+          "type": "RenderTexture"
+        },
+        {
+          "id": "chart.blur.vertical.output",
+          "label": "chart.blur.vertical output",
+          "params": {
+            "alpha": 1,
+            "blend_preset": "replace",
+            "blendfunc": "add",
+            "camera": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ],
+            "dst_alpha_factor": "zero",
+            "dst_factor": "zero",
+            "src_alpha_factor": "one",
+            "src_factor": "one"
+          },
+          "type": "Composite"
+        },
+        {
+          "id": "chart.blur.vertical.sampler",
+          "label": "Native 1:1 · nearest",
+          "params": {
+            "addressModeU": "clamp-to-edge",
+            "addressModeV": "clamp-to-edge",
+            "magFilter": "nearest",
+            "minFilter": "nearest",
+            "mipmapFilter": "nearest"
+          },
+          "type": "TextureSampler"
+        },
+        {
+          "id": "chart.pattern.material",
+          "inputBindings": [
+            {
+              "label": "blur",
+              "portId": "resource:blur",
+              "type": "texture",
+              "variableName": "blur"
+            },
+            {
+              "label": "show_grid",
+              "portId": "param:show_grid",
+              "type": "bool",
+              "variableName": "show_grid"
+            },
+            {
+              "label": "show_patterns",
+              "portId": "param:show_patterns",
+              "type": "bool",
+              "variableName": "show_patterns"
+            },
+            {
+              "label": "show_colors",
+              "portId": "param:show_colors",
+              "type": "bool",
+              "variableName": "show_colors"
+            }
+          ],
+          "inputs": [
+            {
+              "id": "resource:blur",
+              "name": "blur",
+              "type": "texture"
+            },
+            {
+              "id": "param:show_grid",
+              "name": "show_grid",
+              "type": "bool"
+            },
+            {
+              "id": "param:show_patterns",
+              "name": "show_patterns",
+              "type": "bool"
+            },
+            {
+              "id": "param:show_colors",
+              "name": "show_colors",
+              "type": "bool"
+            }
+          ],
+          "label": "chart.pattern.material",
+          "params": {},
+          "shaderMaterial": {
+            "parameters": [
+              {
+                "id": "resource:blur",
+                "kind": "resource",
+                "name": "blur",
+                "portType": "texture",
+                "samplerParameter": "blur_sampler",
+                "textureParameter": "blur",
+                "wgslType": "texture_2d<f32> + sampler"
+              },
+              {
+                "id": "param:show_grid",
+                "kind": "value",
+                "name": "show_grid",
+                "portType": "bool",
+                "wgslType": "bool"
+              },
+              {
+                "id": "param:show_patterns",
+                "kind": "value",
+                "name": "show_patterns",
+                "portType": "bool",
+                "wgslType": "bool"
+              },
+              {
+                "id": "param:show_colors",
+                "kind": "value",
+                "name": "show_colors",
+                "portType": "bool",
+                "wgslType": "bool"
+              }
+            ],
+            "sourceHash": "b38e48d83c86f67c"
+          },
+          "type": "ShaderMaterial",
+          "wgslOverride": "builtin:procedural-test-texture/chart.pattern.material.wgsl"
+        },
+        {
+          "id": "chart.pattern.geometry",
+          "label": "Chart · target-sized quad",
+          "params": {
+            "radius": 0,
+            "smooth": 1
+          },
+          "type": "Rect2DGeometry"
+        },
+        {
+          "id": "chart.pattern.pass",
+          "label": "Procedural chart · no text",
+          "params": {
+            "blend_preset": "replace",
+            "blendfunc": "add",
+            "camera": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ],
+            "clearColor": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "culling": "none",
+            "depthTest": false,
+            "dst_alpha_factor": "zero",
+            "dst_factor": "zero",
+            "loadOp": "clear",
+            "msaaSampleCount": 1,
+            "name": "Procedural chart",
+            "src_alpha_factor": "one",
+            "src_factor": "one"
+          },
+          "type": "RenderPass"
+        }
+      ],
+      "connections": [
+        {
+          "id": "chart.edge.1",
+          "from": {
+            "nodeId": "chart.blur.horizontal.geometry",
+            "portId": "geometry"
+          },
+          "to": {
+            "nodeId": "chart.blur.horizontal.pass",
+            "portId": "geometry"
+          }
+        },
+        {
+          "id": "chart.edge.2",
+          "from": {
+            "nodeId": "chart.blur.horizontal.material",
+            "portId": "material"
+          },
+          "to": {
+            "nodeId": "chart.blur.horizontal.pass",
+            "portId": "material"
+          }
+        },
+        {
+          "id": "chart.edge.3",
+          "from": {
+            "nodeId": "chart.blur.horizontal.pass",
+            "portId": "pass"
+          },
+          "to": {
+            "nodeId": "chart.blur.horizontal.output",
+            "portId": "pass"
+          }
+        },
+        {
+          "id": "chart.edge.4",
+          "from": {
+            "nodeId": "chart.blur.horizontal.target",
+            "portId": "texture"
+          },
+          "to": {
+            "nodeId": "chart.blur.horizontal.output",
+            "portId": "target"
+          }
+        },
+        {
+          "id": "chart.edge.5",
+          "from": {
+            "nodeId": "chart.blur.horizontal.output",
+            "portId": "texture"
+          },
+          "to": {
+            "nodeId": "chart.blur.horizontal.sampler",
+            "portId": "texture"
+          }
+        },
+        {
+          "id": "chart.edge.6",
+          "from": {
+            "nodeId": "chart.blur.vertical.geometry",
+            "portId": "geometry"
+          },
+          "to": {
+            "nodeId": "chart.blur.vertical.pass",
+            "portId": "geometry"
+          }
+        },
+        {
+          "id": "chart.edge.7",
+          "from": {
+            "nodeId": "chart.blur.vertical.material",
+            "portId": "material"
+          },
+          "to": {
+            "nodeId": "chart.blur.vertical.pass",
+            "portId": "material"
+          }
+        },
+        {
+          "id": "chart.edge.8",
+          "from": {
+            "nodeId": "chart.blur.vertical.pass",
+            "portId": "pass"
+          },
+          "to": {
+            "nodeId": "chart.blur.vertical.output",
+            "portId": "pass"
+          }
+        },
+        {
+          "id": "chart.edge.9",
+          "from": {
+            "nodeId": "chart.blur.vertical.target",
+            "portId": "texture"
+          },
+          "to": {
+            "nodeId": "chart.blur.vertical.output",
+            "portId": "target"
+          }
+        },
+        {
+          "id": "chart.edge.10",
+          "from": {
+            "nodeId": "chart.blur.vertical.output",
+            "portId": "texture"
+          },
+          "to": {
+            "nodeId": "chart.blur.vertical.sampler",
+            "portId": "texture"
+          }
+        },
+        {
+          "id": "chart.edge.11",
+          "from": {
+            "nodeId": "chart.blur.horizontal.sampler",
+            "portId": "texture"
+          },
+          "to": {
+            "nodeId": "chart.blur.vertical.material",
+            "portId": "resource:horizontal"
+          }
+        },
+        {
+          "id": "chart.edge.12",
+          "from": {
+            "nodeId": "chart.blur.vertical.sampler",
+            "portId": "texture"
+          },
+          "to": {
+            "nodeId": "chart.pattern.material",
+            "portId": "resource:blur"
+          }
+        },
+        {
+          "id": "chart.edge.13",
+          "from": {
+            "nodeId": "chart.pattern.geometry",
+            "portId": "geometry"
+          },
+          "to": {
+            "nodeId": "chart.pattern.pass",
+            "portId": "geometry"
+          }
+        },
+        {
+          "id": "chart.edge.14",
+          "from": {
+            "nodeId": "chart.pattern.material",
+            "portId": "material"
+          },
+          "to": {
+            "nodeId": "chart.pattern.pass",
+            "portId": "material"
+          }
+        }
+      ]
+    },
+    {
+      "id": "chart-text",
+      "name": "Title",
+      "inputs": [
+        {
+          "id": "in_0",
+          "name": "Show text",
+          "type": "float"
+        },
+        {
+          "id": "in_2",
+          "name": "Width",
+          "type": "float"
+        },
+        {
+          "id": "in_3",
+          "name": "Height",
+          "type": "float"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "out_2",
+          "name": "Pass (3)",
+          "type": "pass"
+        },
+        {
+          "id": "out_16",
+          "name": "Pass (17)",
+          "type": "pass"
+        },
+        {
+          "id": "out_17",
+          "name": "Pass (18)",
+          "type": "pass"
+        }
+      ],
+      "inputBindings": [
+        {
+          "groupPortId": "in_0",
+          "to": {
+            "nodeId": "chart.text.team",
+            "portId": "alpha"
+          }
+        },
+        {
+          "groupPortId": "in_0",
+          "to": {
+            "nodeId": "chart.text.title",
+            "portId": "alpha"
+          }
+        },
+        {
+          "groupPortId": "in_0",
+          "to": {
+            "nodeId": "chart.text.resolution",
+            "portId": "alpha"
+          }
+        },
+        {
+          "groupPortId": "in_2",
+          "to": {
+            "nodeId": "chart.text.layout.titles",
+            "portId": "width"
+          }
+        },
+        {
+          "groupPortId": "in_2",
+          "to": {
+            "nodeId": "chart.text.resolution.format",
+            "portId": "value0"
+          }
+        },
+        {
+          "groupPortId": "in_3",
+          "to": {
+            "nodeId": "chart.text.layout.titles",
+            "portId": "height"
+          }
+        },
+        {
+          "groupPortId": "in_3",
+          "to": {
+            "nodeId": "chart.text.resolution.format",
+            "portId": "value1"
+          }
+        }
+      ],
+      "outputBindings": [
+        {
+          "groupPortId": "out_16",
+          "from": {
+            "nodeId": "chart.text.team",
+            "portId": "pass"
+          }
+        },
+        {
+          "groupPortId": "out_17",
+          "from": {
+            "nodeId": "chart.text.title",
+            "portId": "pass"
+          }
+        },
+        {
+          "groupPortId": "out_2",
+          "from": {
+            "nodeId": "chart.text.resolution",
+            "portId": "pass"
+          }
+        }
+      ],
+      "nodes": [
+        {
+          "id": "chart.text.font.regular",
+          "label": "Arial.ttf",
+          "params": {
+            "assetId": "builtin:procedural-test-texture/525979822591",
+            "faceIndex": 0
+          },
+          "type": "FontFile"
+        },
+        {
+          "id": "chart.text.font.bold",
+          "label": "Arial Bold.ttf",
+          "params": {
+            "assetId": "builtin:procedural-test-texture/d72db21f9242",
+            "faceIndex": 0
+          },
+          "type": "FontFile"
+        },
+        {
+          "id": "chart.text.resolution.format",
+          "label": "Actual target resolution",
+          "params": {
+            "decimals": 0,
+            "format": "{0} × {1}",
+            "value0": 0,
+            "value1": 0
+          },
+          "type": "StringFormat"
+        },
+        {
+          "id": "chart.text.resolution",
+          "label": "resolution · 65.33px",
+          "params": {
+            "align": "center",
+            "alpha": 1,
+            "blend_preset": "premul_alpha",
+            "blendfunc": "add",
+            "camera": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ],
+            "color": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "dst_alpha_factor": "one-minus-src-alpha",
+            "dst_factor": "one-minus-src-alpha",
+            "fontSize": 65.33333587646484,
+            "fontWeight": 0,
+            "hinting": false,
+            "letterSpacing": 1.1666666269302368,
+            "lineHeight": 84.93333435058594,
+            "src_alpha_factor": "one",
+            "src_factor": "one",
+            "text": "1260 × 2800",
+            "verticalAlign": "center",
+            "wrap": "none"
+          },
+          "type": "TextPass"
+        },
+        {
+          "id": "chart.text.team",
+          "label": "team · 42.00px",
+          "params": {
+            "align": "center",
+            "alpha": 1,
+            "blend_preset": "premul_alpha",
+            "blendfunc": "add",
+            "camera": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ],
+            "color": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "dst_alpha_factor": "one-minus-src-alpha",
+            "dst_factor": "one-minus-src-alpha",
+            "fontSize": 42,
+            "fontWeight": 0,
+            "hinting": false,
+            "letterSpacing": 1.4358974695205688,
+            "lineHeight": 54.599998474121094,
+            "src_alpha_factor": "one",
+            "src_factor": "one",
+            "text": "OS Design Team",
+            "verticalAlign": "center",
+            "wrap": "none"
+          },
+          "type": "TextPass"
+        },
+        {
+          "id": "chart.text.title",
+          "label": "title · 37.33px",
+          "params": {
+            "align": "center",
+            "alpha": 1,
+            "blend_preset": "premul_alpha",
+            "blendfunc": "add",
+            "camera": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ],
+            "color": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "dst_alpha_factor": "one-minus-src-alpha",
+            "dst_factor": "one-minus-src-alpha",
+            "fontSize": 37.33333206176758,
+            "fontWeight": 0,
+            "hinting": false,
+            "letterSpacing": 0.8076923489570618,
+            "lineHeight": 48.53333282470703,
+            "src_alpha_factor": "one",
+            "src_factor": "one",
+            "text": "Rendering Test",
+            "verticalAlign": "center",
+            "wrap": "none"
+          },
+          "type": "TextPass"
+        },
+        {
+          "id": "chart.text.layout.titles",
+          "inputBindings": [
+            {
+              "label": "width",
+              "portId": "width",
+              "type": "float",
+              "variableName": "width"
+            },
+            {
+              "label": "height",
+              "portId": "height",
+              "type": "float",
+              "variableName": "height"
+            }
+          ],
+          "inputs": [
+            {
+              "id": "width",
+              "name": "width",
+              "type": "float"
+            },
+            {
+              "id": "height",
+              "name": "height",
+              "type": "float"
+            }
+          ],
+          "label": "Titles · layout",
+          "outputs": [
+            {
+              "coordinateSpace": "scene-px",
+              "id": "resolutionPosition",
+              "name": "resolutionPosition",
+              "type": "vector2"
+            },
+            {
+              "coordinateSpace": "scene-px",
+              "id": "resolutionSize",
+              "name": "resolutionSize",
+              "type": "vector2"
+            },
+            {
+              "coordinateSpace": "scene-px",
+              "id": "teamPosition",
+              "name": "teamPosition",
+              "type": "vector2"
+            },
+            {
+              "coordinateSpace": "scene-px",
+              "id": "teamSize",
+              "name": "teamSize",
+              "type": "vector2"
+            },
+            {
+              "coordinateSpace": "scene-px",
+              "id": "titlePosition",
+              "name": "titlePosition",
+              "type": "vector2"
+            },
+            {
+              "coordinateSpace": "scene-px",
+              "id": "titleSize",
+              "name": "titleSize",
+              "type": "vector2"
+            }
+          ],
+          "params": {
+            "_uiCollapsedFields": [
+              "sec:source"
+            ],
+            "source": "// Layout in ScenePx. Font sizes stay in physical pixels.\nreturn {\n  resolutionPosition: [width * 0.5, height * 0.925] as vec2,\n  resolutionSize: [width * 0.5555555555555556 - 2, 84.93333435058594] as vec2,\n  teamPosition: [width * 0.5, height * 0.875 + (25.266651153564453)] as vec2,\n  teamSize: [width * 0.3333333333333333 - 2, 54.599998474121094] as vec2,\n  titlePosition: [width * 0.5, height * 0.875 + (-28.299991607666016)] as vec2,\n  titleSize: [width * 0.3333333333333333 - 2, 48.53333282470703] as vec2,\n};\n"
+          },
+          "type": "DataParse"
+        }
+      ],
+      "connections": [
+        {
+          "id": "chart.text.font.regular.font.to.chart.text.resolution.font",
+          "from": {
+            "nodeId": "chart.text.font.regular",
+            "portId": "font"
+          },
+          "to": {
+            "nodeId": "chart.text.resolution",
+            "portId": "font"
+          }
+        },
+        {
+          "id": "chart.text.resolution.format.text.to.chart.text.resolution.text",
+          "from": {
+            "nodeId": "chart.text.resolution.format",
+            "portId": "text"
+          },
+          "to": {
+            "nodeId": "chart.text.resolution",
+            "portId": "text"
+          }
+        },
+        {
+          "id": "chart.text.font.bold.font.to.chart.text.team.font",
+          "from": {
+            "nodeId": "chart.text.font.bold",
+            "portId": "font"
+          },
+          "to": {
+            "nodeId": "chart.text.team",
+            "portId": "font"
+          }
+        },
+        {
+          "id": "chart.text.font.regular.font.to.chart.text.title.font",
+          "from": {
+            "nodeId": "chart.text.font.regular",
+            "portId": "font"
+          },
+          "to": {
+            "nodeId": "chart.text.title",
+            "portId": "font"
+          }
+        },
+        {
+          "id": "chart.text.layout.titles.resolution.position",
+          "from": {
+            "nodeId": "chart.text.layout.titles",
+            "portId": "resolutionPosition"
+          },
+          "to": {
+            "nodeId": "chart.text.resolution",
+            "portId": "position"
+          }
+        },
+        {
+          "id": "chart.text.layout.titles.resolution.size",
+          "from": {
+            "nodeId": "chart.text.layout.titles",
+            "portId": "resolutionSize"
+          },
+          "to": {
+            "nodeId": "chart.text.resolution",
+            "portId": "size"
+          }
+        },
+        {
+          "id": "chart.text.layout.titles.team.position",
+          "from": {
+            "nodeId": "chart.text.layout.titles",
+            "portId": "teamPosition"
+          },
+          "to": {
+            "nodeId": "chart.text.team",
+            "portId": "position"
+          }
+        },
+        {
+          "id": "chart.text.layout.titles.team.size",
+          "from": {
+            "nodeId": "chart.text.layout.titles",
+            "portId": "teamSize"
+          },
+          "to": {
+            "nodeId": "chart.text.team",
+            "portId": "size"
+          }
+        },
+        {
+          "id": "chart.text.layout.titles.title.position",
+          "from": {
+            "nodeId": "chart.text.layout.titles",
+            "portId": "titlePosition"
+          },
+          "to": {
+            "nodeId": "chart.text.title",
+            "portId": "position"
+          }
+        },
+        {
+          "id": "chart.text.layout.titles.title.size",
+          "from": {
+            "nodeId": "chart.text.layout.titles",
+            "portId": "titleSize"
+          },
+          "to": {
+            "nodeId": "chart.text.title",
+            "portId": "size"
+          }
+        }
+      ]
+    },
+    {
+      "id": "chart-text-strokes",
+      "name": "Stroke",
+      "inputs": [
+        {
+          "id": "in_0",
+          "name": "Height",
+          "type": "float"
+        },
+        {
+          "id": "in_1",
+          "name": "Width",
+          "type": "float"
+        },
+        {
+          "id": "in_2",
+          "name": "Show text",
+          "type": "float"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Pass",
+          "type": "pass"
+        },
+        {
+          "id": "out_1",
+          "name": "Pass (2)",
+          "type": "pass"
+        },
+        {
+          "id": "out_2",
+          "name": "Pass (3)",
+          "type": "pass"
+        },
+        {
+          "id": "out_3",
+          "name": "Pass (4)",
+          "type": "pass"
+        },
+        {
+          "id": "out_4",
+          "name": "Pass (5)",
+          "type": "pass"
+        },
+        {
+          "id": "out_5",
+          "name": "Pass (6)",
+          "type": "pass"
+        },
+        {
+          "id": "out_6",
+          "name": "Pass (7)",
+          "type": "pass"
+        }
+      ],
+      "inputBindings": [
+        {
+          "groupPortId": "in_0",
+          "to": {
+            "nodeId": "chart.text.layout.strokes",
+            "portId": "height"
+          }
+        },
+        {
+          "groupPortId": "in_1",
+          "to": {
+            "nodeId": "chart.text.layout.strokes",
+            "portId": "width"
+          }
+        },
+        {
+          "groupPortId": "in_2",
+          "to": {
+            "nodeId": "chart.text.stroke025",
+            "portId": "alpha"
+          }
+        },
+        {
+          "groupPortId": "in_2",
+          "to": {
+            "nodeId": "chart.text.stroke05",
+            "portId": "alpha"
+          }
+        },
+        {
+          "groupPortId": "in_2",
+          "to": {
+            "nodeId": "chart.text.stroke16",
+            "portId": "alpha"
+          }
+        },
+        {
+          "groupPortId": "in_2",
+          "to": {
+            "nodeId": "chart.text.stroke1",
+            "portId": "alpha"
+          }
+        },
+        {
+          "groupPortId": "in_2",
+          "to": {
+            "nodeId": "chart.text.stroke2",
+            "portId": "alpha"
+          }
+        },
+        {
+          "groupPortId": "in_2",
+          "to": {
+            "nodeId": "chart.text.stroke4",
+            "portId": "alpha"
+          }
+        },
+        {
+          "groupPortId": "in_2",
+          "to": {
+            "nodeId": "chart.text.stroke8",
+            "portId": "alpha"
+          }
+        }
+      ],
+      "outputBindings": [
+        {
+          "groupPortId": "out_0",
+          "from": {
+            "nodeId": "chart.text.stroke025",
+            "portId": "pass"
+          }
+        },
+        {
+          "groupPortId": "out_1",
+          "from": {
+            "nodeId": "chart.text.stroke05",
+            "portId": "pass"
+          }
+        },
+        {
+          "groupPortId": "out_2",
+          "from": {
+            "nodeId": "chart.text.stroke16",
+            "portId": "pass"
+          }
+        },
+        {
+          "groupPortId": "out_3",
+          "from": {
+            "nodeId": "chart.text.stroke1",
+            "portId": "pass"
+          }
+        },
+        {
+          "groupPortId": "out_4",
+          "from": {
+            "nodeId": "chart.text.stroke2",
+            "portId": "pass"
+          }
+        },
+        {
+          "groupPortId": "out_5",
+          "from": {
+            "nodeId": "chart.text.stroke4",
+            "portId": "pass"
+          }
+        },
+        {
+          "groupPortId": "out_6",
+          "from": {
+            "nodeId": "chart.text.stroke8",
+            "portId": "pass"
+          }
+        }
+      ],
+      "nodes": [
+        {
+          "id": "chart.text.stroke025",
+          "type": "TextPass",
+          "label": "stroke025 · 28.00px",
+          "params": {
+            "align": "center",
+            "alpha": 1,
+            "blend_preset": "premul_alpha",
+            "blendfunc": "add",
+            "camera": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ],
+            "color": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "dst_alpha_factor": "one-minus-src-alpha",
+            "dst_factor": "one-minus-src-alpha",
+            "fontSize": 28,
+            "fontWeight": 0,
+            "hinting": false,
+            "letterSpacing": 0,
+            "lineHeight": 36.400001525878906,
+            "src_alpha_factor": "one",
+            "src_factor": "one",
+            "text": "0.25",
+            "verticalAlign": "center",
+            "wrap": "none"
+          }
+        },
+        {
+          "id": "chart.text.stroke05",
+          "type": "TextPass",
+          "label": "stroke05 · 28.00px",
+          "params": {
+            "align": "center",
+            "alpha": 1,
+            "blend_preset": "premul_alpha",
+            "blendfunc": "add",
+            "camera": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ],
+            "color": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "dst_alpha_factor": "one-minus-src-alpha",
+            "dst_factor": "one-minus-src-alpha",
+            "fontSize": 28,
+            "fontWeight": 0,
+            "hinting": false,
+            "letterSpacing": 0,
+            "lineHeight": 36.400001525878906,
+            "src_alpha_factor": "one",
+            "src_factor": "one",
+            "text": "0.5",
+            "verticalAlign": "center",
+            "wrap": "none"
+          }
+        },
+        {
+          "id": "chart.text.stroke1",
+          "type": "TextPass",
+          "label": "stroke1 · 28.00px",
+          "params": {
+            "align": "center",
+            "alpha": 1,
+            "blend_preset": "premul_alpha",
+            "blendfunc": "add",
+            "camera": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ],
+            "color": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "dst_alpha_factor": "one-minus-src-alpha",
+            "dst_factor": "one-minus-src-alpha",
+            "fontSize": 28,
+            "fontWeight": 0,
+            "hinting": false,
+            "letterSpacing": 0,
+            "lineHeight": 36.400001525878906,
+            "src_alpha_factor": "one",
+            "src_factor": "one",
+            "text": "1.0",
+            "verticalAlign": "center",
+            "wrap": "none"
+          }
+        },
+        {
+          "id": "chart.text.stroke2",
+          "type": "TextPass",
+          "label": "stroke2 · 28.00px",
+          "params": {
+            "align": "center",
+            "alpha": 1,
+            "blend_preset": "premul_alpha",
+            "blendfunc": "add",
+            "camera": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ],
+            "color": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "dst_alpha_factor": "one-minus-src-alpha",
+            "dst_factor": "one-minus-src-alpha",
+            "fontSize": 28,
+            "fontWeight": 0,
+            "hinting": false,
+            "letterSpacing": 0,
+            "lineHeight": 36.400001525878906,
+            "src_alpha_factor": "one",
+            "src_factor": "one",
+            "text": "2.0",
+            "verticalAlign": "center",
+            "wrap": "none"
+          }
+        },
+        {
+          "id": "chart.text.stroke4",
+          "type": "TextPass",
+          "label": "stroke4 · 28.00px",
+          "params": {
+            "align": "center",
+            "alpha": 1,
+            "blend_preset": "premul_alpha",
+            "blendfunc": "add",
+            "camera": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ],
+            "color": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "dst_alpha_factor": "one-minus-src-alpha",
+            "dst_factor": "one-minus-src-alpha",
+            "fontSize": 28,
+            "fontWeight": 0,
+            "hinting": false,
+            "letterSpacing": 0,
+            "lineHeight": 36.400001525878906,
+            "src_alpha_factor": "one",
+            "src_factor": "one",
+            "text": "4.0",
+            "verticalAlign": "center",
+            "wrap": "none"
+          }
+        },
+        {
+          "id": "chart.text.stroke8",
+          "type": "TextPass",
+          "label": "stroke8 · 28.00px",
+          "params": {
+            "align": "center",
+            "alpha": 1,
+            "blend_preset": "premul_alpha",
+            "blendfunc": "add",
+            "camera": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ],
+            "color": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "dst_alpha_factor": "one-minus-src-alpha",
+            "dst_factor": "one-minus-src-alpha",
+            "fontSize": 28,
+            "fontWeight": 0,
+            "hinting": false,
+            "letterSpacing": 0,
+            "lineHeight": 36.400001525878906,
+            "src_alpha_factor": "one",
+            "src_factor": "one",
+            "text": "8.0",
+            "verticalAlign": "center",
+            "wrap": "none"
+          }
+        },
+        {
+          "id": "chart.text.stroke16",
+          "type": "TextPass",
+          "label": "stroke16 · 28.00px",
+          "params": {
+            "align": "center",
+            "alpha": 1,
+            "blend_preset": "premul_alpha",
+            "blendfunc": "add",
+            "camera": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ],
+            "color": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "dst_alpha_factor": "one-minus-src-alpha",
+            "dst_factor": "one-minus-src-alpha",
+            "fontSize": 28,
+            "fontWeight": 0,
+            "hinting": false,
+            "letterSpacing": 0,
+            "lineHeight": 36.400001525878906,
+            "src_alpha_factor": "one",
+            "src_factor": "one",
+            "text": "16.0",
+            "verticalAlign": "center",
+            "wrap": "none"
+          }
+        },
+        {
+          "id": "chart.text.layout.strokes",
+          "type": "DataParse",
+          "label": "Stroke labels · layout",
+          "params": {
+            "source": "// Layout in ScenePx. Font sizes stay in physical pixels.\nconst scale = Math.min(width * 0.0007936507936507937, height * 0.00035714285714285714);\nreturn {\n  stroke025Position: [width * 0.5, (height * 0.65 + scale * 396.666666667) + 0.125] as vec2,\n  stroke025Size: [width * 0.1111111111111111 - 2, 36.400001525878906] as vec2,\n  stroke05Position: [width * 0.5, (height * 0.65 + scale * 350) + 0.25] as vec2,\n  stroke05Size: [width * 0.1111111111111111 - 2, 36.400001525878906] as vec2,\n  stroke1Position: [width * 0.5, (height * 0.65 + scale * 303.333333333) + 0.5] as vec2,\n  stroke1Size: [width * 0.1111111111111111 - 2, 36.400001525878906] as vec2,\n  stroke2Position: [width * 0.5, (height * 0.65 + scale * 256.666666667) + 1] as vec2,\n  stroke2Size: [width * 0.1111111111111111 - 2, 36.400001525878906] as vec2,\n  stroke4Position: [width * 0.5, (height * 0.65 + scale * 210) + 2] as vec2,\n  stroke4Size: [width * 0.1111111111111111 - 2, 36.400001525878906] as vec2,\n  stroke8Position: [width * 0.5, (height * 0.65 + scale * 163.333333333) + 4] as vec2,\n  stroke8Size: [width * 0.1111111111111111 - 2, 36.400001525878906] as vec2,\n  stroke16Position: [width * 0.5, (height * 0.65 + scale * 116.666666667) + 8] as vec2,\n  stroke16Size: [width * 0.1111111111111111 - 2, 36.400001525878906] as vec2,\n};\n"
+          },
+          "inputs": [
+            {
+              "id": "width",
+              "name": "width",
+              "type": "float"
+            },
+            {
+              "id": "height",
+              "name": "height",
+              "type": "float"
+            }
+          ],
+          "outputs": [
+            {
+              "id": "stroke025Position",
+              "name": "stroke025Position",
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
+            },
+            {
+              "id": "stroke025Size",
+              "name": "stroke025Size",
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
+            },
+            {
+              "id": "stroke05Position",
+              "name": "stroke05Position",
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
+            },
+            {
+              "id": "stroke05Size",
+              "name": "stroke05Size",
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
+            },
+            {
+              "id": "stroke1Position",
+              "name": "stroke1Position",
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
+            },
+            {
+              "id": "stroke1Size",
+              "name": "stroke1Size",
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
+            },
+            {
+              "id": "stroke2Position",
+              "name": "stroke2Position",
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
+            },
+            {
+              "id": "stroke2Size",
+              "name": "stroke2Size",
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
+            },
+            {
+              "id": "stroke4Position",
+              "name": "stroke4Position",
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
+            },
+            {
+              "id": "stroke4Size",
+              "name": "stroke4Size",
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
+            },
+            {
+              "id": "stroke8Position",
+              "name": "stroke8Position",
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
+            },
+            {
+              "id": "stroke8Size",
+              "name": "stroke8Size",
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
+            },
+            {
+              "id": "stroke16Position",
+              "name": "stroke16Position",
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
+            },
+            {
+              "id": "stroke16Size",
+              "name": "stroke16Size",
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
+            }
+          ],
+          "inputBindings": [
+            {
+              "portId": "width",
+              "label": "width",
+              "variableName": "width",
+              "type": "float"
+            },
+            {
+              "portId": "height",
+              "label": "height",
+              "variableName": "height",
+              "type": "float"
+            }
+          ]
+        },
+        {
+          "id": "chart.text.font.strokes.regular",
+          "type": "FontFile",
+          "label": "Arial.ttf",
+          "params": {
+            "assetId": "builtin:procedural-test-texture/525979822591",
+            "faceIndex": 0
+          }
+        }
+      ],
+      "connections": [
+        {
+          "id": "chart.text.font.regular.font.to.chart.text.stroke025.font.strokes",
+          "from": {
+            "nodeId": "chart.text.font.strokes.regular",
+            "portId": "font"
+          },
+          "to": {
+            "nodeId": "chart.text.stroke025",
+            "portId": "font"
+          }
+        },
+        {
+          "id": "chart.text.font.regular.font.to.chart.text.stroke05.font.strokes",
+          "from": {
+            "nodeId": "chart.text.font.strokes.regular",
+            "portId": "font"
+          },
+          "to": {
+            "nodeId": "chart.text.stroke05",
+            "portId": "font"
+          }
+        },
+        {
+          "id": "chart.text.font.regular.font.to.chart.text.stroke1.font.strokes",
+          "from": {
+            "nodeId": "chart.text.font.strokes.regular",
+            "portId": "font"
+          },
+          "to": {
+            "nodeId": "chart.text.stroke1",
+            "portId": "font"
+          }
+        },
+        {
+          "id": "chart.text.font.regular.font.to.chart.text.stroke2.font.strokes",
+          "from": {
+            "nodeId": "chart.text.font.strokes.regular",
+            "portId": "font"
+          },
+          "to": {
+            "nodeId": "chart.text.stroke2",
+            "portId": "font"
+          }
+        },
+        {
+          "id": "chart.text.font.regular.font.to.chart.text.stroke4.font.strokes",
+          "from": {
+            "nodeId": "chart.text.font.strokes.regular",
+            "portId": "font"
+          },
+          "to": {
+            "nodeId": "chart.text.stroke4",
+            "portId": "font"
+          }
+        },
+        {
+          "id": "chart.text.font.regular.font.to.chart.text.stroke8.font.strokes",
+          "from": {
+            "nodeId": "chart.text.font.strokes.regular",
+            "portId": "font"
+          },
+          "to": {
+            "nodeId": "chart.text.stroke8",
+            "portId": "font"
+          }
+        },
+        {
+          "id": "chart.text.font.regular.font.to.chart.text.stroke16.font.strokes",
+          "from": {
+            "nodeId": "chart.text.font.strokes.regular",
+            "portId": "font"
+          },
+          "to": {
+            "nodeId": "chart.text.stroke16",
+            "portId": "font"
+          }
+        },
+        {
+          "id": "chart.text.layout.strokes.stroke025.position.strokes",
+          "from": {
+            "nodeId": "chart.text.layout.strokes",
+            "portId": "stroke025Position"
+          },
+          "to": {
+            "nodeId": "chart.text.stroke025",
+            "portId": "position"
+          }
+        },
+        {
+          "id": "chart.text.layout.strokes.stroke025.size.strokes",
+          "from": {
+            "nodeId": "chart.text.layout.strokes",
+            "portId": "stroke025Size"
+          },
+          "to": {
+            "nodeId": "chart.text.stroke025",
+            "portId": "size"
+          }
+        },
+        {
+          "id": "chart.text.layout.strokes.stroke05.position.strokes",
+          "from": {
+            "nodeId": "chart.text.layout.strokes",
+            "portId": "stroke05Position"
+          },
+          "to": {
+            "nodeId": "chart.text.stroke05",
+            "portId": "position"
+          }
+        },
+        {
+          "id": "chart.text.layout.strokes.stroke05.size.strokes",
+          "from": {
+            "nodeId": "chart.text.layout.strokes",
+            "portId": "stroke05Size"
+          },
+          "to": {
+            "nodeId": "chart.text.stroke05",
+            "portId": "size"
+          }
+        },
+        {
+          "id": "chart.text.layout.strokes.stroke1.position.strokes",
+          "from": {
+            "nodeId": "chart.text.layout.strokes",
+            "portId": "stroke1Position"
+          },
+          "to": {
+            "nodeId": "chart.text.stroke1",
+            "portId": "position"
+          }
+        },
+        {
+          "id": "chart.text.layout.strokes.stroke1.size.strokes",
+          "from": {
+            "nodeId": "chart.text.layout.strokes",
+            "portId": "stroke1Size"
+          },
+          "to": {
+            "nodeId": "chart.text.stroke1",
+            "portId": "size"
+          }
+        },
+        {
+          "id": "chart.text.layout.strokes.stroke2.position.strokes",
+          "from": {
+            "nodeId": "chart.text.layout.strokes",
+            "portId": "stroke2Position"
+          },
+          "to": {
+            "nodeId": "chart.text.stroke2",
+            "portId": "position"
+          }
+        },
+        {
+          "id": "chart.text.layout.strokes.stroke2.size.strokes",
+          "from": {
+            "nodeId": "chart.text.layout.strokes",
+            "portId": "stroke2Size"
+          },
+          "to": {
+            "nodeId": "chart.text.stroke2",
+            "portId": "size"
+          }
+        },
+        {
+          "id": "chart.text.layout.strokes.stroke4.position.strokes",
+          "from": {
+            "nodeId": "chart.text.layout.strokes",
+            "portId": "stroke4Position"
+          },
+          "to": {
+            "nodeId": "chart.text.stroke4",
+            "portId": "position"
+          }
+        },
+        {
+          "id": "chart.text.layout.strokes.stroke4.size.strokes",
+          "from": {
+            "nodeId": "chart.text.layout.strokes",
+            "portId": "stroke4Size"
+          },
+          "to": {
+            "nodeId": "chart.text.stroke4",
+            "portId": "size"
+          }
+        },
+        {
+          "id": "chart.text.layout.strokes.stroke8.position.strokes",
+          "from": {
+            "nodeId": "chart.text.layout.strokes",
+            "portId": "stroke8Position"
+          },
+          "to": {
+            "nodeId": "chart.text.stroke8",
+            "portId": "position"
+          }
+        },
+        {
+          "id": "chart.text.layout.strokes.stroke8.size.strokes",
+          "from": {
+            "nodeId": "chart.text.layout.strokes",
+            "portId": "stroke8Size"
+          },
+          "to": {
+            "nodeId": "chart.text.stroke8",
+            "portId": "size"
+          }
+        },
+        {
+          "id": "chart.text.layout.strokes.stroke16.position.strokes",
+          "from": {
+            "nodeId": "chart.text.layout.strokes",
+            "portId": "stroke16Position"
+          },
+          "to": {
+            "nodeId": "chart.text.stroke16",
+            "portId": "position"
+          }
+        },
+        {
+          "id": "chart.text.layout.strokes.stroke16.size.strokes",
+          "from": {
+            "nodeId": "chart.text.layout.strokes",
+            "portId": "stroke16Size"
+          },
+          "to": {
+            "nodeId": "chart.text.stroke16",
+            "portId": "size"
+          }
+        }
+      ]
+    },
+    {
+      "id": "chart-text-samples",
+      "name": "Samples",
+      "inputs": [
+        {
+          "id": "in_0",
+          "name": "Show text",
+          "type": "float"
+        },
+        {
+          "id": "in_2",
+          "name": "Height",
+          "type": "float"
+        },
+        {
+          "id": "in_3",
+          "name": "Width",
+          "type": "float"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Pass",
+          "type": "pass"
+        },
+        {
+          "id": "out_1",
+          "name": "Pass (2)",
+          "type": "pass"
+        },
+        {
+          "id": "out_2",
+          "name": "Pass (3)",
+          "type": "pass"
+        },
+        {
+          "id": "out_3",
+          "name": "Pass (4)",
+          "type": "pass"
+        },
+        {
+          "id": "out_4",
+          "name": "Pass (5)",
+          "type": "pass"
+        },
+        {
+          "id": "out_5",
+          "name": "Pass (6)",
+          "type": "pass"
+        },
+        {
+          "id": "out_6",
+          "name": "Pass (7)",
+          "type": "pass"
+        },
+        {
+          "id": "out_7",
+          "name": "Pass (8)",
+          "type": "pass"
+        }
+      ],
+      "inputBindings": [
+        {
+          "groupPortId": "in_0",
+          "to": {
+            "nodeId": "chart.text.date",
+            "portId": "alpha"
+          }
+        },
+        {
+          "groupPortId": "in_0",
+          "to": {
+            "nodeId": "chart.text.email",
+            "portId": "alpha"
+          }
+        },
+        {
+          "groupPortId": "in_2",
+          "to": {
+            "nodeId": "chart.text.layout.samples",
+            "portId": "height"
+          }
+        },
+        {
+          "groupPortId": "in_3",
+          "to": {
+            "nodeId": "chart.text.layout.samples",
+            "portId": "width"
+          }
+        },
+        {
+          "groupPortId": "in_2",
+          "to": {
+            "nodeId": "chart.text.layout.watermark",
+            "portId": "height"
+          }
+        },
+        {
+          "groupPortId": "in_3",
+          "to": {
+            "nodeId": "chart.text.layout.watermark",
+            "portId": "width"
+          }
+        },
+        {
+          "groupPortId": "in_0",
+          "to": {
+            "nodeId": "chart.text.sample14",
+            "portId": "alpha"
+          }
+        },
+        {
+          "groupPortId": "in_0",
+          "to": {
+            "nodeId": "chart.text.sample18",
+            "portId": "alpha"
+          }
+        },
+        {
+          "groupPortId": "in_0",
+          "to": {
+            "nodeId": "chart.text.sample23",
+            "portId": "alpha"
+          }
+        },
+        {
+          "groupPortId": "in_0",
+          "to": {
+            "nodeId": "chart.text.sample28",
+            "portId": "alpha"
+          }
+        },
+        {
+          "groupPortId": "in_0",
+          "to": {
+            "nodeId": "chart.text.sample32",
+            "portId": "alpha"
+          }
+        },
+        {
+          "groupPortId": "in_0",
+          "to": {
+            "nodeId": "chart.text.sample9",
+            "portId": "alpha"
+          }
+        }
+      ],
+      "outputBindings": [
+        {
+          "groupPortId": "out_0",
+          "from": {
+            "nodeId": "chart.text.date",
+            "portId": "pass"
+          }
+        },
+        {
+          "groupPortId": "out_1",
+          "from": {
+            "nodeId": "chart.text.email",
+            "portId": "pass"
+          }
+        },
+        {
+          "groupPortId": "out_2",
+          "from": {
+            "nodeId": "chart.text.sample14",
+            "portId": "pass"
+          }
+        },
+        {
+          "groupPortId": "out_3",
+          "from": {
+            "nodeId": "chart.text.sample18",
+            "portId": "pass"
+          }
+        },
+        {
+          "groupPortId": "out_4",
+          "from": {
+            "nodeId": "chart.text.sample23",
+            "portId": "pass"
+          }
+        },
+        {
+          "groupPortId": "out_5",
+          "from": {
+            "nodeId": "chart.text.sample28",
+            "portId": "pass"
+          }
+        },
+        {
+          "groupPortId": "out_6",
+          "from": {
+            "nodeId": "chart.text.sample32",
+            "portId": "pass"
+          }
+        },
+        {
+          "groupPortId": "out_7",
+          "from": {
+            "nodeId": "chart.text.sample9",
+            "portId": "pass"
+          }
+        }
+      ],
+      "nodes": [
+        {
+          "id": "chart.text.sample32",
+          "type": "TextPass",
+          "label": "Typography · 32px",
+          "params": {
+            "align": "left",
+            "alpha": 1,
+            "blend_preset": "premul_alpha",
+            "blendfunc": "add",
+            "camera": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ],
+            "color": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "dst_alpha_factor": "one-minus-src-alpha",
+            "dst_factor": "one-minus-src-alpha",
+            "fontSize": 32,
+            "fontWeight": 0,
+            "hinting": false,
+            "letterSpacing": -0.11749379336833954,
+            "lineHeight": 42.46666717529297,
+            "src_alpha_factor": "one",
+            "src_factor": "one",
+            "text": "32px -我能吞下玻璃而不伤害身体。The quick brown fox jumps over the lazy dog.",
+            "verticalAlign": "center",
+            "wrap": "none"
+          }
+        },
+        {
+          "id": "chart.text.sample28",
+          "type": "TextPass",
+          "label": "Typography · 28px",
+          "params": {
+            "align": "left",
+            "alpha": 1,
+            "blend_preset": "premul_alpha",
+            "blendfunc": "add",
+            "camera": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ],
+            "color": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "dst_alpha_factor": "one-minus-src-alpha",
+            "dst_factor": "one-minus-src-alpha",
+            "fontSize": 28,
+            "fontWeight": 0,
+            "hinting": false,
+            "letterSpacing": 0.5080645084381104,
+            "lineHeight": 36.400001525878906,
+            "src_alpha_factor": "one",
+            "src_factor": "one",
+            "text": "28px -我能吞下玻璃而不伤害身体。The quick brown fox jumps over the lazy dog.",
+            "verticalAlign": "center",
+            "wrap": "none"
+          }
+        },
+        {
+          "id": "chart.text.sample23",
+          "type": "TextPass",
+          "label": "Typography · 24px",
+          "params": {
+            "align": "left",
+            "alpha": 1,
+            "blend_preset": "premul_alpha",
+            "blendfunc": "add",
+            "camera": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ],
+            "color": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "dst_alpha_factor": "one-minus-src-alpha",
+            "dst_factor": "one-minus-src-alpha",
+            "fontSize": 24,
+            "fontWeight": 0,
+            "hinting": false,
+            "letterSpacing": 0.4516128897666931,
+            "lineHeight": 30.33333396911621,
+            "src_alpha_factor": "one",
+            "src_factor": "one",
+            "text": "24px -我能吞下玻璃而不伤害身体。The quick brown fox jumps over the lazy dog.",
+            "verticalAlign": "center",
+            "wrap": "none"
+          }
+        },
+        {
+          "id": "chart.text.sample18",
+          "type": "TextPass",
+          "label": "Typography · 20px",
+          "params": {
+            "align": "left",
+            "alpha": 1,
+            "blend_preset": "premul_alpha",
+            "blendfunc": "add",
+            "camera": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ],
+            "color": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "dst_alpha_factor": "one-minus-src-alpha",
+            "dst_factor": "one-minus-src-alpha",
+            "fontSize": 20,
+            "fontWeight": 0,
+            "hinting": false,
+            "letterSpacing": 0.3010752499103546,
+            "lineHeight": 24.266666412353516,
+            "src_alpha_factor": "one",
+            "src_factor": "one",
+            "text": "20px -我能吞下玻璃而不伤害身体。The quick brown fox jumps over the lazy dog.",
+            "verticalAlign": "center",
+            "wrap": "none"
+          }
+        },
+        {
+          "id": "chart.text.sample14",
+          "type": "TextPass",
+          "label": "Typography · 16px",
+          "params": {
+            "align": "left",
+            "alpha": 1,
+            "blend_preset": "premul_alpha",
+            "blendfunc": "add",
+            "camera": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ],
+            "color": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "dst_alpha_factor": "one-minus-src-alpha",
+            "dst_factor": "one-minus-src-alpha",
+            "fontSize": 16,
+            "fontWeight": 0,
+            "hinting": false,
+            "letterSpacing": 0.22580644488334656,
+            "lineHeight": 18.200000762939453,
+            "src_alpha_factor": "one",
+            "src_factor": "one",
+            "text": "16px -我能吞下玻璃而不伤害身体。The quick brown fox jumps over the lazy dog.",
+            "verticalAlign": "center",
+            "wrap": "none"
+          }
+        },
+        {
+          "id": "chart.text.sample9",
+          "type": "TextPass",
+          "label": "Typography · 8px",
+          "params": {
+            "align": "left",
+            "alpha": 1,
+            "blend_preset": "premul_alpha",
+            "blendfunc": "add",
+            "camera": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ],
+            "color": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "dst_alpha_factor": "one-minus-src-alpha",
+            "dst_factor": "one-minus-src-alpha",
+            "fontSize": 8,
+            "fontWeight": 0,
+            "hinting": false,
+            "letterSpacing": 0.17213115096092224,
+            "lineHeight": 12.133333206176758,
+            "src_alpha_factor": "one",
+            "src_factor": "one",
+            "text": "8px -我能吞下玻璃而不伤害身体。The quick brown fox jumps over the lazy dog.",
+            "verticalAlign": "center",
+            "wrap": "none"
+          }
+        },
+        {
+          "id": "chart.text.email",
+          "type": "TextPass",
+          "label": "email · 18.67px",
+          "params": {
+            "align": "center",
+            "alpha": 1,
+            "blend_preset": "premul_alpha",
+            "blendfunc": "add",
+            "camera": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ],
+            "color": [
+              0.1301364766903643,
+              0.1301364766903643,
+              0.1301364766903643,
+              1
+            ],
+            "dst_alpha_factor": "one-minus-src-alpha",
+            "dst_factor": "one-minus-src-alpha",
+            "fontSize": 18.66666603088379,
+            "fontWeight": 0,
+            "hinting": false,
+            "letterSpacing": 0,
+            "lineHeight": 23.33333396911621,
+            "src_alpha_factor": "one",
+            "src_factor": "one",
+            "text": "luoruiyao@bytedance.com",
+            "verticalAlign": "center",
+            "wrap": "none"
+          }
+        },
+        {
+          "id": "chart.text.date",
+          "type": "TextPass",
+          "label": "date · 18.67px",
+          "params": {
+            "align": "center",
+            "alpha": 1,
+            "blend_preset": "premul_alpha",
+            "blendfunc": "add",
+            "camera": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ],
+            "color": [
+              0.1301364766903643,
+              0.1301364766903643,
+              0.1301364766903643,
+              1
+            ],
+            "dst_alpha_factor": "one-minus-src-alpha",
+            "dst_factor": "one-minus-src-alpha",
+            "fontSize": 18.66666603088379,
+            "fontWeight": 0,
+            "hinting": false,
+            "letterSpacing": 0,
+            "lineHeight": 23.33333396911621,
+            "src_alpha_factor": "one",
+            "src_factor": "one",
+            "text": "2026-09-28",
+            "verticalAlign": "center",
+            "wrap": "none"
+          }
+        },
+        {
+          "id": "chart.text.layout.samples",
+          "type": "DataParse",
+          "label": "Type samples · layout",
+          "params": {
+            "source": "// Layout in ScenePx. Font sizes stay in physical pixels.\nreturn {\n  sample32Position: [width * 0.5, height * 0.45 + (86.0999755859375)] as vec2,\n  sample32Size: [width - 54, 43] as vec2,\n  sample28Position: [width * 0.5, height * 0.45 + (37.800048828125)] as vec2,\n  sample28Size: [width - 54, 37] as vec2,\n  sample23Position: [width * 0.5, height * 0.45 + (-7)] as vec2,\n  sample23Size: [width - 54, 31] as vec2,\n  sample18Position: [width * 0.5, height * 0.45 + (-45.9666748046875)] as vec2,\n  sample18Size: [width - 54, 25] as vec2,\n  sample14Position: [width * 0.5, height * 0.45 + (-76.7666015625)] as vec2,\n  sample14Size: [width - 54, 19] as vec2,\n  sample9Position: [width * 0.5, height * 0.45 + (-101.7333984375)] as vec2,\n  sample9Size: [width - 54, 13] as vec2,\n};\n"
+          },
+          "inputs": [
+            {
+              "id": "width",
+              "name": "width",
+              "type": "float"
+            },
+            {
+              "id": "height",
+              "name": "height",
+              "type": "float"
+            }
+          ],
+          "outputs": [
+            {
+              "id": "sample32Position",
+              "name": "sample32Position",
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
+            },
+            {
+              "id": "sample32Size",
+              "name": "sample32Size",
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
+            },
+            {
+              "id": "sample28Position",
+              "name": "sample28Position",
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
+            },
+            {
+              "id": "sample28Size",
+              "name": "sample28Size",
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
+            },
+            {
+              "id": "sample23Position",
+              "name": "sample23Position",
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
+            },
+            {
+              "id": "sample23Size",
+              "name": "sample23Size",
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
+            },
+            {
+              "id": "sample18Position",
+              "name": "sample18Position",
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
+            },
+            {
+              "id": "sample18Size",
+              "name": "sample18Size",
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
+            },
+            {
+              "id": "sample14Position",
+              "name": "sample14Position",
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
+            },
+            {
+              "id": "sample14Size",
+              "name": "sample14Size",
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
+            },
+            {
+              "id": "sample9Position",
+              "name": "sample9Position",
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
+            },
+            {
+              "id": "sample9Size",
+              "name": "sample9Size",
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
+            }
+          ],
+          "inputBindings": [
+            {
+              "portId": "width",
+              "label": "width",
+              "variableName": "width",
+              "type": "float"
+            },
+            {
+              "portId": "height",
+              "label": "height",
+              "variableName": "height",
+              "type": "float"
+            }
+          ]
+        },
+        {
+          "id": "chart.text.layout.watermark",
+          "type": "DataParse",
+          "label": "Watermark · layout",
+          "params": {
+            "source": "// Layout in ScenePx. Font sizes stay in physical pixels.\nreturn {\n  emailPosition: [width * 0.5, height * 0.025 + (23.800016403198242)] as vec2,\n  emailSize: [width * 0.3333333333333333 - 2, 24.266666412353516] as vec2,\n  datePosition: [width * 0.5, height * 0.025 + (-0.4665851593017578)] as vec2,\n  dateSize: [width * 0.3333333333333333 - 2, 24.266666412353516] as vec2,\n};\n"
+          },
+          "inputs": [
+            {
+              "id": "width",
+              "name": "width",
+              "type": "float"
+            },
+            {
+              "id": "height",
+              "name": "height",
+              "type": "float"
+            }
+          ],
+          "outputs": [
+            {
+              "id": "emailPosition",
+              "name": "emailPosition",
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
+            },
+            {
+              "id": "emailSize",
+              "name": "emailSize",
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
+            },
+            {
+              "id": "datePosition",
+              "name": "datePosition",
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
+            },
+            {
+              "id": "dateSize",
+              "name": "dateSize",
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
+            }
+          ],
+          "inputBindings": [
+            {
+              "portId": "width",
+              "label": "width",
+              "variableName": "width",
+              "type": "float"
+            },
+            {
+              "portId": "height",
+              "label": "height",
+              "variableName": "height",
+              "type": "float"
+            }
+          ]
+        },
+        {
+          "id": "chart.text.font.samples.regular",
+          "type": "FontFile",
+          "label": "Arial.ttf",
+          "params": {
+            "assetId": "builtin:procedural-test-texture/525979822591",
+            "faceIndex": 0
+          }
+        },
+        {
+          "id": "chart.text.font.samples.bold",
+          "type": "FontFile",
+          "label": "Arial Bold.ttf",
+          "params": {
+            "assetId": "builtin:procedural-test-texture/d72db21f9242",
+            "faceIndex": 0
+          }
+        },
+        {
+          "id": "chart.text.font.samples.cjk",
+          "type": "FontFile",
+          "label": "MiSans-Regular.ttf",
+          "params": {
+            "assetId": "builtin:procedural-test-texture/6aa32ded55e1",
+            "faceIndex": 0
+          }
+        }
+      ],
+      "connections": [
+        {
+          "id": "chart.text.font.regular.font.to.chart.text.sample32.font.samples",
+          "from": {
+            "nodeId": "chart.text.font.samples.regular",
+            "portId": "font"
+          },
+          "to": {
+            "nodeId": "chart.text.sample32",
+            "portId": "font"
+          }
+        },
+        {
+          "id": "chart.text.font.cjk.font.to.chart.text.sample32.fallbackFont.samples",
+          "from": {
+            "nodeId": "chart.text.font.samples.cjk",
+            "portId": "font"
+          },
+          "to": {
+            "nodeId": "chart.text.sample32",
+            "portId": "fallbackFont"
+          }
+        },
+        {
+          "id": "chart.text.font.regular.font.to.chart.text.sample28.font.samples",
+          "from": {
+            "nodeId": "chart.text.font.samples.regular",
+            "portId": "font"
+          },
+          "to": {
+            "nodeId": "chart.text.sample28",
+            "portId": "font"
+          }
+        },
+        {
+          "id": "chart.text.font.cjk.font.to.chart.text.sample28.fallbackFont.samples",
+          "from": {
+            "nodeId": "chart.text.font.samples.cjk",
+            "portId": "font"
+          },
+          "to": {
+            "nodeId": "chart.text.sample28",
+            "portId": "fallbackFont"
+          }
+        },
+        {
+          "id": "chart.text.font.regular.font.to.chart.text.sample23.font.samples",
+          "from": {
+            "nodeId": "chart.text.font.samples.regular",
+            "portId": "font"
+          },
+          "to": {
+            "nodeId": "chart.text.sample23",
+            "portId": "font"
+          }
+        },
+        {
+          "id": "chart.text.font.cjk.font.to.chart.text.sample23.fallbackFont.samples",
+          "from": {
+            "nodeId": "chart.text.font.samples.cjk",
+            "portId": "font"
+          },
+          "to": {
+            "nodeId": "chart.text.sample23",
+            "portId": "fallbackFont"
+          }
+        },
+        {
+          "id": "chart.text.font.regular.font.to.chart.text.sample18.font.samples",
+          "from": {
+            "nodeId": "chart.text.font.samples.regular",
+            "portId": "font"
+          },
+          "to": {
+            "nodeId": "chart.text.sample18",
+            "portId": "font"
+          }
+        },
+        {
+          "id": "chart.text.font.cjk.font.to.chart.text.sample18.fallbackFont.samples",
+          "from": {
+            "nodeId": "chart.text.font.samples.cjk",
+            "portId": "font"
+          },
+          "to": {
+            "nodeId": "chart.text.sample18",
+            "portId": "fallbackFont"
+          }
+        },
+        {
+          "id": "chart.text.font.regular.font.to.chart.text.sample14.font.samples",
+          "from": {
+            "nodeId": "chart.text.font.samples.regular",
+            "portId": "font"
+          },
+          "to": {
+            "nodeId": "chart.text.sample14",
+            "portId": "font"
+          }
+        },
+        {
+          "id": "chart.text.font.cjk.font.to.chart.text.sample14.fallbackFont.samples",
+          "from": {
+            "nodeId": "chart.text.font.samples.cjk",
+            "portId": "font"
+          },
+          "to": {
+            "nodeId": "chart.text.sample14",
+            "portId": "fallbackFont"
+          }
+        },
+        {
+          "id": "chart.text.font.regular.font.to.chart.text.sample9.font.samples",
+          "from": {
+            "nodeId": "chart.text.font.samples.regular",
+            "portId": "font"
+          },
+          "to": {
+            "nodeId": "chart.text.sample9",
+            "portId": "font"
+          }
+        },
+        {
+          "id": "chart.text.font.cjk.font.to.chart.text.sample9.fallbackFont.samples",
+          "from": {
+            "nodeId": "chart.text.font.samples.cjk",
+            "portId": "font"
+          },
+          "to": {
+            "nodeId": "chart.text.sample9",
+            "portId": "fallbackFont"
+          }
+        },
+        {
+          "id": "chart.text.font.regular.font.to.chart.text.email.font.samples",
+          "from": {
+            "nodeId": "chart.text.font.samples.regular",
+            "portId": "font"
+          },
+          "to": {
+            "nodeId": "chart.text.email",
+            "portId": "font"
+          }
+        },
+        {
+          "id": "chart.text.font.bold.font.to.chart.text.date.font.samples",
+          "from": {
+            "nodeId": "chart.text.font.samples.bold",
+            "portId": "font"
+          },
+          "to": {
+            "nodeId": "chart.text.date",
+            "portId": "font"
+          }
+        },
+        {
+          "id": "chart.text.layout.samples.sample32.position.samples",
+          "from": {
+            "nodeId": "chart.text.layout.samples",
+            "portId": "sample32Position"
+          },
+          "to": {
+            "nodeId": "chart.text.sample32",
+            "portId": "position"
+          }
+        },
+        {
+          "id": "chart.text.layout.samples.sample32.size.samples",
+          "from": {
+            "nodeId": "chart.text.layout.samples",
+            "portId": "sample32Size"
+          },
+          "to": {
+            "nodeId": "chart.text.sample32",
+            "portId": "size"
+          }
+        },
+        {
+          "id": "chart.text.layout.samples.sample28.position.samples",
+          "from": {
+            "nodeId": "chart.text.layout.samples",
+            "portId": "sample28Position"
+          },
+          "to": {
+            "nodeId": "chart.text.sample28",
+            "portId": "position"
+          }
+        },
+        {
+          "id": "chart.text.layout.samples.sample28.size.samples",
+          "from": {
+            "nodeId": "chart.text.layout.samples",
+            "portId": "sample28Size"
+          },
+          "to": {
+            "nodeId": "chart.text.sample28",
+            "portId": "size"
+          }
+        },
+        {
+          "id": "chart.text.layout.samples.sample23.position.samples",
+          "from": {
+            "nodeId": "chart.text.layout.samples",
+            "portId": "sample23Position"
+          },
+          "to": {
+            "nodeId": "chart.text.sample23",
+            "portId": "position"
+          }
+        },
+        {
+          "id": "chart.text.layout.samples.sample23.size.samples",
+          "from": {
+            "nodeId": "chart.text.layout.samples",
+            "portId": "sample23Size"
+          },
+          "to": {
+            "nodeId": "chart.text.sample23",
+            "portId": "size"
+          }
+        },
+        {
+          "id": "chart.text.layout.samples.sample18.position.samples",
+          "from": {
+            "nodeId": "chart.text.layout.samples",
+            "portId": "sample18Position"
+          },
+          "to": {
+            "nodeId": "chart.text.sample18",
+            "portId": "position"
+          }
+        },
+        {
+          "id": "chart.text.layout.samples.sample18.size.samples",
+          "from": {
+            "nodeId": "chart.text.layout.samples",
+            "portId": "sample18Size"
+          },
+          "to": {
+            "nodeId": "chart.text.sample18",
+            "portId": "size"
+          }
+        },
+        {
+          "id": "chart.text.layout.samples.sample14.position.samples",
+          "from": {
+            "nodeId": "chart.text.layout.samples",
+            "portId": "sample14Position"
+          },
+          "to": {
+            "nodeId": "chart.text.sample14",
+            "portId": "position"
+          }
+        },
+        {
+          "id": "chart.text.layout.samples.sample14.size.samples",
+          "from": {
+            "nodeId": "chart.text.layout.samples",
+            "portId": "sample14Size"
+          },
+          "to": {
+            "nodeId": "chart.text.sample14",
+            "portId": "size"
+          }
+        },
+        {
+          "id": "chart.text.layout.samples.sample9.position.samples",
+          "from": {
+            "nodeId": "chart.text.layout.samples",
+            "portId": "sample9Position"
+          },
+          "to": {
+            "nodeId": "chart.text.sample9",
+            "portId": "position"
+          }
+        },
+        {
+          "id": "chart.text.layout.samples.sample9.size.samples",
+          "from": {
+            "nodeId": "chart.text.layout.samples",
+            "portId": "sample9Size"
+          },
+          "to": {
+            "nodeId": "chart.text.sample9",
+            "portId": "size"
+          }
+        },
+        {
+          "id": "chart.text.layout.watermark.email.position.samples",
+          "from": {
+            "nodeId": "chart.text.layout.watermark",
+            "portId": "emailPosition"
+          },
+          "to": {
+            "nodeId": "chart.text.email",
+            "portId": "position"
+          }
+        },
+        {
+          "id": "chart.text.layout.watermark.email.size.samples",
+          "from": {
+            "nodeId": "chart.text.layout.watermark",
+            "portId": "emailSize"
+          },
+          "to": {
+            "nodeId": "chart.text.email",
+            "portId": "size"
+          }
+        },
+        {
+          "id": "chart.text.layout.watermark.date.position.samples",
+          "from": {
+            "nodeId": "chart.text.layout.watermark",
+            "portId": "datePosition"
+          },
+          "to": {
+            "nodeId": "chart.text.date",
+            "portId": "position"
+          }
+        },
+        {
+          "id": "chart.text.layout.watermark.date.size.samples",
+          "from": {
+            "nodeId": "chart.text.layout.watermark",
+            "portId": "dateSize"
+          },
+          "to": {
+            "nodeId": "chart.text.date",
+            "portId": "size"
+          }
+        }
+      ]
+    }
+  ],
+  "assets": {}
+}

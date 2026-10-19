@@ -20,7 +20,7 @@ const PIXELS: [[u8; 4]; 8] = [
 ];
 
 fn scene(encoding: &str, alpha: &str, output: &str) -> SceneDSL {
-    serde_json::from_value(json!({
+    let mut value = json!({
         "version": "6.0", "workingColorSpace": "linear-srgb",
         "metadata": { "name": "image-texture-color-space" },
         "nodes": [
@@ -31,19 +31,27 @@ fn scene(encoding: &str, alpha: &str, output: &str) -> SceneDSL {
             { "id": "target", "type": "RenderTexture", "params": {
                 "width": 4, "height": 2, "format": "rgba16float"
             } },
+            { "id": "draw", "type": "ImagePass", "params": { "loadOp": "none" } },
             { "id": "composite", "type": "Composite" },
             { "id": "screen", "type": "Screen", "params": { "outputColorSpace": "srgb", "width": 4, "height": 2 } }
         ],
         "connections": [
             { "id": "image-pass", "from": { "nodeId": "image", "portId": output },
+                "to": { "nodeId": if output == "texture" { "draw" } else { "composite" },
+                    "portId": if output == "texture" { "image" } else { "pass" } } },
+            { "id": "draw", "from": { "nodeId": "draw", "portId": "pass" },
                 "to": { "nodeId": "composite", "portId": "pass" } },
             { "id": "target", "from": { "nodeId": "target", "portId": "texture" },
                 "to": { "nodeId": "composite", "portId": "target" } },
-            { "id": "screen", "from": { "nodeId": "composite", "portId": "pass" },
-                "to": { "nodeId": "screen", "portId": "pass" } }
+            { "id": "screen", "from": { "nodeId": "composite", "portId": "texture" },
+                "to": { "nodeId": "screen", "portId": "texture" } }
         ],
         "outputs": null
-    }))
+    });
+    if output != "texture" {
+        value["connections"].as_array_mut().unwrap().retain(|edge| edge["id"] != "draw");
+    }
+    serde_json::from_value(value)
     .expect("image texture scene")
 }
 

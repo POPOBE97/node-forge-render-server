@@ -61,7 +61,12 @@ Scene preparation and validation:
 - Internal scene-prep stages auto-wrap primitive values into render passes
 - Port type utilities for connection validation
 - Composition layer ordering (`Composite.pass` + `dynamic_*`)
-- Output contract: `RenderTarget.pass <- Composite` and `Composite.target <- RenderTexture`
+- Output contract: `Screen.texture` / `File.texture` consumes a produced texture; its producer
+  owns the extent and format. Screen dimensions do not allocate upstream targets.
+- `RenderPass.pass` draws in a Composite target. `RenderPass.texture` renders a local geometry-sized
+  surface. Group expansion precedes splitting these into independent invocations.
+- `Composite.target <- RenderTexture` declares an explicit destination; Composite only outputs
+  `texture`. Drawing that texture again requires an explicit ImagePass. There is no pass/texture coercion.
 
 ### render_plan/
 Render-plan helpers used by WGSL generation and ShaderSpace assembly:

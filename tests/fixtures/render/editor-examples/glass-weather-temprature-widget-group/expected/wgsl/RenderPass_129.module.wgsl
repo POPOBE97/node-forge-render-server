@@ -483,10 +483,10 @@ fn mc_math_closure_fce7f1a2_(uv: vec2<f32>, c_edge: vec4<f32>, e: f32, f: f32, l
     return _e117;
 }
 
-fn mc_show_thumb(uv: vec2<f32>, sdf: f32, show_thumb: f32) -> f32 {
+fn mc_show_thumb(uv: vec2<f32>, sdf: f32, show_thumb: bool) -> f32 {
     var uv_1: vec2<f32>;
     var sdf_1: f32;
-    var show_thumb_1: f32;
+    var show_thumb_1: bool;
     var output: f32 = 0f;
     var r: f32;
 
@@ -502,18 +502,18 @@ fn mc_show_thumb(uv: vec2<f32>, sdf: f32, show_thumb: f32) -> f32 {
     let _e24: f32 = r;
     let _e26: f32 = r;
     let _e28: f32 = r;
-    let _e32: f32 = show_thumb_1;
-    output = (f32(exp((-(_e26) * _e28))) * _e32);
-    let _e34: f32 = output;
-    return _e34;
+    let _e32: bool = show_thumb_1;
+    output = (f32(exp((-(_e26) * _e28))) * select(0f, 1f, _e32));
+    let _e37: f32 = output;
+    return _e37;
 }
 
-fn mc_show_thumb_008bed07_(uv: vec2<f32>, t: f32, c_ui: vec4<f32>, thumb: f32, show_thumb: f32) -> vec4<f32> {
+fn mc_show_thumb_008bed07_(uv: vec2<f32>, t: f32, c_ui: vec4<f32>, thumb: f32, show_thumb: bool) -> vec4<f32> {
     var uv_1: vec2<f32>;
     var t_1: f32;
     var c_ui_1: vec4<f32>;
     var thumb_1: f32;
-    var show_thumb_1: f32;
+    var show_thumb_1: bool;
     var output: vec4<f32> = vec4(0f);
     var r: vec4<f32>;
 
@@ -524,18 +524,18 @@ fn mc_show_thumb_008bed07_(uv: vec2<f32>, t: f32, c_ui: vec4<f32>, thumb: f32, s
     show_thumb_1 = show_thumb;
     let _e13: vec4<f32> = c_ui_1;
     let _e18: f32 = t_1;
-    let _e19: f32 = show_thumb_1;
-    r = (_e13 * mix(1f, _e18, _e19));
+    let _e19: bool = show_thumb_1;
+    r = (_e13 * select(1f, _e18, _e19));
     let _e26: f32 = thumb_1;
-    let _e27: f32 = show_thumb_1;
-    let _e29: vec4<f32> = r;
-    let _e32: f32 = thumb_1;
-    let _e33: f32 = show_thumb_1;
-    r = mix(_e29, vec4(1f), vec4((_e32 * _e33)));
-    let _e37: vec4<f32> = r;
-    output = _e37;
-    let _e38: vec4<f32> = output;
-    return _e38;
+    let _e27: bool = show_thumb_1;
+    let _e32: vec4<f32> = r;
+    let _e35: f32 = thumb_1;
+    let _e36: bool = show_thumb_1;
+    r = mix(_e32, vec4(1f), vec4((_e35 * select(0f, 1f, _e36))));
+    let _e43: vec4<f32> = r;
+    output = _e43;
+    let _e44: vec4<f32> = output;
+    return _e44;
 }
 
 fn mc_thumb_t(uv: vec2<f32>, t: f32, size: vec2<f32>) -> vec2<f32> {
@@ -567,12 +567,12 @@ fn sample_pass_texture(uv_in: vec2f) -> vec4f {
 // The Rust compiler wires node inputs into calls to these helpers.
 
 fn sdf2d_bevel_smooth5_map(t_in: f32) -> f32 {
-    // Map t in [0, 1] into a symmetric [-1, 1] curve.
-    var t = 0.5 + t_in * 0.5;
-    t = clamp(t, 0.0, 1.0);
-    // 5th-degree smootherstep: t^3 * (t * (t * 6 - 15) + 10)
-    t = t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
-    return (t - 0.5) * 2.0;
+    // Evaluate the symmetric polynomial in the nearer endpoint's coordinate.
+    // Expanded terms near t=1 lose precision before finite-difference normals.
+    let t = clamp(0.5 + t_in * 0.5, 0.0, 1.0);
+    let q = min(t, 1.0 - t);
+    let polynomial = q * q * q * (10.0 + q * (-15.0 + 6.0 * q));
+    return select(2.0 * polynomial - 1.0, 1.0 - 2.0 * polynomial, t >= 0.5);
 }
 
 fn sdf2d_bevel_smooth5(d_in: f32, edge: f32, cliff: f32) -> f32 {
@@ -594,18 +594,11 @@ fn sdf2d_bevel_smooth5(d_in: f32, edge: f32, cliff: f32) -> f32 {
 }
 
 fn sdf2d_bevel_smooth7_map(t_in: f32) -> f32 {
-    // Map t in [0, 1] into a symmetric [-1, 1] curve.
-    var t = 0.5 + t_in * 0.5;
-    t = clamp(t, 0.0, 1.0);
-    let t2 = t * t;
-    let t3 = t2 * t;
-    let t4 = t3 * t;
-    let t5 = t4 * t;
-    let t6 = t5 * t;
-    let t7 = t6 * t;
-    // 7th-degree smooth polynomial
-    t = -20.0 * t7 + 70.0 * t6 - 84.0 * t5 + 35.0 * t4;
-    return (t - 0.5) * 2.0;
+    let t = clamp(0.5 + t_in * 0.5, 0.0, 1.0);
+    let q = min(t, 1.0 - t);
+    let q2 = q * q;
+    let polynomial = q2 * q2 * (35.0 + q * (-84.0 + q * (70.0 - 20.0 * q)));
+    return select(2.0 * polynomial - 1.0, 1.0 - 2.0 * polynomial, t >= 0.5);
 }
 
 fn sdf2d_bevel_smooth7(d_in: f32, edge: f32, cliff: f32) -> f32 {
@@ -852,7 +845,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         let sdf = (length((in.local_px.xy - thumb_t_out)) - 16.5);
         let show_thumb = ((graph_inputs.node_BoolInput_140_13a147c1).x != 0);
         var output: f32;
-        output = mc_show_thumb(in.uv, sdf, select(0.0, 1.0, show_thumb));
+        output = mc_show_thumb(in.uv, sdf, show_thumb);
         show_thumb_out = output;
     }
     var math_closure_out: vec4f;
@@ -886,7 +879,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         let thumb = smoothstep(-7.0, -8.0, (length((in.local_px.xy - thumb_t_out)) - 16.5));
         let show_thumb = ((graph_inputs.node_BoolInput_140_13a147c1).x != 0);
         var output: vec4f;
-        output = mc_show_thumb_008bed07_(in.uv, t, c_ui, thumb, select(0.0, 1.0, show_thumb));
+        output = mc_show_thumb_008bed07_(in.uv, t, c_ui, thumb, show_thumb);
         show_thumb_out_945c1ea4 = output;
     }
     // Final composite

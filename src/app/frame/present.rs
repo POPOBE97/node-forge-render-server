@@ -79,7 +79,7 @@ fn update_timeline_review_state(
     false
 }
 
-fn apply_timeline_interaction(app: &mut App, interaction: TimelineInteraction) {
+pub(super) fn apply_timeline_interaction(app: &mut App, interaction: TimelineInteraction) {
     let retained_ids = app
         .runtime
         .timeline_buffer
@@ -378,6 +378,15 @@ pub(super) fn run(
             let frame_result = canvas::show(app, ctx, ui, render_state, renderer, frame_state, now);
             pending_commands.extend(frame_result.commands);
         });
+
+    if let Some(pass_name) = app.shell.pass_graph_window.show(
+        ctx,
+        app.shell.resource_snapshot.as_ref(),
+        &app.core.shader_space,
+        app.shell.resource_snapshot_generation,
+    ) {
+        pending_commands.push(AppCommand::OpenPassDebug(pass_name));
+    }
 
     for command in pending_commands {
         let frame_freeze_case_id = match &command {

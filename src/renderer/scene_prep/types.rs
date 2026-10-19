@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use rust_wgpu_fiber::ResourceName;
 
-use crate::dsl::{Node, SceneDSL};
+use crate::dsl::{Endpoint, Node, SceneDSL};
 
 /// Prepared scene with topologically sorted nodes and metadata.
 #[derive(Clone, Debug)]
@@ -16,8 +16,10 @@ pub struct PreparedScene {
     pub topo_order: Vec<String>,
     pub composite_layers_in_draw_order: Vec<String>,
     pub composition_layers_by_id: HashMap<String, Vec<String>>,
-    pub output_texture_node_id: String,
-    pub output_texture_name: ResourceName,
+    pub output: Endpoint,
+    /// Explicit destination when the presented texture is a Composite output.
+    pub output_target_node_id: Option<String>,
+    /// Planning context only; RenderPlan.resolution is the actual output texture extent.
     pub resolution: [u32; 2],
 
     pub baked_data_parse:

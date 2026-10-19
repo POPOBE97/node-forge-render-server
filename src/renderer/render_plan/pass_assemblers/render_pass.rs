@@ -962,7 +962,8 @@ pub(crate) fn assemble_render_pass(
         }
     }
 
-    // Register output so downstream PassTexture nodes can resolve it.
+    // Register attachment metadata for draw inspection and the explicit texture output.
+    // Texture consumers are validated separately and cannot sample the pass endpoint.
     bs.pass_output_registry.register_ports(
         layer_id,
         &["pass", "texture"],

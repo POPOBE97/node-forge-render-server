@@ -7,8 +7,7 @@ use crate::{
     renderer::{geometry_resolver::is_pass_like_node_type, types::PassTextureRef},
 };
 
-/// A texture-domain resource keeps native image textures zero-copy while allowing pass
-/// endpoints to be materialized by the render planner for the current consumer context.
+/// A texture resource is either a native image or an explicitly produced surface.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum TextureSourceRef {
     Image {
@@ -33,7 +32,8 @@ pub(crate) fn processing_input_connection<'a>(
     let is_lowered_image_pass = scene
         .nodes
         .iter()
-        .any(|node| node.id == node_id && node.node_type == "ImagePass");
+        .any(|node| node.id == node_id && node.node_type == "ImagePass"
+            && node.params.get("sys.imagePassBlurExpanded").and_then(serde_json::Value::as_bool) == Some(true));
     if is_lowered_image_pass {
         if let Some(connection) = incoming_connection(scene, node_id, "pass") {
             return Ok((connection, "pass"));
@@ -109,7 +109,12 @@ fn resolve_texture_source_ref_inner(
         });
     }
 
-    if is_pass_like_node_type(&node.node_type) {
+    let private_image_source = endpoint.port_id == "pass"
+        && node.node_type == "RenderPass"
+        && node.params.get("sys.imagePassSource").and_then(serde_json::Value::as_bool) == Some(true);
+    if is_pass_like_node_type(&node.node_type)
+        && (endpoint.port_id == "texture" || private_image_source)
+    {
         return Ok(TextureSourceRef::Surface(PassTextureRef::direct(
             &endpoint.node_id,
             &endpoint.port_id,
@@ -117,70 +122,27 @@ fn resolve_texture_source_ref_inner(
     }
 
     bail!(
-        "texture source '{}.{}' must resolve to ImageTexture.texture or a pass producer, got {}",
+        "texture source '{}.{}' must use a texture output, got {}",
         endpoint.node_id,
         endpoint.port_id,
         node.node_type
     )
 }
 
-/// Resolve a pass-typed endpoint to the concrete pass output that owns the texture.
-///
-/// `TextureSampler.texture` is a zero-copy alias. The outermost alias owns the consumer-side binding
-/// identity and sampler, while the returned source endpoint always names a real pass producer.
+/// Resolve a draw endpoint. Textures must be converted to a draw by an authored ImagePass.
 pub(crate) fn resolve_pass_source_ref(
-    scene: &SceneDSL,
+    _scene: &SceneDSL,
     nodes_by_id: &HashMap<String, Node>,
     endpoint: &Endpoint,
 ) -> Result<PassTextureRef> {
-    let mut visiting = HashSet::new();
-    resolve_pass_source_ref_inner(scene, nodes_by_id, endpoint, &mut visiting)
-}
-
-fn resolve_pass_source_ref_inner(
-    scene: &SceneDSL,
-    nodes_by_id: &HashMap<String, Node>,
-    endpoint: &Endpoint,
-    visiting: &mut HashSet<String>,
-) -> Result<PassTextureRef> {
-    let node = nodes_by_id.get(&endpoint.node_id).ok_or_else(|| {
-        anyhow!(
-            "pass source node '{}' does not exist for output '{}'",
-            endpoint.node_id,
-            endpoint.port_id
-        )
-    })?;
-
-    if node.node_type == "TextureSampler" && endpoint.port_id == "texture" {
-        if !visiting.insert(node.id.clone()) {
-            bail!(
-                "cycle detected while resolving TextureSampler.texture alias '{}'",
-                node.id
-            );
-        }
-        let input = incoming_connection(scene, &node.id, "texture").ok_or_else(|| {
-            anyhow!(
-                "TextureSampler.texture input is not connected for '{}'",
-                node.id
-            )
-        })?;
-        let mut resolved =
-            resolve_pass_source_ref_inner(scene, nodes_by_id, &input.from, visiting)?;
-        visiting.remove(&node.id);
-        resolved.binding_id = node.id.clone();
-        resolved.sampler_node_id = Some(node.id.clone());
-        return Ok(resolved);
+    let node = nodes_by_id.get(&endpoint.node_id)
+        .ok_or_else(|| anyhow!("draw source node '{}' does not exist", endpoint.node_id))?;
+    if endpoint.port_id != "pass" || !matches!(node.node_type.as_str(),
+        "RenderPass" | "ImagePass" | "TextPass" | "IntelligentLight" | "MeshGradient")
+    {
+        bail!("draw source '{}.{}' must use a pass output, got {}",
+            endpoint.node_id, endpoint.port_id, node.node_type);
     }
-
-    if !is_pass_like_node_type(&node.node_type) {
-        bail!(
-            "pass source '{}.{}' must resolve to a pass producer, got {}",
-            endpoint.node_id,
-            endpoint.port_id,
-            node.node_type
-        );
-    }
-
     Ok(PassTextureRef::direct(&endpoint.node_id, &endpoint.port_id))
 }
 

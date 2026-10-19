@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use anyhow::{Result, anyhow, bail};
 
 use crate::{
-    dsl::{Connection, Endpoint, Node, NodePort, SceneDSL, incoming_connection},
+    dsl::{Connection, Endpoint, Node, SceneDSL, incoming_connection},
     renderer::utils::cpu_num_u32_min_1,
     schema,
 };
@@ -47,30 +47,16 @@ fn fullscreen_pass_params_for_consumer(
     params
 }
 
-/// Returns the planner-local invocations whose result must exist as a sampleable texture.
-///
-/// This is an execution-role decision, not a size inference: an explicit `texture` route always
-/// materializes, while a `pass` route materializes only when its immediate consumer is not a
-/// Composite sink. The consumer-scoped coercion/splitting pass has already made every invocation
-/// unambiguous before this function is called.
+/// Explicit texture outputs own a sampleable surface. The private source draw of
+/// a blurred ImagePass is also materialized as part of that macro's lowering.
 pub(crate) fn materialized_texture_output_ids(scene: &SceneDSL) -> HashSet<String> {
-    let nodes = scene
-        .nodes
-        .iter()
-        .map(|node| (node.id.as_str(), node.node_type.as_str()))
-        .collect::<HashMap<_, _>>();
-    scene
-        .connections
-        .iter()
-        .filter(|connection| {
-            connection.from.port_id == "texture"
-                || (connection.from.port_id == "pass"
-                    && nodes
-                        .get(connection.to.node_id.as_str())
-                        .is_some_and(|node_type| *node_type != "Composite"))
-        })
-        .map(|connection| connection.from.node_id.clone())
-        .collect()
+    scene.connections.iter().filter(|connection| {
+        connection.from.port_id == "texture"
+            || (connection.from.port_id == "pass" && scene.nodes.iter().any(|node| {
+                node.id == connection.to.node_id && node.node_type == "ImagePass"
+                    && node.params.get("sys.imagePassBlurExpanded").and_then(serde_json::Value::as_bool) == Some(true)
+            }))
+    }).map(|connection| connection.from.node_id.clone()).collect()
 }
 
 /// Split simultaneous pass/texture routes into independent planner-local invocations. This keeps
@@ -415,7 +401,7 @@ fn downstream_target_sizes(
     Ok(sizes)
 }
 
-/// Create target-scoped fullscreen invocations in a planner-owned execution scene.
+/// Lower numeric/color inputs to explicit fullscreen draws in the execution scene.
 /// The authored SceneDSL remains unchanged and no global target-size guess is used.
 pub(crate) fn plan_consumer_scoped_coercions(scene: &mut SceneDSL) -> Result<usize> {
     split_dual_domain_routes(scene);
@@ -432,12 +418,10 @@ pub(crate) fn plan_consumer_scoped_coercions(scene: &mut SceneDSL) -> Result<usi
         connection_index: usize,
         connection_id: String,
         source: Endpoint,
-        source_is_texture: bool,
         size: [u32; 2],
         pass_params: HashMap<String, serde_json::Value>,
         pass_id: String,
         geometry_id: String,
-        sample_id: String,
     }
 
     let mut plans = Vec::new();
@@ -473,12 +457,10 @@ pub(crate) fn plan_consumer_scoped_coercions(scene: &mut SceneDSL) -> Result<usi
             connection_index,
             connection_id: connection.id.clone(),
             source: connection.from.clone(),
-            source_is_texture: contains_type(&from_type, "texture"),
             size,
             pass_params: fullscreen_pass_params_for_consumer(&nodes, &connection.to.node_id),
             pass_id: format!("sys.coercion.fullscreen.pass.{}", connection.id),
             geometry_id: format!("sys.coercion.fullscreen.geometry.{}", connection.id),
-            sample_id: format!("sys.coercion.fullscreen.sample.{}", connection.id),
         });
     }
 
@@ -521,47 +503,9 @@ pub(crate) fn plan_consumer_scoped_coercions(scene: &mut SceneDSL) -> Result<usi
             },
         });
 
-        let material_source = if plan.source_is_texture {
-            scene.nodes.push(Node {
-                id: plan.sample_id.clone(),
-                node_type: "MathClosure".to_string(),
-                params: HashMap::from([(
-                    "source".to_string(),
-                    serde_json::Value::String("output = samplePass(texture, uv);".to_string()),
-                )]),
-                inputs: vec![NodePort {
-                    id: "texture".to_string(),
-                    name: Some("texture".to_string()),
-                    port_type: Some("texture".to_string()),
-                    array_length: None,
-                }],
-                input_bindings: Vec::new(),
-                outputs: vec![NodePort {
-                    id: "output".to_string(),
-                    name: Some("Output".to_string()),
-                    port_type: Some("color".to_string()),
-                    array_length: None,
-                }],
-                wgsl_override: None,
-            });
-            added_connections.push(Connection {
-                id: format!("sys.coercion.texture.edge.{}", plan.connection_id),
-                from: plan.source.clone(),
-                to: Endpoint {
-                    node_id: plan.sample_id.clone(),
-                    port_id: "texture".to_string(),
-                },
-            });
-            Endpoint {
-                node_id: plan.sample_id.clone(),
-                port_id: "output".to_string(),
-            }
-        } else {
-            plan.source.clone()
-        };
         added_connections.push(Connection {
             id: format!("sys.coercion.material.edge.{}", plan.connection_id),
-            from: material_source,
+            from: plan.source.clone(),
             to: Endpoint {
                 node_id: plan.pass_id.clone(),
                 port_id: "material".to_string(),
@@ -638,7 +582,7 @@ mod tests {
     }
 
     #[test]
-    fn texture_to_pass_is_target_sized_fullscreen_draw() {
+    fn textures_do_not_create_implicit_draws() {
         let mut scene = scene(
             vec![
                 node("image", "ImageTexture"),
@@ -647,85 +591,14 @@ mod tests {
             ],
             vec![
                 edge("layer", ("image", "texture"), ("composite", "pass")),
-                edge(
-                    "target-edge",
-                    ("target", "texture"),
-                    ("composite", "target"),
-                ),
+                edge("target-edge", ("target", "texture"), ("composite", "target")),
             ],
         );
 
-        assert_eq!(plan_consumer_scoped_coercions(&mut scene).unwrap(), 1);
-        let bridge = scene
-            .nodes
-            .iter()
-            .find(|node| node.id == "sys.coercion.fullscreen.pass.layer")
-            .expect("fullscreen pass");
-        assert_eq!(bridge.node_type, "RenderPass");
-        assert_eq!(
-            bridge.params.get("loadOp"),
-            Some(&serde_json::json!("none"))
-        );
-        let geometry = scene
-            .nodes
-            .iter()
-            .find(|node| node.id == "sys.coercion.fullscreen.geometry.layer")
-            .expect("fullscreen geometry");
-        assert_eq!(
-            geometry.params.get("size"),
-            Some(&serde_json::json!([320, 180]))
-        );
-        assert!(scene.nodes.iter().any(|node| {
-            node.id == "sys.coercion.fullscreen.sample.layer" && node.node_type == "MathClosure"
-        }));
-    }
-
-    #[test]
-    fn texture_to_composite_pass_inherits_composite_blend_policy() {
-        let mut composite = node("composite", "Composite");
-        composite
-            .params
-            .insert("blend_preset".to_string(), serde_json::json!("add"));
-        composite
-            .params
-            .insert("src_factor".to_string(), serde_json::json!("one"));
-        composite
-            .params
-            .insert("dst_factor".to_string(), serde_json::json!("one"));
-        let mut scene = scene(
-            vec![
-                node("image", "ImageTexture"),
-                composite,
-                render_texture("target", 320, 180),
-            ],
-            vec![
-                edge("layer", ("image", "texture"), ("composite", "pass")),
-                edge(
-                    "target-edge",
-                    ("target", "texture"),
-                    ("composite", "target"),
-                ),
-            ],
-        );
-
-        plan_consumer_scoped_coercions(&mut scene).unwrap();
-        let bridge = scene
-            .nodes
-            .iter()
-            .find(|node| node.id == "sys.coercion.fullscreen.pass.layer")
-            .expect("fullscreen pass");
-        assert_eq!(
-            bridge.params.get("loadOp"),
-            Some(&serde_json::json!("none"))
-        );
-        assert_eq!(
-            bridge.params.get("blend_preset"),
-            Some(&serde_json::json!("add"))
-        );
-        assert_eq!(
-            bridge.params.get("dst_factor"),
-            Some(&serde_json::json!("one"))
-        );
+        assert_eq!(plan_consumer_scoped_coercions(&mut scene).unwrap(), 0);
+        assert_eq!(scene.nodes.len(), 3);
+        let scheme = schema::load_default_scheme().unwrap();
+        assert!(schema::validate_scene_against(&scene, &scheme).is_err());
     }
 
     #[test]
@@ -819,7 +692,7 @@ mod tests {
 
         let ids = materialized_texture_output_ids(&scene);
         assert!(!ids.contains("pass-a"));
-        assert!(ids.contains("pass-b"));
+        assert!(!ids.contains("pass-b"));
         assert!(ids.contains("pass-c"));
     }
 

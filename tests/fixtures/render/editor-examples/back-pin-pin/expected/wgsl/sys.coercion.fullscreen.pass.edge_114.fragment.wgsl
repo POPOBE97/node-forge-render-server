@@ -55,10 +55,10 @@ var img_tex_ImageTexture_50: texture_2d<f32>;
 var img_samp_ImageTexture_50: sampler;
 
 @group(1) @binding(4)
-var pass_tex_RenderPass_4: texture_2d<f32>;
+var pass_tex_TextureRender_RenderPass_4_pass: texture_2d<f32>;
 
 @group(1) @binding(5)
-var pass_samp_RenderPass_4: sampler;
+var pass_samp_TextureRender_RenderPass_4_pass: sampler;
 
 @group(1) @binding(6)
 var pass_tex_BloomNode_52: texture_2d<f32>;
@@ -333,7 +333,7 @@ fn mc_math_closure_534c24ef(uv: vec2<f32>, x: vec4<f32>, y: vec4<f32>) -> vec4<f
 }
 
 fn sample_pass_l0_(uv_in: vec2f) -> vec4f {
-    return textureSample(pass_tex_RenderPass_4, pass_samp_RenderPass_4, uv_in);
+    return textureSample(pass_tex_TextureRender_RenderPass_4_pass, pass_samp_TextureRender_RenderPass_4_pass, uv_in);
 }
 
 fn sample_pass_l1_(uv_in: vec2f) -> vec4f {

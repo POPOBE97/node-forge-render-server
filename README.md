@@ -14,6 +14,15 @@ cargo run --release
 
 > 默认会从 `assets/` 读取示例场景作为初始 scene。
 
+## Command Palette
+
+主窗口按 **Cmd+P**（Windows/Linux 为 **Ctrl+P**）打开命令面板。输入命令名称或快捷键搜索，
+用 ↑/↓ 选择、Enter 执行，也可点击命令；Esc、再次按 Cmd+P 或点击面板外关闭。
+原有主窗口快捷键操作均可在面板中执行，未满足条件的命令会置灰。
+
+搜索 **Statistics**，执行 **Hide Statistics Text / Show Statistics Text**，可切换左上角
+Frame CPU encode、Frame wall、Queue wait 和 Pass 耗时文字（默认显示）。
+
 ## Pixel Perfecto
 
 显微镜照片的 Diamond RGB 子像素网格对齐工具，支持自动初对齐、单画布累积校准、图片旋转、拖格点建立标定锚点、自动补点及逐图透视／镜头矫正，也支持横纵标尺与共享辅助线、两点数像素（图像／网格独立计数与差值）、吸附拖动、叠加／差值／A/B／卷帘比较，以及打包工程和 PNG 导出。
@@ -22,12 +31,12 @@ cargo run --release
 cargo run --bin pixel-perfecto -- photo-a.png photo-b.jpg
 ```
 
-也可从 Render Server 侧栏的 **Pixel Perfecto** 按钮打开独立工具窗口。完整操作说明见 [docs/pixel-perfecto.md](docs/pixel-perfecto.md)。
+也可以从 Editor 原生 **Window → Pixel Perfecto** 菜单启动独立工具窗口。完整操作说明见 [docs/pixel-perfecto.md](docs/pixel-perfecto.md)。
 
 ## Camera Studio
 
 Canon T4i / 650D 拍摄工具，提供 Live View、相机参数、手动步进对焦、照片自动下载及相机录像后的 MOV 下载。
-从 Render Server 侧栏 **Camera Studio** 打开原生工具窗口，也可以独立启动：
+从 Editor 原生 **Window → Camera Studio** 菜单打开原生工具窗口，也可以独立启动：
 
 ```bash
 brew install libgphoto2 gphoto2

@@ -62,6 +62,14 @@ pub(super) fn run(
     advance: &AdvancePhase,
     matrix_cells_added: bool,
 ) {
+    app.runtime.performance.record_cadence(
+        ingest.frame_time,
+        advance.should_redraw_scene
+            && (advance.time_driven_scene
+                || (advance.animation_session_active && app.runtime.time_updates_enabled)
+                || app.runtime.force_continuous_redraw
+                || app.runtime.capture_redraw_active),
+    );
     if advance.should_redraw_scene {
         let t = app.runtime.time_value_secs;
         for pass in &mut app.core.passes {

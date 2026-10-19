@@ -756,8 +756,8 @@ mod tests {
                 },
                 {
                     "id": "screen-edge",
-                    "from": { "nodeId": "composite", "portId": "pass" },
-                    "to": { "nodeId": "screen", "portId": "pass" }
+                    "from": { "nodeId": "composite", "portId": "texture" },
+                    "to": { "nodeId": "screen", "portId": "texture" }
                 }
             ],
             "outputs": null,

@@ -8,6 +8,10 @@ pub const FONT_SIZE_13: f32 = 13.0;
 pub const FONT_SIZE_15: f32 = 15.0;
 pub const CONTROL_ROW_HEIGHT: f32 = 28.0;
 pub const RESOURCE_ACTIVE_BG: Color32 = Color32::from_gray(40);
+pub const RESOURCE_ACCENT: Color32 = Color32::from_rgb(80, 140, 220);
+pub const RESOURCE_PASS_FG: Color32 = Color32::from_rgb(130, 180, 100);
+pub const RESOURCE_TEXTURE_FG: Color32 = Color32::from_rgb(200, 150, 80);
+pub const RESOURCE_BUFFER_FG: Color32 = Color32::from_rgb(160, 100, 160);
 pub const BUTTON_ICON_SIZE_DEFAULT: f32 = 13.0;
 pub const BUTTON_DISABLED_GAMMA: f32 = 0.6;
 

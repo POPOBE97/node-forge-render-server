@@ -27,8 +27,7 @@ fn map_port_type(s: Option<&str>) -> Result<ValueType> {
         "vector2" | "vec2" => Ok(ValueType::Vec2),
         "vector3" | "vec3" => Ok(ValueType::Vec3),
         "vector4" | "vec4" | "color" => Ok(ValueType::Vec4),
-        // Raster sampling inputs are canonical texture resources. Pass producers may connect via
-        // planner-level pass -> texture coercion, but `pass` is not a MathClosure resource type.
+        // Raster sampling inputs are explicit texture resources.
         "texture" => Ok(ValueType::Texture2D),
         // Array types — size 0 means "infer at compile time".
         "float[]" | "f32[]" => Ok(ValueType::F32Array(0)),
@@ -183,8 +182,7 @@ fn promote_type_from_source_swizzles(source: &str, param_name: &str, ty: ValueTy
 ///
 /// ## Pass Texture Inputs
 ///
-/// MathClosure supports `pass` type inputs for direct texture sampling. When a port has
-/// type "pass", the connected pass node's texture becomes available for sampling via:
+/// MathClosure supports `texture` inputs for direct sampling through:
 /// ```glsl
 /// vec4 color = samplePass(varName, uv);  // Sample at UV coordinates
 /// ```

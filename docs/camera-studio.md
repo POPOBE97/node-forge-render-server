@@ -1,8 +1,8 @@
 # Camera Studio
 
 Camera Studio is a native camera acquisition workspace for the Canon EOS Rebel T4i / 650D on
-Apple Silicon macOS. Open **Camera Studio** in the Render Server sidebar, alongside Pixel Perfecto,
-or run it independently:
+Apple Silicon macOS. Open **Camera Studio** from the Editor's native **Window** menu, alongside
+Pixel Perfecto and Android Mirror, or run it independently:
 
 ```sh
 brew install libgphoto2 gphoto2

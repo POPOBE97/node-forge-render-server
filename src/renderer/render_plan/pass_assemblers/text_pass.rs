@@ -90,10 +90,14 @@ fn font(sc: &SceneContext<'_>, node: &Node, port: &str) -> Result<Option<FontSou
         .get("assetId")
         .and_then(|v| v.as_str())
         .context("FontFile needs assetId")?;
-    let asset = sc
-        .asset_store
-        .and_then(|store| store.get(id))
-        .with_context(|| format!("FontFile asset '{id}' is not loaded"))?;
+    let bytes = if let Some(bytes) = crate::renderer::scene_prep::procedural_test_texture::font_bytes(id) {
+        bytes.to_vec()
+    } else {
+        sc.asset_store
+            .and_then(|store| store.get(id))
+            .with_context(|| format!("FontFile asset '{id}' is not loaded"))?
+            .bytes
+    };
     let face_index = source
         .params
         .get("faceIndex")
@@ -104,7 +108,7 @@ fn font(sc: &SceneContext<'_>, node: &Node, port: &str) -> Result<Option<FontSou
         .transpose()?
         .unwrap_or(0);
     Ok(Some(FontSource {
-        bytes: asset.bytes,
+        bytes,
         face_index: u32::try_from(face_index)?,
     }))
 }

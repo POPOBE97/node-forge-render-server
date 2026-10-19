@@ -32,6 +32,9 @@ pub(crate) fn prepare_scene_with_report(
     let mut expanded = input.clone();
     crate::dsl::normalize_scene_color_literals(&mut expanded, &schema::load_default_scheme()?);
     let expanded_group_instances = expand_group_instances(&mut expanded)?;
+    super::procedural_test_texture::expand(&mut expanded)?;
+    let consumer_scoped_coercions =
+        crate::renderer::render_plan::coercion::plan_consumer_scoped_coercions(&mut expanded)?;
     expand_image_passes(&mut expanded)?;
     let matrix_source_scene = expanded.clone();
 
@@ -97,12 +100,10 @@ pub(crate) fn prepare_scene_with_report(
         debug_artifacts: expanded.debug_artifacts.clone(),
     };
 
-    // Pass/texture coercions are execution-plan concerns and are inserted by RenderPlanner.
     let mut scene = scene;
     let auto_wrapped_pass_inputs = 0;
 
-    // Deduplicate identical pass subgraphs after auto-wrap so that synthesized
-    // fullscreen bridge passes can also be merged.
+    // Deduplicate after lowering so equivalent explicit ImagePass draws can merge.
     let dedup_report = dedup_identical_passes(&mut scene);
     if dedup_report.deduped_passes > 0 {
         eprintln!(
@@ -115,10 +116,10 @@ pub(crate) fn prepare_scene_with_report(
     let inlined_image_file_bindings =
         inline_image_file_connections_into_image_textures(&mut scene)?;
 
-    // 3) The RenderTarget must be driven by Composite.pass.
-    let output_node_id: String = incoming_connection(&scene, &render_target_id, "pass")
-        .map(|c| c.from.node_id.clone())
-        .ok_or_else(|| anyhow!("RenderTarget.pass has no incoming connection"))?;
+    // Presentation consumes a texture. Its producer owns its extent and format.
+    let output = incoming_connection(&scene, &render_target_id, "texture")
+        .map(|c| c.from.clone())
+        .ok_or_else(|| anyhow!("RenderTarget.texture has no incoming connection"))?;
 
     // 4) Validate only the kept subgraph.
     schema::validate_scene_against(&scene, &scheme)?;
@@ -138,40 +139,46 @@ pub(crate) fn prepare_scene_with_report(
     let topo_order = topo_sort(&scene)?;
 
     let composition_layers_by_id = composition_layers_by_id(&scene, &nodes_by_id)?;
-    let composite_layers_in_draw_order = composition_layers_by_id
-        .get(&output_node_id)
-        .cloned()
-        .ok_or_else(|| anyhow!("missing layer order for output Composite '{output_node_id}'"))?;
-
-    let output_node = find_node(&nodes_by_id, &output_node_id)?;
-    if output_node.node_type != "Composite" {
-        bail!(
-            "RenderTarget.pass must come from Composite, got {}",
-            output_node.node_type
-        );
-    }
-
-    // New DSL contract: output target must be provided by Composite.target.
-    let output_texture_node_id: String = incoming_connection(&scene, &output_node_id, "target")
-        .map(|c| c.from.node_id.clone())
-        .ok_or_else(|| anyhow!("Composite.target has no incoming connection"))?;
-
-    let output_texture_name: ResourceName = ids
-        .get(&output_texture_node_id)
-        .cloned()
-        .ok_or_else(|| anyhow!("missing name for node: {}", output_texture_node_id))?;
-
-    let output_texture_node = find_node(&nodes_by_id, &output_texture_node_id)?;
-    if output_texture_node.node_type != "RenderTexture" {
-        bail!(
-            "Composite.target must come from RenderTexture, got {}",
-            output_texture_node.node_type
-        );
-    }
-
-    let width = cpu_num_u32_min_1(&scene, &nodes_by_id, output_texture_node, "width", 1024)?;
-    let height = cpu_num_u32_min_1(&scene, &nodes_by_id, output_texture_node, "height", 1024)?;
-    let resolution = [width, height];
+    let source = crate::renderer::pass_source::resolve_texture_source_ref(&scene, &nodes_by_id, &output)?;
+    let mut composite_layers_in_draw_order = Vec::new();
+    let source_node_id = match source {
+        crate::renderer::pass_source::TextureSourceRef::Surface(source) => {
+            composite_layers_in_draw_order.extend(
+                composition_layers_by_id
+                    .get(&source.source.node_id)
+                    .into_iter()
+                    .flatten()
+                    .cloned(),
+            );
+            composite_layers_in_draw_order.push(source.source.node_id.clone());
+            source.source.node_id
+        }
+        crate::renderer::pass_source::TextureSourceRef::Image { image_node_id, .. } => image_node_id,
+    };
+    let source_node = find_node(&nodes_by_id, &source_node_id)?;
+    let output_target_node_id = if source_node.node_type == "Composite" {
+        Some(
+            incoming_connection(&scene, &source_node_id, "target")
+                .ok_or_else(|| anyhow!("Composite.target has no incoming connection"))?
+                .from.node_id.clone(),
+        )
+    } else {
+        None
+    };
+    // This is only a planning default for unconnected geometry properties. The final
+    // presentation size is read from the produced texture, never from Screen dimensions.
+    let resolution = if let Some(target_id) = &output_target_node_id {
+        let target = find_node(&nodes_by_id, target_id)?;
+        if target.node_type != "RenderTexture" {
+            bail!("Composite.target must come from RenderTexture, got {}", target.node_type);
+        }
+        [
+            cpu_num_u32_min_1(&scene, &nodes_by_id, target, "width", 1024)?,
+            cpu_num_u32_min_1(&scene, &nodes_by_id, target, "height", 1024)?,
+        ]
+    } else {
+        [1024, 1024]
+    };
 
     let baked_data_parse = bake_data_parse_nodes(&scene, &nodes_by_id, "__global", 1)?;
 
@@ -183,8 +190,8 @@ pub(crate) fn prepare_scene_with_report(
         topo_order,
         composite_layers_in_draw_order,
         composition_layers_by_id,
-        output_texture_node_id,
-        output_texture_name,
+        output,
+        output_target_node_id,
         resolution,
         baked_data_parse,
     };
@@ -192,7 +199,7 @@ pub(crate) fn prepare_scene_with_report(
     let report = ScenePrepReport {
         expanded_group_instances,
         auto_wrapped_pass_inputs,
-        consumer_scoped_coercions: 0,
+        consumer_scoped_coercions,
         inlined_image_file_bindings,
     };
 

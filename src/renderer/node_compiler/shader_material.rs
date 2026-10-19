@@ -370,6 +370,13 @@ fn source_uses_system_time(source: &str) -> Result<bool> {
 }
 
 fn load_node_source(node: &Node) -> String {
+    if let Some(source) = node
+        .wgsl_override
+        .as_deref()
+        .and_then(crate::renderer::scene_prep::procedural_test_texture::material_source)
+    {
+        return source;
+    }
     let override_path = node
         .wgsl_override
         .as_deref()
@@ -947,7 +954,7 @@ fn shader_material(
                     id: "resource".to_string(),
                     from: Endpoint {
                         node_id: source_pass.id.clone(),
-                        port_id: "pass".to_string(),
+                        port_id: "texture".to_string(),
                     },
                     to: Endpoint {
                         node_id: shader.id.clone(),
