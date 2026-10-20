@@ -209,6 +209,16 @@ fn contents(ui: &mut egui::Ui, state: &mut WindowState) {
     ui.scope(|ui| {
         // Inherit the render server's visuals, including search fields and tooltips.
         let mut zoom_factor = 1.0;
+        let (find_shortcut, escape_shortcut) = ui.input_mut(|input| {
+            (
+                input.consume_key(egui::Modifiers::COMMAND, egui::Key::F)
+                    || input.consume_key(egui::Modifiers::CTRL, egui::Key::F),
+                input.consume_key(egui::Modifiers::NONE, egui::Key::Escape),
+            )
+        });
+        if escape_shortcut {
+            state.view.selected = None;
+        }
         egui::Panel::top("pass-graph-toolbar")
             .frame(
                 egui::Frame::NONE
@@ -262,6 +272,14 @@ fn contents(ui: &mut egui::Ui, state: &mut WindowState) {
                             .hint_text("Find a pass or texture…")
                             .desired_width(220.0),
                     );
+                    if find_shortcut && !escape_shortcut {
+                        search.request_focus();
+                    }
+                    if escape_shortcut && search.has_focus() {
+                        state.view.query.clear();
+                        state.view.focus_search = false;
+                        search.surrender_focus();
+                    }
                     if search.changed() {
                         state.view.focus_search = true;
                         state.view.selected = None;
@@ -281,8 +299,11 @@ fn contents(ui: &mut egui::Ui, state: &mut WindowState) {
             )
             .show_inside(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
+                    let command = if cfg!(target_os = "macos") { "⌘" } else { "Ctrl+" };
                     ui.label(design_tokens::rich_text(
-                        "Drag to pan · Scroll / pinch to zoom · F to fit",
+                        format!(
+                            "Drag / scroll to pan · Pinch / {command}scroll to zoom · F fit · {command}F find · Esc deselect"
+                        ),
                         TextRole::AttributeTitle,
                     ));
                     ui.separator();
@@ -498,6 +519,21 @@ fn zoom_at(view: &mut View, anchor: egui::Vec2, factor: f32) {
     view.zoom = zoom;
 }
 
+fn apply_canvas_gesture(
+    view: &mut View,
+    scroll: egui::Vec2,
+    zoom: f32,
+    zoom_anchor: Option<egui::Vec2>,
+) {
+    if zoom != 1.0 {
+        if let Some(anchor) = zoom_anchor {
+            zoom_at(view, anchor, zoom);
+        }
+    } else {
+        view.pan += scroll;
+    }
+}
+
 fn canvas(ui: &mut egui::Ui, state: &mut WindowState, toolbar_zoom: f32) {
     let (canvas, response) =
         ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
@@ -518,7 +554,9 @@ fn canvas(ui: &mut egui::Ui, state: &mut WindowState, toolbar_zoom: f32) {
         .iter()
         .fold(egui::Rect::NOTHING, |bounds, rect| bounds.union(*rect))
         .expand(44.0);
-    if !ui.ctx().egui_wants_keyboard_input() && ui.input(|input| input.key_pressed(egui::Key::F)) {
+    if !ui.ctx().egui_wants_keyboard_input()
+        && ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::F))
+    {
         state.view.fit = true;
         state.view.initial_frame = false;
     }
@@ -562,20 +600,16 @@ fn canvas(ui: &mut egui::Ui, state: &mut WindowState, toolbar_zoom: f32) {
         let (zoom, scroll, pointer) = ui.input(|input| {
             (
                 input.zoom_delta(),
-                input.smooth_scroll_delta.y,
+                input.smooth_scroll_delta,
                 input.pointer.hover_pos(),
             )
         });
-        if let Some(pointer) = pointer {
-            let factor = if zoom != 1.0 {
-                zoom
-            } else {
-                (scroll * 0.0025).exp()
-            };
-            if factor != 1.0 {
-                zoom_at(&mut state.view, pointer - canvas.min, factor);
-            }
-        }
+        apply_canvas_gesture(
+            &mut state.view,
+            scroll,
+            zoom,
+            pointer.map(|pointer| pointer - canvas.min),
+        );
         response.clone().on_hover_cursor(if response.dragged() {
             egui::CursorIcon::Grabbing
         } else {
@@ -929,4 +963,30 @@ fn text_line(
     job.wrap.max_rows = 1;
     job.wrap.break_anywhere = true;
     painter.galley(position, painter.layout_job(job), color);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn trackpad_scroll_pans_in_both_axes() {
+        let mut view = View::default();
+
+        apply_canvas_gesture(&mut view, egui::vec2(18.0, -12.0), 1.0, None);
+
+        assert_eq!(view.pan, egui::vec2(18.0, -12.0));
+        assert_eq!(view.zoom, 1.0);
+    }
+
+    #[test]
+    fn pinch_zooms_around_pointer_without_also_panning() {
+        let mut view = View::default();
+        let anchor = egui::vec2(160.0, 90.0);
+
+        apply_canvas_gesture(&mut view, egui::vec2(18.0, -12.0), 1.25, Some(anchor));
+
+        assert_eq!(view.zoom, 1.25);
+        assert_eq!(view.pan, egui::vec2(-40.0, -22.5));
+    }
 }
