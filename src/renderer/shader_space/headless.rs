@@ -246,6 +246,23 @@ pub fn render_scene_to_file_headless_with_runtime_overrides(
         asset_store,
         runtime_overrides,
         None,
+        None,
+    )
+}
+
+/// Capture an evaluated AnimationSession frame, including TimeInput/particle time.
+pub fn render_animation_frame_to_file_headless(
+    scene: &SceneDSL,
+    output_path: impl AsRef<Path>,
+    asset_store: Option<&AssetStore>,
+    runtime_overrides: &HeadlessRuntimeOverrides,
+    scene_time_seconds: f32,
+) -> Result<()> {
+    if !scene_time_seconds.is_finite() || scene_time_seconds < 0.0 {
+        bail!("headless scene time must be finite and nonnegative");
+    }
+    render_scene_to_file_headless_with_runtime(
+        scene, output_path, asset_store, Some(runtime_overrides), None, Some(scene_time_seconds),
     )
 }
 
@@ -261,6 +278,7 @@ pub fn render_scene_to_file_headless_with_frame_freeze(
         asset_store,
         None,
         Some(frame_freeze),
+        None,
     )
 }
 
@@ -270,6 +288,7 @@ fn render_scene_to_file_headless_with_runtime(
     asset_store: Option<&AssetStore>,
     runtime_overrides: Option<&HeadlessRuntimeOverrides>,
     frame_freeze: Option<&FrameFreezeCase>,
+    scene_time_seconds: Option<f32>,
 ) -> Result<()> {
     let output_path = output_path.as_ref();
     let renderer = HeadlessRenderer::new(HeadlessRendererConfig::default())
@@ -284,6 +303,14 @@ fn render_scene_to_file_headless_with_runtime(
         runtime_overrides,
         frame_freeze,
     )?;
+
+    if let Some(time) = scene_time_seconds {
+        for pass in &result.pass_bindings {
+            let mut params = pass.base_params;
+            params.time = time;
+            crate::renderer::update_pass_params(&result.shader_space, pass, &params)?;
+        }
+    }
 
     result.shader_space.render();
     let output_info = result

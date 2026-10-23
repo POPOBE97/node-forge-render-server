@@ -15,6 +15,8 @@ pub mod color;
 pub mod debug_artifacts;
 pub mod dsl;
 #[cfg(feature = "native")]
+pub mod diagnostics;
+#[cfg(feature = "native")]
 pub mod frame_freeze;
 #[cfg(feature = "native")]
 pub mod nforge;

@@ -1,0 +1,371 @@
+{
+  "reference": "doubao-assistant-2 code defaults; fresh Chromium context; SDR/sRGB Metal WebGPU",
+  "capture": {
+    "phoneDp": [
+      360,
+      800
+    ],
+    "pixels": [
+      1260,
+      2800
+    ],
+    "warmupSeconds": 1.5,
+    "webRandomSeedValue": 0.6666666666666666
+  },
+  "metrics": "Computed after identical Lanczos resize to 360x800. Effect ROI includes simulated voice bars. No whole-screen score is used.",
+  "excludedFromRoi": [
+    "Web demo hardware button",
+    "outer phone rounded corners"
+  ],
+  "knownDifferences": [
+    "Native retains synthetic audio; Web demo audio samples are independent.",
+    "CSS glass inset shadows use analytic SDF rims; text glow shadow is approximate.",
+    "Chromium rAF and native 60 Hz begin springs on different frame boundaries; compare recorded scene times as well as requested times."
+  ],
+  "states": [
+    {
+      "state": "idle",
+      "effectRoiDp": [
+        12,
+        680,
+        348,
+        782
+      ],
+      "before": {
+        "meanAbsoluteError255": 11.354,
+        "p95AbsoluteError255": 44.0
+      },
+      "after": {
+        "meanAbsoluteError255": 5.528,
+        "p95AbsoluteError255": 19.0
+      },
+      "background": {
+        "meanAbsoluteError255": 3.478,
+        "p95AbsoluteError255": 8.0
+      }
+    },
+    {
+      "state": "listening",
+      "effectRoiDp": [
+        12,
+        680,
+        348,
+        782
+      ],
+      "before": {
+        "meanAbsoluteError255": 24.523,
+        "p95AbsoluteError255": 126.0
+      },
+      "after": {
+        "meanAbsoluteError255": 7.498,
+        "p95AbsoluteError255": 25.0
+      },
+      "background": {
+        "meanAbsoluteError255": 3.478,
+        "p95AbsoluteError255": 8.0
+      }
+    },
+    {
+      "state": "thinking",
+      "effectRoiDp": [
+        12,
+        680,
+        348,
+        782
+      ],
+      "before": {
+        "meanAbsoluteError255": 14.08,
+        "p95AbsoluteError255": 60.0
+      },
+      "after": {
+        "meanAbsoluteError255": 6.767,
+        "p95AbsoluteError255": 25.0
+      },
+      "background": {
+        "meanAbsoluteError255": 3.478,
+        "p95AbsoluteError255": 8.0
+      }
+    },
+    {
+      "state": "speaking",
+      "effectRoiDp": [
+        12,
+        680,
+        348,
+        782
+      ],
+      "before": {
+        "meanAbsoluteError255": 27.83,
+        "p95AbsoluteError255": 94.0
+      },
+      "after": {
+        "meanAbsoluteError255": 15.65,
+        "p95AbsoluteError255": 54.0
+      },
+      "background": {
+        "meanAbsoluteError255": 3.478,
+        "p95AbsoluteError255": 8.0
+      },
+      "panel": {
+        "meanAbsoluteError255": 5.424,
+        "p95AbsoluteError255": 16.0
+      }
+    },
+    {
+      "state": "pushtotalk",
+      "effectRoiDp": [
+        12,
+        620,
+        348,
+        782
+      ],
+      "before": {
+        "meanAbsoluteError255": 17.096,
+        "p95AbsoluteError255": 54.0
+      },
+      "after": {
+        "meanAbsoluteError255": 9.986,
+        "p95AbsoluteError255": 36.0
+      },
+      "background": {
+        "meanAbsoluteError255": 3.478,
+        "p95AbsoluteError255": 8.0
+      }
+    },
+    {
+      "state": "pushtotalkcancel",
+      "effectRoiDp": [
+        12,
+        620,
+        348,
+        782
+      ],
+      "before": {
+        "meanAbsoluteError255": 62.563,
+        "p95AbsoluteError255": 119.0
+      },
+      "after": {
+        "meanAbsoluteError255": 14.094,
+        "p95AbsoluteError255": 38.0
+      },
+      "background": {
+        "meanAbsoluteError255": 3.478,
+        "p95AbsoluteError255": 8.0
+      }
+    }
+  ],
+  "motion": [
+    {
+      "scenario": "entry",
+      "requestedSeconds": 0.5,
+      "webSceneTime": 0.4880000000000003,
+      "nativeSceneTime": 0.49999999999999994,
+      "webState": "WARMING_UP",
+      "nativeState": "st_mshiyxvq_3",
+      "webGlow": 0.5916315913200378,
+      "nativeGlow": 0.6003095507621765,
+      "webBarCenterBottomDp": 28.01873016357422,
+      "nativeLightCenterBottomDp": 40.05759475752711,
+      "diagnostics": []
+    },
+    {
+      "scenario": "entry",
+      "requestedSeconds": 1,
+      "webSceneTime": 0.9910000000000008,
+      "nativeSceneTime": 1.0000000000000013,
+      "webState": "WARMING_UP",
+      "nativeState": "st_mshiyxvq_3",
+      "webGlow": 0.8309311270713806,
+      "nativeGlow": 0.8512484431266785,
+      "webBarCenterBottomDp": 28,
+      "nativeLightCenterBottomDp": 40.0,
+      "diagnostics": []
+    },
+    {
+      "scenario": "entry",
+      "requestedSeconds": 1.7,
+      "webSceneTime": 1.6990000000000014,
+      "nativeSceneTime": 1.6999999999999988,
+      "webState": "IDLE",
+      "nativeState": "st_mrerxocx_8",
+      "webGlow": 0.9392565488815308,
+      "nativeGlow": 0.9203407466411591,
+      "webBarCenterBottomDp": 39.54893112182617,
+      "nativeLightCenterBottomDp": 47.870272159576416,
+      "diagnostics": []
+    },
+    {
+      "scenario": "entry",
+      "requestedSeconds": 2.6,
+      "webSceneTime": 2.588000000000002,
+      "nativeSceneTime": 2.5999999999999956,
+      "webState": "IDLE",
+      "nativeState": "st_mrerxocx_8",
+      "webGlow": 0.5662619471549988,
+      "nativeGlow": 0.5720676183700562,
+      "webBarCenterBottomDp": 61.99787521362305,
+      "nativeLightCenterBottomDp": 61.998391441768035,
+      "diagnostics": []
+    },
+    {
+      "scenario": "gesture",
+      "requestedSeconds": 2.9,
+      "webSceneTime": 2.896000000000002,
+      "nativeSceneTime": 2.8999999999999946,
+      "webState": "LISTENING_HOLD",
+      "nativeState": "st_push_to_talk",
+      "webGlow": 0.8832501769065857,
+      "nativeGlow": 0.8952116146683693,
+      "webBarCenterBottomDp": 62,
+      "nativeLightCenterBottomDp": 62.0,
+      "diagnostics": []
+    },
+    {
+      "scenario": "gesture",
+      "requestedSeconds": 3.3,
+      "webSceneTime": 3.2880000000000025,
+      "nativeSceneTime": 3.299999999999993,
+      "webState": "LISTENING_HOLD_CANCEL",
+      "nativeState": "st_push_to_talk_cancel",
+      "webGlow": 0.992763876914978,
+      "nativeGlow": 1.0,
+      "webBarCenterBottomDp": 62,
+      "nativeLightCenterBottomDp": 62.0,
+      "diagnostics": []
+    },
+    {
+      "scenario": "gesture",
+      "requestedSeconds": 3.7,
+      "webSceneTime": 3.687000000000003,
+      "nativeSceneTime": 3.6999999999999917,
+      "webState": "LISTENING_HOLD",
+      "nativeState": "st_push_to_talk",
+      "webGlow": 1,
+      "nativeGlow": 1.0,
+      "webBarCenterBottomDp": 62,
+      "nativeLightCenterBottomDp": 62.0,
+      "diagnostics": []
+    },
+    {
+      "scenario": "gesture",
+      "requestedSeconds": 4,
+      "webSceneTime": 3.991000000000003,
+      "nativeSceneTime": 3.9999999999999907,
+      "webState": "IDLE",
+      "nativeState": "st_command_delivered",
+      "webGlow": 0.8109838962554932,
+      "nativeGlow": 0.7827332466840744,
+      "webBarCenterBottomDp": 62,
+      "nativeLightCenterBottomDp": 62.0,
+      "diagnostics": []
+    },
+    {
+      "scenario": "exit",
+      "requestedSeconds": 2.75,
+      "webSceneTime": 2.740000000000002,
+      "nativeSceneTime": 2.749999999999995,
+      "webState": "HIDDEN",
+      "nativeState": "st_mrerw3qg_6",
+      "webGlow": 0.57791668176651,
+      "nativeGlow": 0.5984933914383873,
+      "webBarCenterBottomDp": 62,
+      "nativeLightCenterBottomDp": 62.0,
+      "diagnostics": []
+    },
+    {
+      "scenario": "reopen",
+      "requestedSeconds": 4.2,
+      "webSceneTime": 4.192000000000003,
+      "nativeSceneTime": 4.19999999999999,
+      "webState": "WARMING_UP",
+      "nativeState": "st_mshiyxvq_3",
+      "webGlow": 0.6196746230125427,
+      "nativeGlow": 0.6341502666473389,
+      "webBarCenterBottomDp": 28.00464630126953,
+      "nativeLightCenterBottomDp": 40.024843975901604,
+      "diagnostics": []
+    }
+  ],
+  "nativeCaptures": [
+    {
+      "state": "Off",
+      "setupPath": "Off",
+      "captureSeconds": "2",
+      "returncode": 0,
+      "attempts": 1,
+      "peakRssMiB": 635.375,
+      "seconds": 2.111693833
+    },
+    {
+      "state": "Idle",
+      "setupPath": "Idle",
+      "captureSeconds": "2",
+      "returncode": 0,
+      "attempts": 1,
+      "peakRssMiB": 721.84375,
+      "seconds": 1.9021920000000003
+    },
+    {
+      "state": "Warmup",
+      "setupPath": "Warmup",
+      "captureSeconds": "2",
+      "returncode": 0,
+      "attempts": 1,
+      "peakRssMiB": 716.9375,
+      "seconds": 2.31857825
+    },
+    {
+      "state": "Listening",
+      "setupPath": "Listening",
+      "captureSeconds": "2",
+      "returncode": 0,
+      "attempts": 1,
+      "peakRssMiB": 638.5625,
+      "seconds": 2.526486167
+    },
+    {
+      "state": "Thinking",
+      "setupPath": "Thinking",
+      "captureSeconds": "2",
+      "returncode": 0,
+      "attempts": 1,
+      "peakRssMiB": 593.34375,
+      "seconds": 2.1037532919999986
+    },
+    {
+      "state": "Speaking",
+      "setupPath": "Reply Started>Speaking",
+      "captureSeconds": "1",
+      "returncode": 0,
+      "attempts": 1,
+      "peakRssMiB": 721.390625,
+      "seconds": 1.8846334999999996
+    },
+    {
+      "state": "PushToTalk",
+      "setupPath": "PushToTalk",
+      "captureSeconds": "2",
+      "returncode": 0,
+      "attempts": 1,
+      "peakRssMiB": 720.78125,
+      "seconds": 2.1021310420000034
+    },
+    {
+      "state": "PushToTalkCancel",
+      "setupPath": "PushToTalkCancel",
+      "captureSeconds": "2",
+      "returncode": 0,
+      "attempts": 1,
+      "peakRssMiB": 518.546875,
+      "seconds": 2.1046330829999995
+    }
+  ],
+  "archiveValidation": {
+    "documentId": "7804100b-154e-41f7-8a81-e8a8b4d5dbf9",
+    "revision": 4506,
+    "sceneVersion": "6.0",
+    "valid": true,
+    "errors": [],
+    "warnings": []
+  }
+}

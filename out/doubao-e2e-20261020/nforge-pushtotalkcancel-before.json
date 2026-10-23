@@ -1,0 +1,320 @@
+{
+  "stateId": "st_push_to_talk_cancel",
+  "sceneTimeSeconds": 0.0,
+  "activeTransitionId": null,
+  "overrides": {
+    "ColorArrayInput_IntelligentLightColors:value": [
+      [
+        1.0,
+        1.0,
+        1.0,
+        0.24313726
+      ],
+      [
+        1.0,
+        1.0,
+        1.0,
+        0.22352941
+      ],
+      [
+        1.0,
+        1.0,
+        1.0,
+        0.20784314000000004
+      ],
+      [
+        1.0,
+        1.0,
+        1.0,
+        0.20784314000000004
+      ],
+      [
+        1.0,
+        1.0,
+        1.0,
+        0.22352941000000004
+      ],
+      [
+        1.0,
+        1.0,
+        1.0,
+        0.24313726000000002
+      ],
+      [
+        1.0,
+        1.0,
+        1.0,
+        0.22352941000000004
+      ],
+      [
+        1.0,
+        1.0,
+        1.0,
+        0.20784314000000004
+      ],
+      [
+        1.0,
+        1.0,
+        1.0,
+        0.20784314000000004
+      ],
+      [
+        1.0,
+        1.0,
+        1.0,
+        0.20784314
+      ],
+      [
+        1.0,
+        1.0,
+        1.0,
+        0.1882353
+      ]
+    ],
+    "ColorInput_IntelligentLightParticleColor:value": [
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "ColorInput_IntelligentLightParticleNoiseColor:value": [
+      0.13286832155381798,
+      0.046665086336880095,
+      0.768151147247507,
+      1.0
+    ],
+    "ColorInput_IntelligentLightPointerTintColor:value": [
+      1.0,
+      0.033104766570885055,
+      0.033104766570885055,
+      1.0
+    ],
+    "ColorInput_IntelligentLightPresentationColorCenter:value": [
+      1.0,
+      1.0,
+      1.0,
+      0.6
+    ],
+    "ColorInput_IntelligentLightPresentationColorLeft:value": [
+      1.0,
+      0.8468732424405193,
+      0.8468732424405193,
+      0.6
+    ],
+    "ColorInput_IntelligentLightPresentationColorRight:value": [
+      1.0,
+      0.033104766570885055,
+      0.033104766570885055,
+      1.0
+    ],
+    "ColorInput_PttPromptColor:value": [
+      1.0,
+      0.0,
+      0.0,
+      1.0
+    ],
+    "ColorInput_VoiceDotColor:value": [
+      1.0,
+      0.033104766570885055,
+      0.033104766570885055,
+      1.0
+    ],
+    "FloatInput_37:value": 66.5,
+    "FloatInput_38:value": 882.0,
+    "FloatInput_39:value": 0.0,
+    "FloatInput_40:value": 0.0,
+    "FloatInput_41:value": 58.333333333333336,
+    "FloatInput_42:value": 0.0,
+    "FloatInput_43:value": 0.0,
+    "FloatInput_45:value": 1.0,
+    "FloatInput_46:value": 0.0,
+    "FloatInput_47:value": 1.0,
+    "FloatInput_48:value": 1.0,
+    "FloatInput_49:value": 1.0,
+    "FloatInput_50:value": 0.0,
+    "FloatInput_BackgroundDarkenAlphaEnd:value": 0.3,
+    "FloatInput_BackgroundDarkenAlphaEndY:value": 0.0,
+    "FloatInput_BackgroundDarkenAlphaStart:value": 0.3,
+    "FloatInput_BackgroundDarkenAlphaStartY:value": 560.0,
+    "FloatInput_CausticBlurRadiusPx:value": 175.0,
+    "FloatInput_CausticOpacity:value": 1.0,
+    "FloatInput_GlassBlurRadiusPx:value": 21.0,
+    "FloatInput_GlassShapeEdgePx:value": 35.0,
+    "FloatInput_GlassShapeReflectOffsetPx:value": 875.0,
+    "FloatInput_GlassShapeThicknessPx:value": 93.33333333333334,
+    "FloatInput_Glow:value": 1.0,
+    "FloatInput_GlowBloomSigmaPx:value": 2800.0,
+    "FloatInput_GlowCoreSigmaPx:value": 5.833333333333334,
+    "FloatInput_GlowMidSigmaPx:value": 23.333333333333336,
+    "FloatInput_GlowWideSigmaPx:value": 70.0,
+    "FloatInput_InputBarRefractionIndex:value": 1.0,
+    "FloatInput_IntelligentLightBlobRadiusLocalPx:value": 62.720000000000006,
+    "FloatInput_IntelligentLightDownsampleFactor:value": 15.0,
+    "FloatInput_IntelligentLightEmergenceProgress:value": 1.0,
+    "FloatInput_IntelligentLightLightness:value": 0.78,
+    "FloatInput_IntelligentLightParticleGain:value": 1.35,
+    "FloatInput_IntelligentLightParticleOpacity:value": 0.0,
+    "FloatInput_IntelligentLightParticlePointerWarpProgress:value": 0.0,
+    "FloatInput_IntelligentLightPointerRadiusLocalPx:value": 42.0,
+    "FloatInput_IntelligentLightPointerTintGain:value": 1.35,
+    "FloatInput_IntelligentLightPointerTintOpacityResolved:value": 0.0,
+    "FloatInput_LightBloomMinSigmaPx:value": 2.916666666666667,
+    "FloatInput_LightClipBloomProgress:value": 1.0,
+    "FloatInput_LightHardClipFeatherPx:value": 2.916666666666667,
+    "FloatInput_ParticleEdgeSigmaPx:value": 105.0,
+    "FloatInput_ParticleInnerSizePx:value": 4.2,
+    "FloatInput_ParticleMinSizePx:value": 0.5833333333333333,
+    "FloatInput_ParticleOriginYPx:value": 28.0,
+    "FloatInput_ParticleOuterSizePx:value": 2.1,
+    "FloatInput_ParticleWarpPx:value": 420.0,
+    "FloatInput_ParticleWarpRadiusPx:value": 840.0,
+    "FloatInput_PttPromptCancel:value": 1.0,
+    "FloatInput_PttPromptOpacity:value": 1.0,
+    "FloatInput_SoundBarInnerFalloffPx:value": 58.333333333333336,
+    "FloatInput_SoundBarOffsetPx:value": 11.666666666666668,
+    "FloatInput_SoundBarOuterFalloffPx:value": 116.66666666666667,
+    "FloatInput_SoundBarRadiusPx:value": 35.0,
+    "FloatInput_TotalEnergy:value": 0.5,
+    "FloatInput_VoiceDotMaxHeightPx:value": 98.0,
+    "FloatInput_VoiceDotMinHeightPx:value": 17.5,
+    "FloatInput_VoiceDotSdfFeatherPx:value": 1.1666666666666665,
+    "FloatInput_VoiceDotSpacingPx:value": 23.345,
+    "FloatInput_VoiceDotWidthPx:value": 5.845,
+    "Vector2ArrayInput_IntelligentLightPositions:value": [
+      [
+        41.99999999999999,
+        21.15555555555556
+      ],
+      [
+        41.99999999999999,
+        21.15555555555556
+      ],
+      [
+        41.99999999999999,
+        21.15555555555556
+      ],
+      [
+        41.99999999999999,
+        21.15555555555556
+      ],
+      [
+        41.99999999999999,
+        21.15555555555556
+      ],
+      [
+        41.99999999999999,
+        21.15555555555556
+      ],
+      [
+        41.99999999999999,
+        21.15555555555556
+      ],
+      [
+        41.99999999999999,
+        21.15555555555556
+      ],
+      [
+        41.99999999999999,
+        21.15555555555556
+      ],
+      [
+        41.99999999999999,
+        21.15555555555556
+      ],
+      [
+        41.99999999999999,
+        21.15555555555556
+      ]
+    ],
+    "Vector2Input_35:x": 1117.2,
+    "Vector2Input_35:y": 186.2,
+    "Vector2Input_36:x": 630.0,
+    "Vector2Input_36:y": 217.0,
+    "Vector2Input_38:x": 1260.0,
+    "Vector2Input_38:y": 1260.0,
+    "Vector2Input_CausticOffsetPx:x": 0.0,
+    "Vector2Input_CausticOffsetPx:y": 46.66666666666667,
+    "Vector2Input_IntelligentLightSourceCanvasSizePx:x": 1260.0,
+    "Vector2Input_IntelligentLightSourceCanvasSizePx:y": 1260.0,
+    "Vector2Input_LightEffectCanvasSizePx:x": 1197.0,
+    "Vector2Input_LightEffectCanvasSizePx:y": 1197.0,
+    "Vector2Input_LightEffectFrameSizePx:x": 1176.0,
+    "Vector2Input_LightEffectFrameSizePx:y": 196.0,
+    "Vector2Input_LightEffectPositionPx:x": 630.0,
+    "Vector2Input_LightEffectPositionPx:y": 217.0,
+    "Vector2Input_PointerIntelligentLightLocalPx:x": 38.307027742083605,
+    "Vector2Input_PointerIntelligentLightLocalPx:y": 34.62722735964511,
+    "Vector2Input_PointerLightEffectLocalPx:x": 574.6054161312541,
+    "Vector2Input_PointerLightEffectLocalPx:y": 519.4084103946767,
+    "Vector2Input_PttPromptPositionPx:x": 630.0,
+    "Vector2Input_PttPromptPositionPx:y": 392.0,
+    "Vector2Input_PttPromptSizePx:x": 1260.0,
+    "Vector2Input_PttPromptSizePx:y": 63.0,
+    "ui.panel.opacity:value": 1.0,
+    "ui.panel.position:x": 630.0,
+    "ui.panel.position:y": -861.0,
+    "ui.panel.radius:value": 140.0,
+    "ui.panel.size:x": 1260.0,
+    "ui.panel.size:y": 1722.0,
+    "ui.prompt.continuous:value": 0.0,
+    "ui.prompt.hardware:value": 0.0,
+    "web.chrome.scale:x": 0.95,
+    "web.chrome.scale:y": 0.95,
+    "web.light.falloff:value": 1.0,
+    "web.surface.bar.uv.origin:x": 0.05666666666666665,
+    "web.surface.bar.uv.origin:y": 0.044250000000000005,
+    "web.surface.bar.uv.size:x": 0.8866666666666667,
+    "web.surface.bar.uv.size:y": 0.06649999999999999,
+    "web.surface.density:value": 3.5,
+    "web.surface.hold.height:value": 882.0,
+    "web.surface.hold.opacity:value": 0.0,
+    "web.surface.panel.blur:value": 84.0,
+    "web.surface.panel.uv.origin:x": 0.0,
+    "web.surface.panel.uv.origin:y": -0.615,
+    "web.surface.panel.uv.size:x": 1.0,
+    "web.surface.panel.uv.size:y": 0.615,
+    "web.surface.persistent.height:value": 882.0,
+    "web.surface.persistent.opacity:value": 1.0,
+    "web.surface.radius10:value": 35.0,
+    "web.surface.radius20:value": 70.0,
+    "web.surface.radius4:value": 14.0,
+    "web.theme.light:value": 0.0,
+    "web.voice.levels:value": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.1159090909090909,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ]
+  }
+}

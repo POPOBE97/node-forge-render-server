@@ -1,0 +1,30 @@
+[
+  {
+    "state": "Listening",
+    "returncode": 0,
+    "attempts": 1,
+    "peakRssMiB": 558.8125,
+    "seconds": 6.63985
+  },
+  {
+    "state": "Thinking",
+    "returncode": 0,
+    "attempts": 1,
+    "peakRssMiB": 505.078125,
+    "seconds": 2.1292373330000007
+  },
+  {
+    "state": "PushToTalk",
+    "returncode": 0,
+    "attempts": 1,
+    "peakRssMiB": 509.9375,
+    "seconds": 1.9063318749999993
+  },
+  {
+    "state": "PushToTalkCancel",
+    "returncode": 0,
+    "attempts": 1,
+    "peakRssMiB": 544.328125,
+    "seconds": 2.432451083
+  }
+]

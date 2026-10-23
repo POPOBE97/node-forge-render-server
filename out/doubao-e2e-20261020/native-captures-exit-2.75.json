@@ -1,0 +1,11 @@
+[
+  {
+    "state": "exit",
+    "setupPath": "exit",
+    "captureSeconds": "2.75",
+    "returncode": 0,
+    "attempts": 1,
+    "peakRssMiB": 592.328125,
+    "seconds": 7.800724834
+  }
+]

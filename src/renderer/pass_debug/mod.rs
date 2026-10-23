@@ -27,6 +27,8 @@ use naga::{
 use serde::Serialize;
 
 const MAX_DEPENDENCY_DEPTH: usize = 48;
+/// Bound eager views of the dependency DAG; individual targets remain inspectable.
+pub const MAX_EXPANDED_DEPENDENCY_NODES: usize = 4096;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct PassDebugSource {
@@ -770,6 +772,14 @@ fn fs_main() -> @location(0) vec4f {
         .expect("failed to read glass RenderPass_4 WGSL");
         let doc = PassDebugSource::from_wgsl("glass.pass", source);
         assert!(doc.parse_error.is_none());
+        let line_of = |snippet: &str| {
+            let start = doc.module_source.find(snippet).expect("missing glass statement");
+            doc.module_source[..start].bytes().filter(|byte| *byte == b'\n').count() as u32 + 1
+        };
+        let initial_line = line_of("var glass_mat = mix(");
+        let luminance_line = line_of("glass_mat = glass_luminance_curve_lab(");
+        let premultiply_line = line_of("glass_mat = vec4f(glass_mat.rgb * glass_mat.a, glass_mat.a)");
+        let material_out_line = line_of("glass_material_material_out = glass_mat");
 
         let glass_id = target_id_by_name(&doc, "glass_mat");
         let glass_mat = doc
@@ -865,7 +875,7 @@ fn fs_main() -> @location(0) vec4f {
         let frag_out_definition_range = frag_out
             .definition_source_range
             .expect("expected _frag_out source jump range");
-        assert_eq!(frag_out_definition_range.line, 778);
+        assert_eq!(frag_out_definition_range.line, line_of("let _frag_out ="));
         assert_eq!(
             &doc.module_source
                 [frag_out_definition_range.start_byte..frag_out_definition_range.end_byte],
@@ -890,7 +900,7 @@ fn fs_main() -> @location(0) vec4f {
         let material_out_definition_range = material_out
             .definition_source_range
             .expect("expected glass_material_material_out source jump range");
-        assert_eq!(material_out_definition_range.line, 774);
+        assert_eq!(material_out_definition_range.line, material_out_line);
         assert_eq!(
             &doc.module_source
                 [material_out_definition_range.start_byte..material_out_definition_range.end_byte],
@@ -909,7 +919,7 @@ fn fs_main() -> @location(0) vec4f {
                 .source_range
                 .expect("expected material_out definition occurrence")
                 .line,
-            774
+            material_out_line
         );
         let material_value = child_target(&doc, material_out_definition, "glass_mat", None);
         assert_node_range_selects(
@@ -924,11 +934,15 @@ fn fs_main() -> @location(0) vec4f {
         let material_value_definition_range = material_value
             .definition_source_range
             .expect("expected glass_mat source jump range from material_out");
-        assert_eq!(material_value_definition_range.line, 773);
+        assert_eq!(material_value_definition_range.line, premultiply_line);
 
         let mut glass_nodes = Vec::new();
         collect_target_nodes_by_name(&doc, glass_mat, "glass_mat", &mut glass_nodes);
-        for line in [755, 754, 753] {
+        for line in [
+            line_of("glass_mat = vec4f(glass_mat.rgb +"),
+            line_of("glass_mat = vec4f(mix(glass_mat.rgb, glass_color_ratio,"),
+            line_of("glass_mat = vec4f(glass_mat.rgb * mix("),
+        ] {
             let mut line_nodes = Vec::new();
             collect_target_nodes_on_line(glass_mat, &glass_id, line, &mut line_nodes);
             assert!(
@@ -936,26 +950,27 @@ fn fs_main() -> @location(0) vec4f {
                 "expected glass_mat dependency tree to include line {line}"
             );
         }
-        let mut line_721_nodes = Vec::new();
-        collect_target_nodes_on_line(glass_mat, &glass_id, 721, &mut line_721_nodes);
+        let mut luminance_nodes = Vec::new();
+        collect_target_nodes_on_line(glass_mat, &glass_id, luminance_line, &mut luminance_nodes);
         assert!(
-            line_721_nodes.iter().any(|node| node
+            luminance_nodes.iter().any(|node| node
                 .definition_source_range
-                .is_some_and(|source_range| source_range.line == 720)),
-            "line 721 glass_mat references should expose the initial definition on line 720"
+                .is_some_and(|source_range| source_range.line == initial_line)),
+            "luminance adjustment should reference the initial glass_mat definition"
         );
-        for (name, definition_line) in [("refraction", 711), ("reflection", 717)] {
+        for name in ["refraction", "reflection"] {
+            let definition_line = line_of(&format!("let {name} ="));
             let mut nodes = Vec::new();
             collect_target_nodes_by_name(&doc, glass_mat, name, &mut nodes);
             assert!(
                 nodes
                     .iter()
                     .any(|node| node.source_range.is_some_and(|source_range| {
-                        source_range.line == 720
+                        source_range.line == initial_line
                             && &doc.module_source[source_range.start_byte..source_range.end_byte]
                                 == name
                     })),
-                "{name} should keep its line 720 mix() occurrence"
+                "{name} should keep its initial mix() occurrence"
             );
             assert!(
                 nodes.iter().any(
@@ -969,20 +984,20 @@ fn fs_main() -> @location(0) vec4f {
             );
         }
 
-        let alpha_773_ranges = glass_nodes
+        let alpha_ranges = glass_nodes
             .iter()
             .filter_map(|node| node.source_range)
             .filter(|range| {
-                range.line == 773
+                range.line == premultiply_line
                     && &doc.module_source[range.start_byte..range.end_byte] == "glass_mat.a"
             })
             .collect::<Vec<_>>();
         assert_eq!(
-            alpha_773_ranges.len(),
+            alpha_ranges.len(),
             2,
-            "expected two distinct alpha references on line 773"
+            "expected two distinct alpha references in premultiplication"
         );
-        assert_ne!(alpha_773_ranges[0], alpha_773_ranges[1]);
+        assert_ne!(alpha_ranges[0], alpha_ranges[1]);
     }
 
     #[test]
@@ -1169,6 +1184,40 @@ fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
         child_target(&doc, color, "tex", Some("textureSample"));
         child_target(&doc, color, "samp", Some("textureSample"));
         child_target(&doc, color, "uv", Some("textureSample"));
+    }
+
+    #[test]
+    fn branching_self_assignments_keep_dependency_trees_bounded() {
+        let mut source = String::from(
+            "@fragment\nfn fs_main(@location(0) seed: f32) -> @location(0) f32 {\n    var x = seed;\n",
+        );
+        for _ in 0..24 {
+            source.push_str("    if (x > 0.0) { x = x * x + seed; }\n");
+        }
+        source.push_str("    return x;\n}\n");
+
+        let doc = PassDebugSource::from_wgsl("branching-reassign.pass", source);
+        assert!(doc.parse_error.is_none());
+        let labels = dependency_labels_for(&doc, "x");
+        assert!(labels.len() < 2_000, "expanded {} dependency nodes", labels.len());
+        assert_labels_contain(&labels, "seed");
+        assert_labels_do_not_contain(&labels, "[cycle]");
+
+        let x_id = target_id_by_name(&doc, "x");
+        let tree = &doc.dependency_trees[&x_id];
+        let mut occurrences = Vec::new();
+        collect_target_nodes_by_name(&doc, tree, "x", &mut occurrences);
+        assert!(occurrences.iter().any(|node| node.reference));
+        // Sharing history must not erase either RHS occurrence or the condition.
+        for line in 4..28 {
+            let ranges = occurrences
+                .iter()
+                .filter_map(|node| node.source_range)
+                .filter(|range| range.line == line)
+                .map(|range| range.start_byte)
+                .collect::<HashSet<_>>();
+            assert!(ranges.len() >= 3, "missing occurrences on line {line}: {ranges:?}");
+        }
     }
 
     #[test]

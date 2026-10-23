@@ -1,0 +1,17 @@
+[
+  {
+    "name": "entry-2.6",
+    "state": null,
+    "bounds": {
+      "width": 360,
+      "height": 800
+    },
+    "gpu": {
+      "kind": "ready",
+      "adapterName": "apple metal-3",
+      "renderTarget": "rgba16float · linear extended-sRGB premul",
+      "output": "rgba16float · srgb · SDR（显示器不支持 HDR）",
+      "hdr": false
+    }
+  }
+]

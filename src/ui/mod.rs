@@ -21,6 +21,7 @@ pub mod qualifier_map;
 pub mod resource_tree;
 pub mod state_machine_panel;
 pub mod timeline_panel;
+pub(crate) mod tool_window;
 pub mod typography;
 pub mod vectorscope;
 pub mod viewport_indicators;

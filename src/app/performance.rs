@@ -13,7 +13,7 @@ use rust_wgpu_fiber::{
 };
 
 use super::types::App;
-use crate::ui::button::{self, ButtonOptions};
+use crate::ui::tool_window;
 
 #[cfg(target_os = "macos")]
 use objc2_metal::MTLDevice;
@@ -295,10 +295,11 @@ fn ms(value: Option<f64>) -> String {
 }
 
 fn contents(ui: &mut egui::Ui, state: &mut WindowState) {
-    egui::Frame::new()
-        .fill(ui.visuals().panel_fill)
-        .inner_margin(12)
-        .show(ui, |ui| contents_inner(ui, state));
+    tool_window::apply(ui);
+    tool_window::panel_frame().show(ui, |ui| {
+        ui.set_min_size(ui.available_size());
+        contents_inner(ui, state);
+    });
 }
 
 fn contents_inner(ui: &mut egui::Ui, state: &mut WindowState) {
@@ -306,8 +307,24 @@ fn contents_inner(ui: &mut egui::Ui, state: &mut WindowState) {
     // table. Horizontal trackpad/shift-wheel input still scrolls that table.
     ui.style_mut().always_scroll_the_only_direction = false;
     ui.horizontal(|ui| {
-        ui.heading("Render Performance");
-        ui.separator();
+        tool_window::heading(ui, "Render Performance");
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            tool_window::badge(
+                ui,
+                if state.frozen {
+                    "Frozen"
+                } else {
+                    "Live · 4 Hz"
+                },
+            );
+        });
+    });
+    tool_window::caption(
+        ui,
+        "Scene render · last 240 samples · CPU and GPU run concurrently",
+    );
+    ui.add_space(tool_window::GAP);
+    ui.horizontal_wrapped(|ui| {
         ui.label("Budget");
         egui::ComboBox::from_id_salt("performance-budget")
             .selected_text(format!("{} Hz", state.fps))
@@ -317,19 +334,20 @@ fn contents_inner(ui: &mut egui::Ui, state: &mut WindowState) {
                 }
             });
         ui.checkbox(&mut state.frozen, "Freeze view");
-        if button::button(ui, ButtonOptions::new("Reset samples")).clicked() {
+        if tool_window::action(ui, "Reset samples", true).clicked() {
             state.reset = true;
             state.frozen = false;
         }
     });
-    ui.label("Scene render only • last 240 samples • refresh 4 Hz • CPU and GPU run concurrently");
+    ui.add_space(tool_window::GAP);
     ui.separator();
     let data = &state.snapshot;
     let budget = 1000.0 / f64::from(state.fps);
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-        ui.heading("Frame cost & pacing");
+        tool_window::heading(ui, "Frame cost & pacing");
+        ui.add_space(4.0);
         egui::ScrollArea::horizontal().id_salt("frame-cost-scroll").show(ui, |ui| {
-        egui::Grid::new("frame-cost").striped(true).min_col_width(52.0).show(ui, |ui| {
+        egui::Grid::new("frame-cost").striped(true).min_row_height(tool_window::ROW_HEIGHT).spacing([12.0, 0.0]).min_col_width(44.0).show(ui, |ui| {
             for label in ["Scope", "P50", "P95", "P99", "Max", "Over budget", "Samples"] { ui.strong(label); }
             ui.end_row();
             for (label, series) in [("CPU encode + submit", &data.cpu), ("GPU scene span", &data.gpu), ("Redraw interval", &data.cadence)] {
@@ -345,11 +363,10 @@ fn contents_inner(ui: &mut egui::Ui, state: &mut WindowState) {
             ui.add(egui::ProgressBar::new((p95 / budget) as f32).text(format!(
                 "GPU P95: {:.0}% of {:.2} ms budget (not GPU utilization)", p95 / budget * 100.0, budget)));
         }
-        ui.label("Redraw interval measures scene submissions during continuous playback; it is not display FPS or input latency. Idle gaps are excluded.");
+        tool_window::caption(ui, "Redraw interval measures scene submissions during continuous playback; it is not display FPS or input latency. Idle gaps are excluded.");
         plot(ui, &data.gpu, budget);
-        ui.separator();
-        ui.heading("CPU update breakdown");
-        egui::Grid::new("cpu-phases").striped(true).show(ui, |ui| {
+        tool_window::section(ui, "CPU update breakdown");
+        egui::Grid::new("cpu-phases").striped(true).min_row_height(tool_window::ROW_HEIGHT).spacing([20.0, 0.0]).show(ui, |ui| {
             for label in ["UI update scope", "P50", "P95"] { ui.strong(label); }
             ui.end_row();
             for (label, series) in ["Total app update", "Scene ingest / rebuild", "Animation + derivation", "Render + analysis scopes", "Canvas UI", "Finalize"].into_iter().zip(&data.phases) {
@@ -363,9 +380,8 @@ fn contents_inner(ui: &mut egui::Ui, state: &mut WindowState) {
             ui.label(format!("Latest scene: encode {:.3} ms · submit {:.3} ms · CPU call {:.3} ms",
                 profile.frame_cpu_encode_ms, profile.submit_cpu_ms, profile.frame_wall_ms));
         }
-        ui.small("App update excludes eframe painting, swapchain acquire/present and GPU completion. Phase percentiles are independent and do not add up.");
-        ui.separator();
-        ui.heading("GPU passes · slowest first");
+        tool_window::caption(ui, "App update excludes eframe painting, swapchain acquire/present and GPU completion. Phase percentiles are independent and do not add up.");
+        tool_window::section(ui, "GPU passes · slowest first");
         ui.label(format!("Completed sample age: {} · readbacks {}/3 · skipped samples {}",
             data.age.map(|v| format!("{v:.2} s")).unwrap_or_else(|| "waiting".into()), data.pending, data.skipped));
         let profile = data.latest_gpu.as_ref().or(data.latest_cpu.as_ref());
@@ -381,7 +397,7 @@ fn contents_inner(ui: &mut egui::Ui, state: &mut WindowState) {
             ui.label(format!("{} passes · {draws} draws · {} dispatches · {vertices} vertex/index elements × instances · {groups} workgroups",
                 passes.len(), passes.len() - draws));
             egui::ScrollArea::horizontal().id_salt("gpu-passes-scroll").show(ui, |ui| {
-            egui::Grid::new("performance-passes").striped(true).show(ui, |ui| {
+            egui::Grid::new("performance-passes").striped(true).min_row_height(tool_window::ROW_HEIGHT).spacing([16.0, 0.0]).show(ui, |ui| {
                 for label in ["Pass", "Kind", "GPU", "CPU encode", "Budget"] { ui.strong(label); }
                 ui.end_row();
                 for pass in passes {
@@ -395,9 +411,8 @@ fn contents_inner(ui: &mut egui::Ui, state: &mut WindowState) {
             });
             });
         }
-        ui.small("Each row uses CPU and GPU data from the same submission. Passes can overlap: their sum is not the scene span. Preview capture adds overhead; analysis scopes, matrix cells and egui are outside these queries.");
-        ui.separator();
-        ui.heading("Resources & Metal");
+        tool_window::caption(ui, "Each row uses CPU and GPU data from the same submission. Passes can overlap: their sum is not the scene span. Preview capture adds overhead; analysis scopes, matrix cells and egui are outside these queries.");
+        tool_window::section(ui, "Resources & Metal");
         ui.label(format!("Scene {} × {} · pipeline rebuilds {} · uniform updates {} (session totals)",
             data.resolution[0], data.resolution[1], data.rebuilds, data.uniform_updates));
         for line in &data.memory { ui.label(line); }
@@ -413,13 +428,16 @@ fn contents_inner(ui: &mut egui::Ui, state: &mut WindowState) {
 }
 
 fn plot(ui: &mut egui::Ui, series: &Series, budget: f64) {
-    ui.label("GPU scene span history · one point per completed sample");
+    ui.add_space(tool_window::GAP);
+    tool_window::caption(
+        ui,
+        "GPU scene span history · one point per completed sample",
+    );
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(ui.available_width().max(300.0), 100.0),
         egui::Sense::hover(),
     );
-    ui.painter()
-        .rect_filled(rect, 4.0, egui::Color32::from_gray(20));
+    ui.painter().rect_filled(rect, 4.0, tool_window::CANVAS);
     let maximum = series.percentile(1.0).unwrap_or(0.0).max(budget) * 1.15;
     let y = |value: f64| rect.bottom() - (value / maximum) as f32 * rect.height();
     ui.painter().line_segment(

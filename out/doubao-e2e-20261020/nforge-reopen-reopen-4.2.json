@@ -1,0 +1,345 @@
+{
+  "stateId": "st_mshiyxvq_3",
+  "sceneTimeSeconds": 4.19999999999999,
+  "activeTransitionId": "tr_mrery48v_a",
+  "overrides": {
+    "ColorArrayInput_IntelligentLightColors:value": [
+      [
+        0.2158605001138993,
+        0.238397573812271,
+        1.0,
+        0.0
+      ],
+      [
+        1.0,
+        0.238397573812271,
+        0.03560131487502034,
+        0.0
+      ],
+      [
+        0.006048833022857054,
+        0.14126329114027164,
+        0.8879231178819663,
+        1.0
+      ],
+      [
+        0.006048833022857054,
+        0.14126329114027164,
+        0.8879231178819663,
+        1.0
+      ],
+      [
+        0.9395196593130393,
+        0.13430361711607783,
+        0.0013824070404254273,
+        1.0
+      ],
+      [
+        0.9395196169059791,
+        0.13430361711607783,
+        0.0013824070495312372,
+        0.4931995370425284
+      ],
+      [
+        0.9260010032329162,
+        0.13298250090838645,
+        0.012974772463410012,
+        0.9863990740850568
+      ],
+      [
+        0.019567488695526464,
+        0.14258440725337557,
+        0.8763307520806319,
+        0.9863990740850568
+      ],
+      [
+        0.006048833022857054,
+        0.14126329114027164,
+        0.8879231178819663,
+        1.0
+      ],
+      [
+        0.006048833022857054,
+        0.14126329114027164,
+        0.8879231178819663,
+        0.013600925914943218
+      ],
+      [
+        1.0,
+        0.13563332965520566,
+        0.162029375639111,
+        0.013600925914943218
+      ]
+    ],
+    "ColorInput_IntelligentLightParticleColor:value": [
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "ColorInput_IntelligentLightParticleNoiseColor:value": [
+      0.13286832155381798,
+      0.046665086336880095,
+      0.768151147247507,
+      1.0
+    ],
+    "ColorInput_IntelligentLightPointerTintColor:value": [
+      0.004391442037410293,
+      0.06847816984440017,
+      0.4396571738409188,
+      1.0
+    ],
+    "ColorInput_IntelligentLightPresentationColorCenter:value": [
+      0.0,
+      0.01520851442291271,
+      0.17788841598362912,
+      1.0
+    ],
+    "ColorInput_IntelligentLightPresentationColorLeft:value": [
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "ColorInput_IntelligentLightPresentationColorRight:value": [
+      0.019382360956935723,
+      0.27467731206038465,
+      1.0,
+      1.0
+    ],
+    "ColorInput_PttPromptColor:value": [
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "ColorInput_VoiceDotColor:value": [
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "FloatInput_37:value": 69.91304607945494,
+    "FloatInput_38:value": 283.80825930833817,
+    "FloatInput_39:value": 0.0,
+    "FloatInput_40:value": 0.0,
+    "FloatInput_41:value": 0.0,
+    "FloatInput_42:value": 0.0,
+    "FloatInput_43:value": 0.0,
+    "FloatInput_45:value": 0.9863990740850568,
+    "FloatInput_46:value": 1.482046777382493,
+    "FloatInput_47:value": 0.9888472408056259,
+    "FloatInput_48:value": 0.0,
+    "FloatInput_49:value": 0.0,
+    "FloatInput_50:value": 0.9863990740850568,
+    "FloatInput_BackgroundDarkenAlphaEnd:value": 0.0,
+    "FloatInput_BackgroundDarkenAlphaEndY:value": 138.09587034583092,
+    "FloatInput_BackgroundDarkenAlphaStart:value": 0.0,
+    "FloatInput_BackgroundDarkenAlphaStartY:value": 0.0,
+    "FloatInput_CausticBlurRadiusPx:value": 616.96145,
+    "FloatInput_CausticOpacity:value": 0.9863990740850568,
+    "FloatInput_GlassBlurRadiusPx:value": 74.035374,
+    "FloatInput_GlassShapeEdgePx:value": 35.0,
+    "FloatInput_GlassShapeReflectOffsetPx:value": 875.0,
+    "FloatInput_GlassShapeThicknessPx:value": 93.33333333333334,
+    "FloatInput_Glow:value": 0.6341502666473389,
+    "FloatInput_GlowBloomSigmaPx:value": 2800.0,
+    "FloatInput_GlowCoreSigmaPx:value": 5.833333333333334,
+    "FloatInput_GlowMidSigmaPx:value": 23.333333333333336,
+    "FloatInput_GlowWideSigmaPx:value": 70.0,
+    "FloatInput_InputBarRefractionIndex:value": 1.45,
+    "FloatInput_IntelligentLightBlobRadiusLocalPx:value": 38.56730256213082,
+    "FloatInput_IntelligentLightDownsampleFactor:value": 15.0,
+    "FloatInput_IntelligentLightEmergenceProgress:value": 0.0,
+    "FloatInput_IntelligentLightLightness:value": 0.75,
+    "FloatInput_IntelligentLightParticleGain:value": 1.55,
+    "FloatInput_IntelligentLightParticleOpacity:value": 0.0,
+    "FloatInput_IntelligentLightParticlePointerWarpProgress:value": 0.0,
+    "FloatInput_IntelligentLightPointerRadiusLocalPx:value": 42.0,
+    "FloatInput_IntelligentLightPointerTintGain:value": 1.55,
+    "FloatInput_IntelligentLightPointerTintOpacityResolved:value": 0.0,
+    "FloatInput_LightBloomMinSigmaPx:value": 2.916666666666667,
+    "FloatInput_LightClipBloomProgress:value": 0.0,
+    "FloatInput_LightHardClipFeatherPx:value": 2.916666666666667,
+    "FloatInput_ParticleEdgeSigmaPx:value": 105.0,
+    "FloatInput_ParticleInnerSizePx:value": 4.2,
+    "FloatInput_ParticleMinSizePx:value": 0.5833333333333333,
+    "FloatInput_ParticleOriginYPx:value": 28.0,
+    "FloatInput_ParticleOuterSizePx:value": 2.1,
+    "FloatInput_ParticleWarpPx:value": 420.0,
+    "FloatInput_ParticleWarpRadiusPx:value": 840.0,
+    "FloatInput_PttPromptCancel:value": 0.0,
+    "FloatInput_PttPromptOpacity:value": 0.0,
+    "FloatInput_SoundBarInnerFalloffPx:value": 58.333333333333336,
+    "FloatInput_SoundBarOffsetPx:value": 11.666666666666668,
+    "FloatInput_SoundBarOuterFalloffPx:value": 116.66666666666667,
+    "FloatInput_SoundBarRadiusPx:value": 35.0,
+    "FloatInput_TotalEnergy:value": 0.0,
+    "FloatInput_VoiceDotMaxHeightPx:value": 98.0,
+    "FloatInput_VoiceDotMinHeightPx:value": 17.5,
+    "FloatInput_VoiceDotSdfFeatherPx:value": 1.1666666666666665,
+    "FloatInput_VoiceDotSpacingPx:value": 23.345,
+    "FloatInput_VoiceDotWidthPx:value": 5.845,
+    "Vector2ArrayInput_IntelligentLightPositions:value": [
+      [
+        20.334196937392836,
+        2.8899780117699656
+      ],
+      [
+        26.358355625980114,
+        2.8899780117699656
+      ],
+      [
+        29.63580236753383,
+        2.8899780117699656
+      ],
+      [
+        37.53313570829973,
+        2.8899780117699656
+      ],
+      [
+        39.81218864850393,
+        2.8899780117699656
+      ],
+      [
+        39.94576624906869,
+        2.8899780117699656
+      ],
+      [
+        43.28735305743577,
+        2.8899780117699656
+      ],
+      [
+        44.40503109849001,
+        2.8899780117699656
+      ],
+      [
+        52.69128176201186,
+        2.8899780117699656
+      ],
+      [
+        52.8578842139432,
+        2.8899780117699656
+      ],
+      [
+        65.40891192080319,
+        2.8899780117699656
+      ]
+    ],
+    "Vector2Input_35:x": 1176.0,
+    "Vector2Input_35:y": 195.75652902247384,
+    "Vector2Input_36:x": 630.0,
+    "Vector2Input_36:y": 98.08695391565561,
+    "Vector2Input_38:x": 1246.2902669906616,
+    "Vector2Input_38:y": 163.37493156187,
+    "Vector2Input_CausticOffsetPx:x": 0.0,
+    "Vector2Input_CausticOffsetPx:y": 46.66666666666667,
+    "Vector2Input_IntelligentLightSourceCanvasSizePx:x": 1260.0,
+    "Vector2Input_IntelligentLightSourceCanvasSizePx:y": 1260.0,
+    "Vector2Input_LightEffectCanvasSizePx:x": 1260.0,
+    "Vector2Input_LightEffectCanvasSizePx:y": 1260.0,
+    "Vector2Input_LightEffectFrameSizePx:x": 1260.0,
+    "Vector2Input_LightEffectFrameSizePx:y": 279.6521843178198,
+    "Vector2Input_LightEffectPositionPx:x": 630.0,
+    "Vector2Input_LightEffectPositionPx:y": 140.0869539156556,
+    "Vector2Input_PointerIntelligentLightLocalPx:x": 0.0,
+    "Vector2Input_PointerIntelligentLightLocalPx:y": 32.66086973895629,
+    "Vector2Input_PointerLightEffectLocalPx:x": 0.0,
+    "Vector2Input_PointerLightEffectLocalPx:y": 489.9130460843444,
+    "Vector2Input_PttPromptPositionPx:x": 630.0,
+    "Vector2Input_PttPromptPositionPx:y": 392.0,
+    "Vector2Input_PttPromptSizePx:x": 1260.0,
+    "Vector2Input_PttPromptSizePx:y": 63.0,
+    "ui.panel.opacity:value": 1.0,
+    "ui.panel.position:x": 630.0,
+    "ui.panel.position:y": -861.0,
+    "ui.panel.radius:value": 140.0,
+    "ui.panel.size:x": 1260.0,
+    "ui.panel.size:y": 1722.0,
+    "ui.prompt.continuous:value": 0.0,
+    "ui.prompt.hardware:value": 0.0,
+    "web.chrome.scale:x": 1.0,
+    "web.chrome.scale:y": 0.9987578011350706,
+    "web.light.falloff:value": 0.0,
+    "web.surface.bar.uv.origin:x": 0.03333333333333333,
+    "web.surface.bar.uv.origin:y": 0.00007453193014953286,
+    "web.surface.bar.uv.size:x": 0.9333333333333333,
+    "web.surface.bar.uv.size:y": 0.06991304607945495,
+    "web.surface.density:value": 3.5,
+    "web.surface.hold.height:value": 560.0,
+    "web.surface.hold.opacity:value": 0.0,
+    "web.surface.panel.blur:value": 296.141496,
+    "web.surface.panel.uv.origin:x": 0.0,
+    "web.surface.panel.uv.origin:y": -0.615,
+    "web.surface.panel.uv.size:x": 1.0,
+    "web.surface.panel.uv.size:y": 0.615,
+    "web.surface.persistent.height:value": 560.0,
+    "web.surface.persistent.opacity:value": 0.0,
+    "web.surface.radius10:value": 123.39229,
+    "web.surface.radius20:value": 246.78458,
+    "web.surface.radius4:value": 49.356916,
+    "web.theme.light:value": 0.0,
+    "web.voice.levels:value": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "web.wallpaper.opacity:value": 6.139533326177116e-13
+  },
+  "stateLocalTimes": {
+    "mutation_node_st_mrerxocx_8": 0.0,
+    "st_command_delivered": 0.0,
+    "st_hardware_push_to_talk": 0.0,
+    "st_listening": 0.0,
+    "st_listening_again": 0.0,
+    "st_mrerv8z2_3": 0.0,
+    "st_mrerv8z2_4": 4.19999999999999,
+    "st_mrerv8z2_5": 0.0,
+    "st_mrerw3qg_6": 1.0833333333333344,
+    "st_mrerxocx_8": 1.0000000000000013,
+    "st_ms2xj2gy_7": 0.0,
+    "st_mshiyxvq_3": 0.49999999999999994,
+    "st_pre_listening_expanded": 0.0,
+    "st_pre_listening_idle": 0.0,
+    "st_push_to_talk": 0.0,
+    "st_push_to_talk_cancel": 0.0,
+    "st_reply_started": 0.0,
+    "st_single_turn_speaking": 0.0,
+    "st_speaking": 0.0,
+    "st_thinking": 0.0,
+    "st_voice_wake": 0.0
+  },
+  "diagnostics": []
+}

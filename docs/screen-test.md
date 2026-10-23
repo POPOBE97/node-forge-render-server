@@ -102,11 +102,17 @@ luminance or actual thermal dimming. Lifecycle/thermal/drift paths are covered w
 ## Build and USB players
 
 ```sh
-brew install libraw opencv libusbmuxd xcodegen
+brew install pkg-config libraw opencv libomp libusbmuxd xcodegen
 tools/screen-test-native/build.sh
 cargo build --bin camera-studio --bin screen-test
 tools/screen-test-player/android/build.sh
 ```
+
+The superproject's `scripts/dev.zsh` builds the native helper and Android Screen Test APK before
+starting the editor. A standalone Cargo build does not produce these components. After cleaning
+`target/`, rebuild the native helper before calibrating: chart generation uses its ArUco dictionary,
+so a missing helper aborts calibration and closes the temporary phone player even if the APK
+launched successfully.
 
 The Android build uses the local Android SDK/JBR, Gradle wrapper and Kotlin/OpenGL ES 3. It requires
 Android 15/API 35 or later. Install the generated

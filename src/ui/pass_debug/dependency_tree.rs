@@ -1,6 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::renderer::{PassDebugDependencyNode, PassDebugSource, PassDebugSourceRange};
+use crate::renderer::{
+    PassDebugDependencyNode, PassDebugSource, PassDebugSourceRange,
+    pass_debug::MAX_EXPANDED_DEPENDENCY_NODES,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct PassDebugDependencyRow {
@@ -544,6 +547,19 @@ pub(crate) fn flatten_dependency_tree(
         &mut HashSet::new(),
         &mut rows,
     );
+    if rows.len() == MAX_EXPANDED_DEPENDENCY_NODES {
+        rows.push(PassDebugDependencyRow {
+            depth: 0,
+            row_key: "expansion-limit".to_string(),
+            parent_row_key: None,
+            label: "Dependency expansion limit reached; select a target to inspect it".to_string(),
+            relation_path: String::new(),
+            target_id: None,
+            source_range: None,
+            source_jump_range: None,
+            selectable: false,
+        });
+    }
     rows
 }
 
@@ -557,6 +573,9 @@ fn push_dependency_rows(
     reference_stack: &mut HashSet<String>,
     rows: &mut Vec<PassDebugDependencyRow>,
 ) {
+    if rows.len() >= MAX_EXPANDED_DEPENDENCY_NODES {
+        return;
+    }
     if node.target_id.is_some() {
         let row_key = dependency_row_key(path);
         let relation_path_text = relation_path.join(" / ");
@@ -588,24 +607,22 @@ fn push_dependency_rows(
             source_jump_range,
             selectable: true,
         });
+        // Inline definitions also own their target on this path. A shared
+        // occurrence of that target must not expand its canonical tree again.
+        let inserted_target = target_id
+            .as_ref()
+            .filter(|target_id| reference_stack.insert((*target_id).clone()));
         let reference_children = node
             .reference
-            .then(|| target_id.as_deref())
+            .then_some(inserted_target)
             .flatten()
             .and_then(|target_id| {
-                if reference_stack.insert(target_id.to_string()) {
-                    source
-                        .dependency_trees
-                        .get(target_id)
-                        .map(|tree| (target_id.to_string(), tree.children.as_slice()))
-                } else {
-                    None
-                }
+                source
+                    .dependency_trees
+                    .get(target_id)
+                    .map(|tree| tree.children.as_slice())
             });
-        let children = reference_children
-            .as_ref()
-            .map(|(_, children)| *children)
-            .unwrap_or_else(|| node.children.as_slice());
+        let children = reference_children.unwrap_or_else(|| node.children.as_slice());
         for (index, child) in children.iter().enumerate() {
             path.push(index);
             let mut child_relation_path = Vec::new();
@@ -621,8 +638,8 @@ fn push_dependency_rows(
             );
             path.pop();
         }
-        if let Some((target_id, _)) = reference_children {
-            reference_stack.remove(&target_id);
+        if let Some(target_id) = inserted_target {
+            reference_stack.remove(target_id);
         }
     } else {
         let relation_label = compact_dependency_relation_label(&node.label);
@@ -918,6 +935,25 @@ mod tests {
             line: 0,
             column: 0,
         }
+    }
+
+    #[test]
+    fn shared_self_assignment_history_has_bounded_rows() {
+        let mut wgsl = String::from(
+            "@fragment fn fs_main(@location(0) seed: f32) -> @location(0) f32 {\nvar x = seed;\n",
+        );
+        for _ in 0..24 {
+            wgsl.push_str("if (x > 0.0) { x = x * x + seed; }\n");
+        }
+        wgsl.push_str("return x;\n}");
+        let source = PassDebugSource::from_wgsl("shared-history", wgsl);
+        assert!(source.parse_error.is_none());
+        let root_id = source.dependency_root_target_id.as_ref().unwrap();
+        let rows = flatten_dependency_tree(&source.dependency_trees[root_id], &source);
+        assert!(rows.len() < 5_000, "expanded {} rows", rows.len());
+        assert!(rows.last().unwrap().label.contains("expansion limit"));
+        assert!(rows.iter().any(|row| row.label.starts_with("seed")));
+        assert!(rows.iter().any(|row| row.source_jump_range.is_some()));
     }
 
     #[test]

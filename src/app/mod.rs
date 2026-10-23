@@ -31,3 +31,10 @@ impl eframe::App for App {
         frame::run(self, ui, frame);
     }
 }
+
+impl App {
+    pub fn report_scene_error(&mut self, message: String) {
+        crate::diagnostics::record("scene-error", &message);
+        self.shell.scene_error = Some(message);
+    }
+}

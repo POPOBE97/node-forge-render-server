@@ -1,0 +1,74 @@
+[
+  {
+    "state": "Off",
+    "setupPath": "Off",
+    "captureSeconds": "2",
+    "returncode": 0,
+    "attempts": 1,
+    "peakRssMiB": 635.375,
+    "seconds": 2.111693833
+  },
+  {
+    "state": "Idle",
+    "setupPath": "Idle",
+    "captureSeconds": "2",
+    "returncode": 0,
+    "attempts": 1,
+    "peakRssMiB": 721.84375,
+    "seconds": 1.9021920000000003
+  },
+  {
+    "state": "Warmup",
+    "setupPath": "Warmup",
+    "captureSeconds": "2",
+    "returncode": 0,
+    "attempts": 1,
+    "peakRssMiB": 716.9375,
+    "seconds": 2.31857825
+  },
+  {
+    "state": "Listening",
+    "setupPath": "Listening",
+    "captureSeconds": "2",
+    "returncode": 0,
+    "attempts": 1,
+    "peakRssMiB": 638.5625,
+    "seconds": 2.526486167
+  },
+  {
+    "state": "Thinking",
+    "setupPath": "Thinking",
+    "captureSeconds": "2",
+    "returncode": 0,
+    "attempts": 1,
+    "peakRssMiB": 593.34375,
+    "seconds": 2.1037532919999986
+  },
+  {
+    "state": "Speaking",
+    "setupPath": "Reply Started>Speaking",
+    "captureSeconds": "1",
+    "returncode": 0,
+    "attempts": 1,
+    "peakRssMiB": 721.390625,
+    "seconds": 1.8846334999999996
+  },
+  {
+    "state": "PushToTalk",
+    "setupPath": "PushToTalk",
+    "captureSeconds": "2",
+    "returncode": 0,
+    "attempts": 1,
+    "peakRssMiB": 720.78125,
+    "seconds": 2.1021310420000034
+  },
+  {
+    "state": "PushToTalkCancel",
+    "setupPath": "PushToTalkCancel",
+    "captureSeconds": "2",
+    "returncode": 0,
+    "attempts": 1,
+    "peakRssMiB": 518.546875,
+    "seconds": 2.1046330829999995
+  }
+]

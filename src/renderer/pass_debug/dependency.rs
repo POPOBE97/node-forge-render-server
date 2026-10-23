@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 use super::ast::*;
 use super::source_mapping::*;
 use super::*;
@@ -105,6 +107,10 @@ struct DependencyAnalyzer<'a> {
     store_lhs_counts_by_target: HashMap<String, usize>,
     entry_scopes: Vec<String>,
     fragment_entry_scopes: Vec<String>,
+    // Each reaching definition is expanded once per target and component projection.
+    // Repeated occurrences retain their source locations as references, rather than
+    // copying the whole preceding assignment/control-flow history into every branch.
+    expanded_definitions: RefCell<HashSet<(DefinitionId, Option<AccessProjection>)>>,
 }
 
 impl<'a> DependencyAnalyzer<'a> {
@@ -124,6 +130,7 @@ impl<'a> DependencyAnalyzer<'a> {
             store_lhs_counts_by_target: HashMap::new(),
             entry_scopes: Vec::new(),
             fragment_entry_scopes: Vec::new(),
+            expanded_definitions: RefCell::new(HashSet::new()),
         };
         analyzer.index_module();
         analyzer
@@ -136,6 +143,7 @@ impl<'a> DependencyAnalyzer<'a> {
             .sort_by(|a, b| a.scope.cmp(&b.scope).then_with(|| a.name.cmp(&b.name)));
         let mut trees = HashMap::new();
         for target in &self.targets {
+            self.expanded_definitions.borrow_mut().clear();
             let tree = self.build_target_tree(&target.id, &mut Vec::new(), 0);
             trees.insert(target.id.clone(), tree);
         }
@@ -864,7 +872,7 @@ impl<'a> DependencyAnalyzer<'a> {
                     )
                 });
         }
-        if depth >= MAX_DEPENDENCY_DEPTH {
+        if depth >= MAX_DEPENDENCY_DEPTH || definition_stack.len() >= MAX_DEPENDENCY_DEPTH {
             let definition_source_range =
                 distinct_definition_source_range(definition.source_range, node_source_range);
             let display_label =
@@ -904,8 +912,29 @@ impl<'a> DependencyAnalyzer<'a> {
             .with_definition_source_range(definition_source_range);
         }
 
+        let expansion_key = (
+            definition_id,
+            projection.filter(|projection| !projection.is_empty()).cloned(),
+        );
+        if !self.expanded_definitions.borrow_mut().insert(expansion_key)
+            && let Some(reference) = self.build_definition_reference_node(
+                definition_id,
+                edge_label.clone(),
+                display_label.clone(),
+                node_source_range,
+            )
+        {
+            return reference;
+        }
+
         definition_stack.push(definition_id);
-        let mut children = self.control_nodes(&definition.controls, target_stack, depth + 1);
+        let mut children = self.control_nodes(
+            &definition.controls,
+            target_stack,
+            seen_exprs,
+            definition_stack,
+            depth + 1,
+        );
         if let Some(value) = definition.value.clone() {
             let value_occurrence_range = definition.source_range.and_then(|source_range| {
                 self.definition_value_occurrence_range(source_range, &value)
@@ -1149,7 +1178,13 @@ impl<'a> DependencyAnalyzer<'a> {
             .iter()
             .enumerate()
             .map(|(index, ret)| {
-                let mut children = self.control_nodes(&ret.controls, target_stack, depth + 1);
+                let mut children = self.control_nodes(
+                    &ret.controls,
+                    target_stack,
+                    &mut HashSet::new(),
+                    &mut Vec::new(),
+                    depth + 1,
+                );
                 if let Some(value) = ret.value {
                     children.extend(self.semantic_expr_dependencies(
                         ExprRef::Function {
@@ -1173,6 +1208,8 @@ impl<'a> DependencyAnalyzer<'a> {
         &self,
         controls: &[ControlDependency],
         target_stack: &mut Vec<String>,
+        seen_exprs: &mut HashSet<String>,
+        definition_stack: &mut Vec<DefinitionId>,
         depth: usize,
     ) -> Vec<PassDebugDependencyNode> {
         controls
@@ -1183,8 +1220,8 @@ impl<'a> DependencyAnalyzer<'a> {
                     control.label.as_str(),
                     Some(&control.env),
                     target_stack,
-                    &mut HashSet::new(),
-                    &mut Vec::new(),
+                    seen_exprs,
+                    definition_stack,
                     depth + 1,
                 )
             })

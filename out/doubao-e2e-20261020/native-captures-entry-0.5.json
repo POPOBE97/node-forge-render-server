@@ -1,0 +1,11 @@
+[
+  {
+    "state": "events",
+    "setupPath": "events",
+    "captureSeconds": "0.5",
+    "returncode": 0,
+    "attempts": 1,
+    "peakRssMiB": 648.859375,
+    "seconds": 1.892464917
+  }
+]

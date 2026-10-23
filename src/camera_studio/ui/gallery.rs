@@ -618,8 +618,11 @@ impl Workspace {
         let mut open = true;
         egui::Window::new("Capture details")
             .open(&mut open)
-            .default_width(480.)
-            .show(ctx, |ui| {
+            .default_width(520.)
+            .max_height(600.)
+            .vscroll(true)
+            .frame(tool_window::dialog_frame(ctx)).show(ctx, |ui| {
+                tool_window::apply(ui);
                 ui.label(tokens::rich_text(
                     format!(
                         "{} · {}",
@@ -640,7 +643,7 @@ impl Workspace {
                 self.error_panel(ui, IssueTarget::Record(record.id.clone()));
                 match self.results.state(&record.id).cloned() {
                     Some(results::ResultState::Saved(saved)) => {
-                        ui.horizontal(|ui| {
+                        ui.horizontal_wrapped(|ui| {
                             ui.label(format!("Corrected · {} × {}", saved.size[0], saved.size[1]));
                             if action(ui, "Open preview", true) {
                                 if let Err(e) = reveal(&saved.path) {
@@ -672,7 +675,7 @@ impl Workspace {
                     None => {}
                 }
                 for file in &record.files {
-                    ui.horizontal(|ui| {
+                    ui.horizontal_wrapped(|ui| {
                         ui.label(&file.remote.name);
                         muted(ui, format!("{:.1} MB", file.bytes as f64 / 1_000_000.));
                         if action(ui, "Open original", true) {
@@ -711,7 +714,7 @@ impl Workspace {
                     "lensname",
                 ] {
                     if let Some(p) = record.camera.parameters.iter().find(|p| p.id == id) {
-                        ui.horizontal(|ui| {
+                        ui.horizontal_wrapped(|ui| {
                             muted(ui, &p.label);
                             ui.label(display_value(&p.value));
                         });

@@ -5,6 +5,7 @@ use std::{
 
 use rust_wgpu_fiber::eframe::egui;
 
+use crate::ui::tool_window;
 use crate::ui::pass_debug::dependency_tree::{
     PassDebugDependencyRow, PassDebugTreeClick, PassDebugTreeRow, filtered_dependency_row_indices,
 };
@@ -98,7 +99,7 @@ fn render_dependency_rows(
     let filter_response = ui.add(
         egui::TextEdit::singleline(&mut filter_text)
             .font(filter_font)
-            .hint_text("Filter...")
+            .hint_text("Filter dependencies…")
             .desired_width(ui.available_width()),
     );
     if filter_response.changed() {
@@ -185,8 +186,7 @@ fn render_scrollable_tree_rows(
     font_id: &egui::FontId,
     intrinsic_content_width: f32,
 ) -> ShortwireTreeResult {
-    let row_height = ui.fonts_mut(|fonts| fonts.row_height(&font_id));
-    let row_height_with_spacing = row_height + ui.spacing().item_spacing.y;
+    let row_height_with_spacing = tool_window::ROW_HEIGHT;
     let mut clicked_row: Option<PassDebugTreeClick> = None;
     let mut context_menu_row_index: Option<usize> = None;
     let is_shortwire_active = tree_state.shortwire_active_row_key.is_some();

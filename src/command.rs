@@ -1192,9 +1192,15 @@ fn expanded_dependency_trees_for_dump(
         .dependency_trees
         .iter()
         .map(|(target_id, tree)| {
+            let mut remaining_nodes = renderer::pass_debug::MAX_EXPANDED_DEPENDENCY_NODES;
             (
                 target_id.clone(),
-                expand_dependency_node_for_dump(tree, source, &mut HashSet::new()),
+                expand_dependency_node_for_dump(
+                    tree,
+                    source,
+                    &mut HashSet::new(),
+                    &mut remaining_nodes,
+                ),
             )
         })
         .collect()
@@ -1204,33 +1210,51 @@ fn expand_dependency_node_for_dump(
     node: &renderer::PassDebugDependencyNode,
     source: &renderer::PassDebugSource,
     reference_stack: &mut HashSet<String>,
+    remaining_nodes: &mut usize,
 ) -> renderer::PassDebugDependencyNode {
-    let mut expanded = node.clone();
-    let mut inserted_reference_target = None;
+    let mut expanded = renderer::PassDebugDependencyNode {
+        label: node.label.clone(),
+        edge_label: node.edge_label.clone(),
+        display_label: node.display_label.clone(),
+        source_range: node.source_range,
+        definition_source_range: node.definition_source_range,
+        target_id: node.target_id.clone(),
+        reference: node.reference,
+        children: Vec::new(),
+    };
+    if *remaining_nodes == 0 {
+        expanded.label.push_str(" [expansion limit; inspect target separately]");
+        return expanded;
+    }
+    *remaining_nodes -= 1;
+    let inserted_target = node
+        .target_id
+        .as_ref()
+        .filter(|target_id| reference_stack.insert((*target_id).clone()));
     let source_children = node
         .reference
-        .then(|| node.target_id.as_deref())
+        .then_some(inserted_target)
         .flatten()
         .and_then(|target_id| {
-            if reference_stack.insert(target_id.to_string()) {
-                inserted_reference_target = Some(target_id.to_string());
-                source
-                    .dependency_trees
-                    .get(target_id)
-                    .map(|tree| tree.children.as_slice())
-            } else {
-                None
-            }
+            source
+                .dependency_trees
+                .get(target_id)
+                .map(|tree| tree.children.as_slice())
         })
         .unwrap_or_else(|| node.children.as_slice());
 
-    expanded.children = source_children
-        .iter()
-        .map(|child| expand_dependency_node_for_dump(child, source, reference_stack))
-        .collect();
+    for child in source_children {
+        let exhausted = *remaining_nodes == 0;
+        expanded.children.push(expand_dependency_node_for_dump(
+            child, source, reference_stack, remaining_nodes,
+        ));
+        if exhausted {
+            break;
+        }
+    }
 
-    if let Some(target_id) = inserted_reference_target {
-        reference_stack.remove(&target_id);
+    if let Some(target_id) = inserted_target {
+        reference_stack.remove(target_id);
     }
 
     expanded
@@ -1833,6 +1857,15 @@ pub(crate) fn run() -> Result<()> {
     }
 
     let startup_nforge_path = cli.nforge.clone();
+    let mut startup_error = None;
+    node_forge_render_server::diagnostics::record(
+        "startup",
+        &format!(
+            "loading {:?}; log={}",
+            startup_nforge_path,
+            node_forge_render_server::diagnostics::log_path().display(),
+        ),
+    );
     let (scene, startup_asset_store, startup_debug_artifacts) = if let Some(nforge_path) =
         cli.nforge.as_deref()
     {
@@ -1843,10 +1876,7 @@ pub(crate) fn run() -> Result<()> {
                 loaded.debug_artifacts,
             ),
             Err(e) => {
-                eprintln!(
-                    "[startup] failed to load .nforge {}; showing error fallback screen: {e:#}",
-                    nforge_path.display()
-                );
+                startup_error = Some(format!("Failed to load {}: {e:#}", nforge_path.display()));
                 (
                     None,
                     asset_store::AssetStore::new(),
@@ -1862,9 +1892,7 @@ pub(crate) fn run() -> Result<()> {
                 node_forge_render_server::debug_artifacts::DebugArtifactStore::default(),
             ),
             Err(e) => {
-                eprintln!(
-                    "[startup] failed to load/parse default scene; showing error fallback screen: {e:#}"
-                );
+                startup_error = Some(format!("Failed to load default scene: {e:#}"));
                 (
                     None,
                     asset_store::AssetStore::new(),
@@ -1874,6 +1902,9 @@ pub(crate) fn run() -> Result<()> {
         }
     };
 
+    if let Some(message) = startup_error.as_ref() {
+        node_forge_render_server::diagnostics::record("startup-error", message);
+    }
     let resolution_hint = scene
         .as_ref()
         .and_then(dsl::screen_resolution)
@@ -1952,6 +1983,7 @@ pub(crate) fn run() -> Result<()> {
         "Node Forge Render Server",
         native_options,
         Box::new(move |cc| {
+            let mut startup_error = startup_error.clone();
             node_forge_render_server::ui::fonts::configure_egui_fonts(&cc.egui_ctx);
             let render_state = cc
                 .wgpu_render_state
@@ -2003,9 +2035,9 @@ pub(crate) fn run() -> Result<()> {
                         result.gaussian_blur_bundles,
                     ),
                     Err(e) => {
-                        eprintln!(
-                            "[startup] scene build failed; showing error fallback screen: {e:#}"
-                        );
+                        let message = format!("Scene build failed: {e:#}");
+                        node_forge_render_server::diagnostics::record("startup-error", &message);
+                        startup_error = Some(message);
                         let result = renderer::ShaderSpaceBuilder::new(
                             Arc::new(render_state.device.clone()),
                             Arc::new(render_state.queue.clone()),
@@ -2083,12 +2115,16 @@ pub(crate) fn run() -> Result<()> {
                 .ok()
                 .and_then(|g| g.as_ref().cloned())
                 .and_then(|s| {
-                    node_forge_render_server::animation::AnimationSession::from_scene(&s)
-                        .ok()
-                        .flatten()
+                    match node_forge_render_server::animation::AnimationSession::from_scene(&s) {
+                        Ok(session) => session,
+                        Err(error) => {
+                            startup_error = Some(format!("Animation initialization failed: {error:#}"));
+                            None
+                        }
+                    }
                 });
 
-            Ok(Box::new(app::App::from_init(app::AppInit {
+            let mut app = app::App::from_init(app::AppInit {
                 shader_space,
                 resolution,
                 window_resolution: resolution_hint,
@@ -2113,7 +2149,12 @@ pub(crate) fn run() -> Result<()> {
                 gaussian_blur_bundles,
                 debug_artifacts: startup_debug_artifacts.clone(),
                 nforge_path: startup_nforge_path.clone(),
-            })))
+            });
+            if let Some(message) = startup_error {
+                app.report_scene_error(message);
+            }
+            node_forge_render_server::diagnostics::record("startup", "desktop initialized");
+            Ok(Box::new(app))
         }),
     )
     .map_err(|e| anyhow!("eframe run failed: {e}"))?;
@@ -2566,6 +2607,24 @@ mod tests {
         for child in &node.children {
             collect_target_nodes(child, target_id, out);
         }
+    }
+
+    #[test]
+    fn shader_dependency_dump_bounds_shared_self_assignment_history() {
+        let mut wgsl = String::from(
+            "@fragment fn fs_main(@location(0) seed: f32) -> @location(0) f32 {\nvar x = seed;\n",
+        );
+        for _ in 0..24 {
+            wgsl.push_str("if (x > 0.0) { x = x * x + seed; }\n");
+        }
+        wgsl.push_str("return x;\n}");
+        let source = renderer::PassDebugSource::from_wgsl("shared-history", wgsl);
+        assert!(source.parse_error.is_none());
+        let json = shader_dependency_dump_json(&source).unwrap();
+        assert!(json.len() < 10_000_000, "dump expanded to {} bytes", json.len());
+        assert!(json.contains("expansion limit"));
+        let dump: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(dump["targets"].as_array().unwrap().len(), source.dependency_targets.len());
     }
 
     #[test]

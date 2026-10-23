@@ -25,6 +25,15 @@ pub struct PlaybackFrame {
     pub diagnostics: Vec<String>,
 }
 
+/// CPU-only planning diagnostics, not an allocation limit or GPU-time estimate.
+#[derive(Debug, Clone)]
+pub struct PlaybackResourceEstimate {
+    pub texture_bytes: u64,
+    pub pass_pixels: u64,
+    pub pass_count: usize,
+    pub largest_texture_dimension: u32,
+}
+
 pub struct PlaybackRuntime {
     authored_scene: SceneDSL,
     uniform_scene: SceneDSL,
@@ -36,6 +45,48 @@ pub struct PlaybackRuntime {
 }
 
 impl PlaybackRuntime {
+    /// Plan and decode resources without creating a GPU device or submitting work.
+    /// Uses conservative storage accounting; pipelines, driver allocations and
+    /// future dynamic graph changes are not bounded by this estimate.
+    pub fn estimate_resources(scene: &SceneDSL, assets: &AssetStore) -> Result<PlaybackResourceEstimate> {
+        use crate::renderer::render_plan::{planner::RenderPlanner, types::{PlanBuildOptions, PlanningGpuCaps}};
+        let plan = RenderPlanner::new(PlanBuildOptions {
+            gpu_caps: PlanningGpuCaps::default(),
+            presentation_mode: ShaderSpacePresentationMode::UiSdrDisplayEncode,
+            debug_dump_wgsl_dir: None,
+        }).plan(scene, Some(assets), None)?;
+        let resources = &plan.resources;
+        let mut bytes = 0u64;
+        let mut largest = 0u32;
+        for texture in &resources.textures {
+            largest = largest.max(texture.size[0]).max(texture.size[1]);
+            let block = texture.format.block_copy_size(None).context("Cannot estimate texture format")? as u64;
+            let (bw, bh) = texture.format.block_dimensions();
+            let levels = resources.texture_mip_level_counts.get(&texture.name).copied().unwrap_or(1);
+            for level in 0..levels {
+                let w = (texture.size[0] >> level).max(1).div_ceil(bw) as u64;
+                let h = (texture.size[1] >> level).max(1).div_ceil(bh) as u64;
+                bytes = bytes.saturating_add(w.saturating_mul(h).saturating_mul(block).saturating_mul(texture.sample_count.max(1) as u64));
+            }
+        }
+        for image in &resources.image_textures {
+            let w = image.image.width(); let h = image.image.height();
+            largest = largest.max(w).max(h);
+            // RGBA32F plus mip/transfer headroom, regardless of source encoding.
+            bytes = bytes.saturating_add(u64::from(w).saturating_mul(u64::from(h)).saturating_mul(32));
+        }
+        let mut pixels = 0u64;
+        for pass in &resources.render_pass_specs {
+            let target = resources.textures.iter().find(|texture| texture.name == pass.target_texture)
+                .context("Cannot estimate render target")?;
+            pixels = pixels.saturating_add(u64::from(target.size[0]).saturating_mul(u64::from(target.size[1]))
+                .saturating_mul(pass.sample_count.max(1) as u64));
+        }
+        Ok(PlaybackResourceEstimate { texture_bytes: bytes, pass_pixels: pixels,
+            pass_count: resources.render_pass_specs.len() + resources.image_prepasses.len() + resources.depth_resolve_passes.len(),
+            largest_texture_dimension: largest })
+    }
+
     pub fn new(
         device: Arc<wgpu::Device>,
         queue: Arc<wgpu::Queue>,
@@ -228,6 +279,15 @@ impl PlaybackRuntime {
 
     /// Advance every motion driver exactly once with the complete supplied `dt`.
     pub fn advance(&mut self, delta_seconds: f64) -> Result<PlaybackFrame> {
+        self.advance_internal(delta_seconds, None)
+    }
+
+    /// Advance once and defer GPU submission to the owning multi-scene host.
+    pub fn advance_deferred(&mut self, delta_seconds: f64, commands: &mut Vec<wgpu::CommandBuffer>) -> Result<PlaybackFrame> {
+        self.advance_internal(delta_seconds, Some(commands))
+    }
+
+    fn advance_internal(&mut self, delta_seconds: f64, commands: Option<&mut Vec<wgpu::CommandBuffer>>) -> Result<PlaybackFrame> {
         let dt = accepted_delta(delta_seconds, self.playing);
         self.static_time_seconds += dt;
         let mut ended = false;
@@ -263,7 +323,11 @@ impl PlaybackRuntime {
                 params.time = scene_time_seconds as f32;
                 update_pass_params(&self.render.shader_space, pass, &params)?;
             }
-            self.render.shader_space.render();
+            if let Some(commands) = commands {
+                self.render.shader_space.render_deferred(commands);
+            } else {
+                self.render.shader_space.render();
+            }
             self.dirty = false;
         }
         if ended {

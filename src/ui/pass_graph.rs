@@ -45,14 +45,25 @@ struct Invocation {
     writes: BTreeSet<Resource>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(super) struct GraphNode {
     pub pass: PassInfo,
     pub external_inputs: Vec<String>,
     pub is_output: bool,
+    pub blur_group: Option<String>,
+    /// Empty for individual passes; populated only in the collapsed presentation.
+    pub collapsed_passes: Vec<PassInfo>,
 }
 
-#[derive(Debug)]
+impl GraphNode {
+    pub fn passes(&self) -> impl Iterator<Item = &PassInfo> {
+        self.collapsed_passes
+            .iter()
+            .chain(self.collapsed_passes.is_empty().then_some(&self.pass))
+    }
+}
+
+#[derive(Clone, Debug)]
 pub(super) struct GraphEdge {
     pub from: usize,
     pub to: usize,
@@ -61,7 +72,7 @@ pub(super) struct GraphEdge {
     pub ordering: bool,
 }
 
-#[derive(Default, Debug)]
+#[derive(Clone, Default, Debug)]
 pub(super) struct PassGraph {
     pub nodes: Vec<GraphNode>,
     pub edges: Vec<GraphEdge>,
@@ -206,6 +217,8 @@ impl PassGraph {
                 pass: invocation.pass,
                 external_inputs,
                 is_output: false,
+                blur_group: None,
+                collapsed_passes: Vec::new(),
             });
         }
         // Only the final producer represents the presented output.
@@ -213,15 +226,109 @@ impl PassGraph {
             graph.nodes[*output].is_output = true;
         }
         graph.edges = edges.into_values().collect();
+        graph.assign_blur_groups();
         graph.rows = graph.layout_rows();
         graph
+    }
+
+    fn assign_blur_groups(&mut self) {
+        // Only contract consecutive invocations. Contracting across an unrelated
+        // consumer can turn A -> consumer -> B into a false group-level cycle.
+        let mut occurrences = HashMap::<String, usize>::new();
+        let mut start = 0;
+        while start < self.nodes.len() {
+            let Some(owner) = blur_owner(&self.nodes[start].pass.name) else {
+                start += 1;
+                continue;
+            };
+            let owner = owner.to_owned();
+            let end = (start + 1..self.nodes.len())
+                .find(|&i| blur_owner(&self.nodes[i].pass.name) != Some(owner.as_str()))
+                .unwrap_or(self.nodes.len());
+            let occurrence = occurrences.entry(owner.clone()).or_default();
+            let key = format!("{owner}#{occurrence}");
+            *occurrence += 1;
+            if end - start > 1 {
+                for node in &mut self.nodes[start..end] {
+                    node.blur_group = Some(key.clone());
+                }
+            }
+            start = end;
+        }
+    }
+
+    /// Project the exact execution graph for display; the original stays intact
+    /// for dependency inspection. Parallel edges are merged, never invented.
+    pub fn presentation(&self, expanded: &BTreeSet<String>, show_ordering: bool) -> Self {
+        let mut view = Self::default();
+        let mut mapping = vec![0; self.nodes.len()];
+        let mut index = 0;
+        while index < self.nodes.len() {
+            let node = &self.nodes[index];
+            let end = if let Some(key) = node
+                .blur_group
+                .as_ref()
+                .filter(|key| !expanded.contains(*key))
+            {
+                (index + 1..self.nodes.len())
+                    .find(|&i| self.nodes[i].blur_group.as_ref() != Some(key))
+                    .unwrap_or(self.nodes.len())
+            } else {
+                index + 1
+            };
+            mapping[index..end].fill(view.nodes.len());
+            let mut visible = self.nodes[end - 1].clone();
+            if end - index > 1 {
+                visible.collapsed_passes = self.nodes[index..end]
+                    .iter()
+                    .map(|node| node.pass.clone())
+                    .collect();
+                visible.pass.display_label = Some(
+                    blur_owner(&node.pass.name)
+                        .unwrap_or(&node.pass.name)
+                        .to_owned(),
+                );
+                visible.external_inputs = self.nodes[index..end]
+                    .iter()
+                    .flat_map(|node| node.external_inputs.iter().cloned())
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect();
+                visible.is_output = self.nodes[index..end].iter().any(|node| node.is_output);
+            }
+            view.nodes.push(visible);
+            index = end;
+        }
+        let mut edges = BTreeMap::<(usize, usize), GraphEdge>::new();
+        for edge in &self.edges {
+            if edge.ordering && !show_ordering {
+                continue;
+            }
+            let (from, to) = (mapping[edge.from], mapping[edge.to]);
+            if from == to {
+                continue;
+            }
+            let visible = edges.entry((from, to)).or_insert_with(|| GraphEdge {
+                from,
+                to,
+                resources: BTreeSet::new(),
+                ordering: true,
+            });
+            visible.resources.extend(edge.resources.iter().cloned());
+            visible.ordering &= edge.ordering;
+        }
+        view.edges = edges.into_values().collect();
+        view.rows = view.layout_rows();
+        view
     }
 
     fn layout_rows(&self) -> Vec<Vec<usize>> {
         let mut levels = vec![0; self.nodes.len()];
         let mut parents = vec![Vec::new(); self.nodes.len()];
+        let mut children = vec![Vec::new(); self.nodes.len()];
         for edge in &self.edges {
             parents[edge.to].push(edge.from);
+            children[edge.from].push(edge.to);
         }
         for (index, incoming) in parents.iter().enumerate() {
             levels[index] = incoming
@@ -229,6 +336,14 @@ impl PassGraph {
                 .map(|&parent| levels[parent] + 1)
                 .max()
                 .unwrap_or(0);
+        }
+        // Place shorter branches near their first consumer. In particular, an
+        // image used only by the last overlay need not send a wire from row zero
+        // past the entire graph. Execution numbers remain unchanged.
+        for index in (0..self.nodes.len()).rev() {
+            if let Some(level) = children[index].iter().map(|&child| levels[child] - 1).min() {
+                levels[index] = level;
+            }
         }
         let mut rows = vec![Vec::new(); levels.iter().max().map_or(0, |level| level + 1)];
         for (index, &level) in levels.iter().enumerate() {
@@ -287,9 +402,136 @@ impl PassGraph {
     }
 }
 
+/// The assembler's internal stage names, parsed from the right because authored
+/// node IDs may contain dots. Composite draws are deliberately kept separate.
+fn blur_owner(name: &str) -> Option<&str> {
+    let name = name.strip_prefix("sys.blur.")?;
+    let name = if let Some((base, route)) = name.rsplit_once(".route") {
+        if route.parse::<u32>().is_ok() {
+            base
+        } else {
+            name
+        }
+    } else {
+        name
+    };
+    let name = name.strip_suffix(".pass")?;
+    if let Some(owner) = name.strip_suffix(".src") {
+        return Some(owner);
+    }
+    for stage in [".h.ds", ".v.ds", ".upsample_bilinear.ds", ".ds."] {
+        if let Some((owner, factor)) = name.rsplit_once(stage)
+            && factor.parse::<u32>().is_ok()
+        {
+            return Some(owner);
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn doubao_blur_groups_match_active_render_plan() {
+        use crate::renderer::{
+            ShaderSpacePresentationMode,
+            render_plan::{
+                planner::RenderPlanner,
+                types::{PlanBuildOptions, PlanningGpuCaps},
+            },
+        };
+        let archive = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/render/editor-examples/doubao-voice-interaction/scene.nforge");
+        let (scene, assets) = crate::asset_store::load_from_nforge(&archive).unwrap();
+        let plan = RenderPlanner::new(PlanBuildOptions {
+            gpu_caps: PlanningGpuCaps::default(),
+            presentation_mode: ShaderSpacePresentationMode::UiHdrNative,
+            debug_dump_wgsl_dir: None,
+        })
+        .plan(&scene, Some(&assets), None)
+        .unwrap();
+        let resources = &plan.resources;
+        let mut invocations = Vec::new();
+        for spec in &resources.image_prepasses {
+            invocations.push(pass(
+                spec.pass_name.as_str(),
+                &[spec.src_texture.as_str()],
+                spec.dst_texture.as_str(),
+            ));
+        }
+        let disabled: BTreeSet<_> = resources
+            .gaussian_blur_bundles
+            .values()
+            .flat_map(|bundle| {
+                bundle
+                    .current
+                    .route_passes
+                    .iter()
+                    .filter(|(factor, _)| **factor != bundle.current.active_factor)
+                    .flat_map(|(_, passes)| passes.iter().map(|name| name.as_str()))
+            })
+            .collect();
+        for name in &resources.composite_passes {
+            if disabled.contains(name.as_str()) {
+                continue;
+            }
+            let spec = resources
+                .render_pass_specs
+                .iter()
+                .find(|spec| spec.name == *name)
+                .unwrap();
+            let reads: Vec<_> = spec
+                .texture_bindings
+                .iter()
+                .map(|binding| binding.texture.as_str())
+                .collect();
+            let mut invocation = pass(name.as_str(), &reads, spec.target_texture.as_str());
+            if matches!(spec.color_load_op, wgpu::LoadOp::Load) {
+                invocation
+                    .reads
+                    .insert(Resource::texture(spec.target_texture.as_str()));
+            }
+            if let Some(resolve) = &spec.resolve_target {
+                invocation
+                    .writes
+                    .insert(Resource::texture(resolve.as_str()));
+            }
+            invocation.pass.target_size = resources
+                .textures
+                .iter()
+                .find(|tex| tex.name == spec.target_texture)
+                .map(|tex| (tex.size[0], tex.size[1]));
+            invocations.push(invocation);
+        }
+        let graph = PassGraph::build(invocations, Some(plan.present_output_texture.as_str()));
+        let collapsed = graph.presentation(&BTreeSet::new(), false);
+        assert!(collapsed.nodes.len() < graph.nodes.len());
+        assert!(collapsed.edges.iter().all(|edge| edge.from < edge.to));
+        assert_eq!(
+            collapsed
+                .nodes
+                .iter()
+                .map(|node| node.collapsed_passes.len().max(1))
+                .sum::<usize>(),
+            graph.nodes.len()
+        );
+        for bundle in resources.gaussian_blur_bundles.values() {
+            let active = &bundle.current.route_passes[&bundle.current.active_factor];
+            let active: BTreeSet<_> = active.iter().map(|name| name.as_str()).collect();
+            assert!(
+                collapsed.nodes.iter().any(|node| {
+                    node.collapsed_passes
+                        .iter()
+                        .map(|pass| pass.name.as_str())
+                        .collect::<BTreeSet<_>>()
+                        == active
+                }),
+                "the active blur route must form one expandable group"
+            );
+        }
+    }
 
     fn pass(name: &str, reads: &[&str], target: &str) -> Invocation {
         Invocation {
@@ -391,6 +633,131 @@ mod tests {
         assert_eq!(graph.nodes[0].external_inputs, ["history"]);
         assert!(graph.edges.iter().all(|edge| edge.ordering));
         assert!(PassGraph::build(vec![], None).rows.is_empty());
+    }
+
+    #[test]
+    fn collapsed_blur_preserves_boundary_dependencies_and_expands_losslessly() {
+        let graph = PassGraph::build(
+            vec![
+                pass("source", &[], "image"),
+                pass("mask", &[], "mask"),
+                pass(
+                    "sys.blur.group/blur.with.dots.ds.4.pass.route4",
+                    &["image"],
+                    "small",
+                ),
+                pass(
+                    "sys.blur.group/blur.with.dots.h.ds4.pass.route4",
+                    &["small"],
+                    "h",
+                ),
+                pass(
+                    "sys.blur.group/blur.with.dots.v.ds4.pass.route4",
+                    &["h", "mask"],
+                    "v",
+                ),
+                pass(
+                    "sys.blur.group/blur.with.dots.upsample_bilinear.ds4.pass.route4",
+                    &["v"],
+                    "out",
+                ),
+                pass("consumer", &["h", "out"], "screen"),
+            ],
+            Some("screen"),
+        );
+        let collapsed = graph.presentation(&BTreeSet::new(), true);
+        assert_eq!(collapsed.nodes.len(), 4);
+        assert_eq!(collapsed.nodes[2].collapsed_passes.len(), 4);
+        assert!(collapsed.nodes[3].is_output);
+        assert_eq!(
+            collapsed
+                .edges
+                .iter()
+                .map(|e| (e.from, e.to))
+                .collect::<Vec<_>>(),
+            [(0, 2), (1, 2), (2, 3)]
+        );
+        assert_eq!(
+            collapsed.edges[2].resources,
+            BTreeSet::from(["h".into(), "out".into()])
+        );
+        let expanded = graph.presentation(
+            &BTreeSet::from([collapsed.nodes[2].blur_group.clone().unwrap()]),
+            true,
+        );
+        assert_eq!(expanded.nodes.len(), graph.nodes.len());
+        assert_eq!(
+            expanded
+                .edges
+                .iter()
+                .map(|e| (&e.resources, e.from, e.to, e.ordering))
+                .collect::<Vec<_>>(),
+            graph
+                .edges
+                .iter()
+                .map(|e| (&e.resources, e.from, e.to, e.ordering))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn blur_groups_do_not_swallow_external_consumers_or_compose_draws() {
+        let graph = PassGraph::build(
+            vec![
+                pass("sys.blur.effect.h.ds1.pass", &["source"], "h"),
+                pass("consumer", &["h"], "side"),
+                pass("sys.blur.effect.v.ds1.pass", &["h", "side"], "v"),
+                pass("sys.blur.effect.to.root.compose.pass", &["v"], "screen"),
+            ],
+            Some("screen"),
+        );
+        assert_eq!(graph.presentation(&BTreeSet::new(), false).nodes.len(), 4);
+        assert!(graph.nodes.iter().all(|node| node.blur_group.is_none()));
+    }
+
+    #[test]
+    fn hiding_reuse_order_keeps_load_dependencies_and_independent_branches() {
+        let mut overlay = pass("overlay", &["shared"], "shared");
+        overlay.pass.sampled_textures.clear(); // Attachment Load, not texture sampling.
+        let graph = PassGraph::build(
+            vec![
+                pass("first", &[], "shared"),
+                pass("consumer", &["shared"], "side"),
+                pass("clear", &[], "shared"),
+                overlay,
+            ],
+            Some("shared"),
+        );
+        let data = graph.presentation(&BTreeSet::new(), false);
+        assert_eq!(
+            data.edges
+                .iter()
+                .map(|e| (e.from, e.to))
+                .collect::<Vec<_>>(),
+            [(0, 1), (2, 3)]
+        );
+        assert_eq!(data.rows, [vec![0, 2], vec![1, 3]]);
+        assert_eq!(
+            graph.presentation(&BTreeSet::new(), true).edges.len(),
+            graph.edges.len()
+        );
+    }
+
+    #[test]
+    fn late_image_input_is_placed_near_its_consumer() {
+        let graph = PassGraph::build(
+            vec![
+                pass("late image", &[], "image"),
+                pass("base", &[], "base"),
+                pass("effect", &["base"], "effect"),
+                pass("overlay", &["effect", "image"], "screen"),
+            ],
+            Some("screen"),
+        );
+        assert_eq!(graph.nodes[0].pass.order_index, 0);
+        assert_eq!(graph.rows[0], [1]);
+        assert!(graph.rows[1].contains(&0));
+        assert_eq!(graph.rows[2], [3]);
     }
 
     #[test]

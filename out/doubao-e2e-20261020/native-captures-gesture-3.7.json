@@ -1,0 +1,11 @@
+[
+  {
+    "state": "gesture",
+    "setupPath": "gesture",
+    "captureSeconds": "3.7",
+    "returncode": 0,
+    "attempts": 1,
+    "peakRssMiB": 653.75,
+    "seconds": 1.899868625
+  }
+]

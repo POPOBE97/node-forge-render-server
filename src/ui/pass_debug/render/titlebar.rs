@@ -8,6 +8,7 @@ use rust_wgpu_fiber::eframe::egui;
 use crate::ui::pass_debug::event::{PassDebugEvent, PassDebugWindowAction};
 use crate::ui::pass_debug::selectors::titlebar_view;
 use crate::ui::pass_debug_window::PassDebugWindowDocument;
+use crate::ui::tool_window;
 
 fn request_pass_debug_close(
     ui: &egui::Ui,
@@ -34,26 +35,9 @@ pub(crate) fn render_pass_debug_titlebar(
     let save_requested =
         ui.input(|input| input.modifiers.command && input.key_pressed(egui::Key::S));
     ui.horizontal(|ui| {
-        ui.heading(format!("RenderPass Debug - {}", view.pass_name));
-        if let Some(target_size) = view.target_size_label.as_deref() {
-            let response = ui.label(
-                egui::RichText::new(format!("RT {target_size}"))
-                    .monospace()
-                    .small()
-                    .color(egui::Color32::from_gray(185)),
-            );
-            if let Some(target_texture) = view.target_texture_label.as_deref() {
-                response.on_hover_text(target_texture);
-            }
-        }
+        tool_window::heading(ui, "Shader Debugger");
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.add_enabled_ui(view.diff_enabled, |ui| {
-                if ui.selectable_label(view.diff_active, "Diff").clicked() {
-                    document.dispatch_event(PassDebugEvent::ToggleShortwireDiff, None);
-                }
-            });
-
-            if ui.button("Close").clicked() {
+            if tool_window::action(ui, "Close", true).clicked() {
                 request_pass_debug_close(
                     ui,
                     document,
@@ -62,14 +46,36 @@ pub(crate) fn render_pass_debug_titlebar(
                     send_viewport_close,
                 );
             }
-
-            if ui
-                .add_enabled(view.save_enabled, egui::Button::new("Save"))
+            if tool_window::action(ui, "Save", view.save_enabled)
+                .on_hover_text("Save shader patch · Cmd/Ctrl+S")
                 .clicked()
             {
                 document.dispatch_event(PassDebugEvent::SaveRequested, Some(pending_actions));
             }
+            ui.add_enabled_ui(view.diff_enabled, |ui| {
+                if ui.selectable_label(view.diff_active, "Diff").clicked() {
+                    document.dispatch_event(PassDebugEvent::ToggleShortwireDiff, None);
+                }
+            });
         });
+    });
+    ui.horizontal(|ui| {
+        if let Some(target_size) = view.target_size_label.as_deref() {
+            let response = tool_window::badge(ui, format!("RT {target_size}"));
+            if let Some(target_texture) = view.target_texture_label.as_deref() {
+                response.on_hover_text(target_texture);
+            }
+        }
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(&view.pass_name)
+                    .monospace()
+                    .size(11.0)
+                    .color(ui.visuals().weak_text_color()),
+            )
+            .truncate(),
+        )
+        .on_hover_text(&view.pass_name);
     });
 
     if save_requested && view.save_enabled {

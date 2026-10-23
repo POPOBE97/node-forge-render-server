@@ -10,11 +10,13 @@ pub mod input_nodes;
 pub mod luminance_curve;
 pub mod math_closure;
 pub mod math_nodes;
+pub mod pbr_material;
 pub mod remap_nodes;
 pub mod sdf_nodes;
 pub mod shader_material;
 pub mod template_loader;
 pub mod texture_nodes;
+pub mod text_sdf;
 pub mod trigonometry_nodes;
 pub mod vector_nodes;
 
@@ -109,7 +111,7 @@ fn meaningful_node_label(node: &Node) -> Option<&str> {
         return None;
     }
     match readable_label.as_str() {
-        "multiply" | "add" | "subtract" | "divide" | "math" | "math_closure" | "image_texture"
+        "multiply" | "add" | "subtract" | "divide" | "max" | "math" | "math_closure" | "image_texture"
         | "pass_texture" | "vector_math" | "remap" | "luminance" | "normalize" | "refract"
         | "dot_product" | "cross_product" | "color_mix" | "float_input" | "midi_input"
         | "vector2_input" | "vector3_input" | "vector4_input" | "color_input" | "bool_input"
@@ -995,6 +997,7 @@ fn compile_expr(
         )?,
 
         // Material nodes
+        "PBRMaterial" => pbr_material::compile(scene, node, out_port, ctx, cache, compile_fn)?,
         "GlassMaterial" => glass_material::compile_glass_material(
             scene,
             nodes_by_id,
@@ -1187,6 +1190,7 @@ fn compile_expr(
         )?,
 
         // SDF nodes
+        "TextSdf" => text_sdf::compile(scene, node, out_port, ctx, cache, compile_fn)?,
         "Sdf2D" => {
             sdf_nodes::compile_sdf2d(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?
         }
@@ -1404,6 +1408,49 @@ mod readability_tests {
         assert_eq!(a, "edge_color_out");
         assert!(b.starts_with("edge_color_out_"));
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn math_max_temp_does_not_shadow_wgsl_max_in_downstream_sdf_normals() {
+        let mut ctx = MaterialCompileContext::default();
+        let maximum = node("ring", "MathMax", "Max");
+        let name = readable_node_temp_name(&mut ctx, "fs", &maximum, "result", "result");
+        // A hollow SDF is materialized before bevel normal reconstruction, which
+        // itself calls max() to keep its sampling step nonzero.
+        let shader = format!("fn shape() -> f32 {{ let {name} = max(-1.0, -2.0); return max({name}, 0.001); }}");
+        naga::front::wgsl::parse_str(&shader).expect("Max output must not hide the WGSL builtin");
+    }
+
+    #[test]
+    fn glass_composed_sdf_normals_sample_positions_instead_of_cached_scalar() {
+        let mut outer = node("outer", "Sdf2D", "Outer capsule");
+        outer.params.extend(serde_json::from_value::<HashMap<String, serde_json::Value>>(json!({
+            "shape": "rectangle", "position": [150, 40], "size": [280, 72], "radius4": [36, 36, 36, 36]
+        })).unwrap());
+        let mut inner = outer.clone();
+        inner.id = "inner".into();
+        inner.params.insert("size".into(), json!([248, 40]));
+        inner.params.insert("radius4".into(), json!([20, 20, 20, 20]));
+        let mut bevel = node("bevel", "Sdf2DBevel", "Bevel");
+        bevel.params.extend(serde_json::from_value::<HashMap<String, serde_json::Value>>(json!({
+            "width": 8, "cliff": 0.7, "sampleDistance": 0.1
+        })).unwrap());
+        let scene = scene(vec![outer, inner, node("zero", "FloatInput", "Zero"),
+            node("negative", "MathSubtract", "Subtract"), node("ring", "MathMax", "Max"),
+            bevel, node("glass", "GlassMaterial", "Glass")], vec![
+            conn("zero", "value", "negative", "a"), conn("inner", "distance", "negative", "b"),
+            conn("outer", "distance", "ring", "a"), conn("negative", "result", "ring", "b"),
+            conn("ring", "result", "bevel", "sdfDistance"),
+            conn("ring", "result", "glass", "uSdfDistance"), conn("bevel", "normal", "glass", "uNormal"),
+        ], Vec::new());
+        let nodes = scene.nodes.iter().map(|node| (node.id.clone(), node.clone())).collect();
+        let mut ctx = MaterialCompileContext::default();
+        compile_material_expr(&scene, &nodes, "glass", Some("material"), &mut ctx, &mut HashMap::new()).unwrap();
+        let code = ctx.inline_stmts.join("\n");
+        let normals = code.split("finite differences").nth(1).expect("bevel stencil");
+        let stencil = normals.split("let bevel_normal_depth_px").next().unwrap();
+        assert!(stencil.matches("in.local_px").count() >= 8,
+            "both capsule fields must be resampled at all four stencil positions: {stencil}");
     }
 
     #[test]

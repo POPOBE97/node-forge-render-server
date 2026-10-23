@@ -1,0 +1,10 @@
+[
+  {
+    "state": "Speaking",
+    "setupPath": "Reply Started>Speaking",
+    "returncode": 0,
+    "attempts": 1,
+    "peakRssMiB": 514.875,
+    "seconds": 3.9999972500000003
+  }
+]

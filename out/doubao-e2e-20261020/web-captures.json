@@ -1,0 +1,107 @@
+[
+  {
+    "name": "off",
+    "state": "HIDDEN",
+    "bounds": {
+      "width": 360,
+      "height": 800
+    },
+    "gpu": {
+      "kind": "ready",
+      "adapterName": "apple metal-3",
+      "renderTarget": "rgba16float · linear extended-sRGB premul",
+      "output": "rgba16float · srgb · SDR（显示器不支持 HDR）",
+      "hdr": false
+    }
+  },
+  {
+    "name": "idle",
+    "state": "IDLE",
+    "bounds": {
+      "width": 360,
+      "height": 800
+    },
+    "gpu": {
+      "kind": "ready",
+      "adapterName": "apple metal-3",
+      "renderTarget": "rgba16float · linear extended-sRGB premul",
+      "output": "rgba16float · srgb · SDR（显示器不支持 HDR）",
+      "hdr": false
+    }
+  },
+  {
+    "name": "listening",
+    "state": "LISTENING",
+    "bounds": {
+      "width": 360,
+      "height": 800
+    },
+    "gpu": {
+      "kind": "ready",
+      "adapterName": "apple metal-3",
+      "renderTarget": "rgba16float · linear extended-sRGB premul",
+      "output": "rgba16float · srgb · SDR（显示器不支持 HDR）",
+      "hdr": false
+    }
+  },
+  {
+    "name": "thinking",
+    "state": "THINKING",
+    "bounds": {
+      "width": 360,
+      "height": 800
+    },
+    "gpu": {
+      "kind": "ready",
+      "adapterName": "apple metal-3",
+      "renderTarget": "rgba16float · linear extended-sRGB premul",
+      "output": "rgba16float · srgb · SDR（显示器不支持 HDR）",
+      "hdr": false
+    }
+  },
+  {
+    "name": "speaking",
+    "state": "SPEAKING",
+    "bounds": {
+      "width": 360,
+      "height": 800
+    },
+    "gpu": {
+      "kind": "ready",
+      "adapterName": "apple metal-3",
+      "renderTarget": "rgba16float · linear extended-sRGB premul",
+      "output": "rgba16float · srgb · SDR（显示器不支持 HDR）",
+      "hdr": false
+    }
+  },
+  {
+    "name": "pushtotalk",
+    "state": "LISTENING_HOLD",
+    "bounds": {
+      "width": 360,
+      "height": 800
+    },
+    "gpu": {
+      "kind": "ready",
+      "adapterName": "apple metal-3",
+      "renderTarget": "rgba16float · linear extended-sRGB premul",
+      "output": "rgba16float · srgb · SDR（显示器不支持 HDR）",
+      "hdr": false
+    }
+  },
+  {
+    "name": "pushtotalkcancel",
+    "state": "LISTENING_HOLD_CANCEL",
+    "bounds": {
+      "width": 360,
+      "height": 800
+    },
+    "gpu": {
+      "kind": "ready",
+      "adapterName": "apple metal-3",
+      "renderTarget": "rgba16float · linear extended-sRGB premul",
+      "output": "rgba16float · srgb · SDR（显示器不支持 HDR）",
+      "hdr": false
+    }
+  }
+]

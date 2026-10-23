@@ -454,6 +454,9 @@ impl ResourceSnapshot {
 /// A writer pass is grouped under the texture it writes to. For each sampled
 /// texture used by that pass, we attach a texture child and (when resolvable)
 /// the pass that produced that sampled texture earlier in execution order.
+/// Shared producers are expanded once across the entire tree. Later references
+/// remain selectable leaves; unfolding every path through a render DAG can
+/// otherwise allocate exponentially many UI nodes.
 fn build_dependency_tree(
     passes: &[PassInfo],
     final_output_texture: Option<&str>,
@@ -470,8 +473,10 @@ fn build_dependency_tree(
         return Vec::new();
     };
 
-    let mut root_writers = writers_by_target.remove(root_target).unwrap_or_default();
-    root_writers.sort_by_key(|p| p.order_index);
+    for writers in writers_by_target.values_mut() {
+        writers.sort_by_key(|pass| pass.order_index);
+    }
+    let root_writers = writers_by_target.get(root_target).cloned().unwrap_or_default();
 
     fn pass_label(pass: &PassInfo) -> String {
         let base = pass
@@ -485,47 +490,30 @@ fn build_dependency_tree(
         }
     }
 
-    /// Return all passes that write to `target`, sorted by execution order.
-    fn producing_passes_for_texture<'a>(target: &str, passes: &'a [PassInfo]) -> Vec<&'a PassInfo> {
-        let mut writers: Vec<&PassInfo> = passes
-            .iter()
-            .filter(|p| p.target_texture.as_deref() == Some(target))
-            .collect();
-        writers.sort_by_key(|p| p.order_index);
-        writers
-    }
-
-    fn build_pass_node(
-        pass: &PassInfo,
-        passes: &[PassInfo],
-        visited: &mut HashSet<String>,
+    fn build_pass_node<'a>(
+        pass: &'a PassInfo,
+        writers_by_target: &HashMap<&str, Vec<&'a PassInfo>>,
+        expanded: &mut HashSet<&'a str>,
+        occurrence_id: String,
     ) -> FileTreeNode {
+        let shared = !expanded.insert(pass.name.as_str());
         let mut texture_children: Vec<FileTreeNode> = Vec::new();
 
-        for sampled_tex in &pass.sampled_textures {
-            let producers = producing_passes_for_texture(sampled_tex.as_str(), passes);
+        for sampled_tex in pass.sampled_textures.iter().filter(|_| !shared) {
             let mut sampled_children: Vec<FileTreeNode> = Vec::new();
-
-            for producer in &producers {
-                if visited.contains(&producer.name) {
-                    sampled_children.push(FileTreeNode {
-                        id: format!("pass.{}.cycle", producer.name),
-                        label: format!("{} ↻", pass_basename(&producer.name)),
-                        icon: TreeIcon::Pass,
-                        kind: NodeKind::Pass {
-                            pass_name: producer.name.clone(),
-                            target_texture: producer.target_texture.clone(),
-                            target_size: producer.target_size,
-                            source_node_id: producer.source_node_id.clone(),
-                            source_node_type: producer.source_node_type.clone(),
-                        },
-                        detail: None,
-                        children: vec![],
-                    });
-                } else {
-                    visited.insert(producer.name.clone());
-                    sampled_children.push(build_pass_node(producer, passes, visited));
-                    visited.remove(&producer.name);
+            if let Some(producers) = writers_by_target.get(sampled_tex.as_str()) {
+                // Later writers cannot supply the value sampled by this pass.
+                // Including them creates false cycles when textures are reused.
+                for producer in producers
+                    .iter()
+                    .take_while(|p| p.order_index < pass.order_index)
+                {
+                    sampled_children.push(build_pass_node(
+                        producer,
+                        writers_by_target,
+                        expanded,
+                        format!("passref.{}.{}.{}", pass.name, sampled_tex, producer.name),
+                    ));
                 }
             }
 
@@ -542,8 +530,12 @@ fn build_dependency_tree(
         }
 
         FileTreeNode {
-            id: format!("pass.{}", pass.name),
-            label: pass_label(pass),
+            id: occurrence_id,
+            label: if shared {
+                format!("{} ↪", pass_label(pass))
+            } else {
+                pass_label(pass)
+            },
             icon: TreeIcon::Pass,
             kind: NodeKind::Pass {
                 pass_name: pass.name.clone(),
@@ -552,16 +544,20 @@ fn build_dependency_tree(
                 source_node_id: pass.source_node_id.clone(),
                 source_node_type: pass.source_node_type.clone(),
             },
-            detail: None,
+            detail: shared.then(|| "Shared dependency (expanded elsewhere)".to_string()),
             children: texture_children,
         }
     }
 
     let mut writer_nodes: Vec<FileTreeNode> = Vec::new();
+    let mut expanded = HashSet::new();
     for writer in root_writers {
-        let mut visited = HashSet::new();
-        visited.insert(writer.name.clone());
-        writer_nodes.push(build_pass_node(writer, passes, &mut visited));
+        writer_nodes.push(build_pass_node(
+            writer,
+            &writers_by_target,
+            &mut expanded,
+            format!("pass.{}", writer.name),
+        ));
     }
 
     vec![FileTreeNode {
@@ -797,6 +793,108 @@ mod tests {
             super::NodeKind::Pass { pass_name, .. }
                 if pass_name == "sys.render.pass.exact.name.pass"
         ));
+    }
+
+    fn dependency_pass(name: &str, order: usize, target: &str, samples: &[&str]) -> PassInfo {
+        PassInfo {
+            name: name.into(),
+            display_label: None,
+            source_node_id: None,
+            source_node_type: None,
+            order_index: order,
+            target_texture: Some(target.into()),
+            target_size: None,
+            target_format: None,
+            is_compute: false,
+            sampled_textures: samples.iter().map(|name| (*name).into()).collect(),
+            instance_count: 1,
+            vertex_count: 3,
+            workgroup_count: 0,
+        }
+    }
+
+    fn dependency_nodes(roots: &[super::FileTreeNode]) -> Vec<&super::FileTreeNode> {
+        let mut nodes = Vec::new();
+        let mut pending: Vec<_> = roots.iter().collect();
+        while let Some(node) = pending.pop() {
+            pending.extend(&node.children);
+            nodes.push(node);
+        }
+        nodes
+    }
+
+    #[test]
+    fn shared_dependency_dag_is_not_unfolded_into_exponentially_many_nodes() {
+        let mut passes = vec![dependency_pass("source", 0, "level0", &[])];
+        for level in 1..=10 {
+            let input = format!("level{}", level - 1);
+            let output = format!("level{level}");
+            for branch in ["a", "b"] {
+                passes.push(dependency_pass(
+                    &format!("level{level}.{branch}"),
+                    passes.len(),
+                    &output,
+                    &[&input],
+                ));
+            }
+        }
+        let tree = super::build_dependency_tree(&passes, Some("level10"));
+        let nodes = dependency_nodes(&tree);
+        assert!(nodes.len() < 4 * passes.len(), "{} UI nodes", nodes.len());
+        let ids: std::collections::HashSet<_> = nodes.iter().map(|node| &node.id).collect();
+        assert_eq!(ids.len(), nodes.len(), "shared occurrences need distinct UI IDs");
+        for pass in &passes[1..] {
+            let expanded = nodes.iter().filter(|node| {
+                !node.children.is_empty()
+                    && matches!(&node.kind, super::NodeKind::Pass { pass_name, .. } if pass_name == &pass.name)
+            }).count();
+            assert_eq!(expanded, 1, "{} must be expanded exactly once", pass.name);
+        }
+        assert!(nodes.iter().any(|node| node.label.ends_with('↪')));
+    }
+
+    #[test]
+    fn sampled_texture_only_depends_on_earlier_writers() {
+        let passes = vec![
+            dependency_pass("first", 0, "shared", &[]),
+            dependency_pass("consumer", 1, "output", &["shared"]),
+            dependency_pass("later", 2, "shared", &["output"]),
+        ];
+        let tree = super::build_dependency_tree(&passes, Some("output"));
+        let nodes = dependency_nodes(&tree);
+        assert!(nodes.iter().any(|node| node.label == "first"));
+        assert!(!nodes.iter().any(|node| node.label.starts_with("later")));
+    }
+
+    #[test]
+    fn doubao_archive_dependency_tree_stays_bounded_without_a_gpu() {
+        use crate::renderer::{
+            ShaderSpacePresentationMode,
+            render_plan::{planner::RenderPlanner, types::{PlanBuildOptions, PlanningGpuCaps}},
+        };
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/render/editor-examples/doubao-voice-interaction/scene.nforge");
+        let loaded = crate::asset_store::load_from_nforge_with_debug_artifacts(&path).unwrap();
+        let plan = RenderPlanner::new(PlanBuildOptions {
+            gpu_caps: PlanningGpuCaps::default(),
+            presentation_mode: ShaderSpacePresentationMode::UiHdrNative,
+            debug_dump_wgsl_dir: None,
+        }).plan(&loaded.scene, Some(&loaded.asset_store), None).unwrap();
+        let specs = &plan.resources.render_pass_specs;
+        let passes = specs.iter().enumerate().map(|(index, spec)| {
+            dependency_pass(
+                spec.name.as_str(), index, spec.target_texture.as_str(),
+                &spec.texture_bindings.iter().map(|binding| binding.texture.as_str()).collect::<Vec<_>>(),
+            )
+        }).collect::<Vec<_>>();
+        let tree = super::build_dependency_tree(&passes, Some(plan.present_output_texture.as_str()));
+        let nodes = dependency_nodes(&tree);
+        let expanded = nodes.iter().filter(|node| {
+            matches!(node.kind, super::NodeKind::Pass { .. }) && !node.children.is_empty()
+        }).count();
+        assert!(expanded <= passes.len());
+        assert!(nodes.len() < 10_000, "{} UI nodes", nodes.len());
+        eprintln!("[resource-tree regression] {} passes -> {} UI nodes", passes.len(), nodes.len());
     }
 
     #[test]

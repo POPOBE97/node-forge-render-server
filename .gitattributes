@@ -1,3 +1,6 @@
 tests/fixtures/render/editor-examples/doubao-voice-interaction/scene.nforge filter=lfs diff=lfs merge=lfs -text
 tests/fixtures/render/editor-examples/chromatic-blur/expected/baseline.exr filter=lfs diff=lfs merge=lfs -text
 tests/fixtures/render/editor-examples/procedural-rendering-test/expected/baseline.exr filter=lfs diff=lfs merge=lfs -text
+out/doubao-e2e-20261020/*.exr filter=lfs diff=lfs merge=lfs -text
+tests/fixtures/render/editor-examples/doubao-sdf-avatar/scene.nforge filter=lfs diff=lfs merge=lfs -text
+tests/fixtures/render/editor-examples/practive-gaudge-meter/scene.nforge filter=lfs diff=lfs merge=lfs -text

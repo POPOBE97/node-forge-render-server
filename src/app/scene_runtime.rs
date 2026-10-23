@@ -916,9 +916,20 @@ pub fn apply_scene_update(
                 ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(size));
             }
 
-            let next_animation_session = crate::animation::AnimationSession::from_scene(&scene)
-                .ok()
-                .flatten();
+            let next_animation_session = match crate::animation::AnimationSession::from_scene(&scene) {
+                Ok(session) => session,
+                Err(error) => {
+                    return apply_scene_update(
+                        app,
+                        ctx,
+                        render_state,
+                        ws::SceneUpdate::ParseError {
+                            message: format!("Animation initialization failed: {error:#}"),
+                            request_id,
+                        },
+                    );
+                }
+            };
             let mut prepared_scene_candidate: Option<crate::dsl::SceneDSL> = None;
             let mut matrix_source_scene_candidate: Option<crate::dsl::SceneDSL> = None;
             if app.shell.pass_shader_overrides.is_empty()
@@ -940,6 +951,7 @@ pub fn apply_scene_update(
                 {
                     match apply_graph_uniform_updates(app, &prepared_for_fast_path.scene) {
                         Ok(_updated_count) => {
+                            app.shell.scene_error = None;
                             app.runtime.last_pipeline_signature = Some(next_pipeline_signature);
                             app.runtime.dynamic_gaussian_blur_dirty =
                                 !app.core.gaussian_blur_bundles.is_empty();
@@ -1002,6 +1014,7 @@ pub fn apply_scene_update(
 
             match build_result {
                 Ok(Ok(result)) => {
+                    app.shell.scene_error = None;
                     app.core.shader_space = result.shader_space;
                     app.runtime.performance.reset_scene();
                     app.core.resolution = result.resolution;
@@ -1150,6 +1163,10 @@ pub fn apply_scene_update(
             app.canvas.reference.scene_desired = None;
             app.canvas.reference.scene_alpha_mode = None;
             app.runtime.scene_uses_time = false;
+            app.runtime.animation_session = None;
+            app.runtime.timeline_buffer = None;
+            app.runtime.uniform_scene = None;
+            app.runtime.matrix_source_scene = None;
             app.runtime.state_control_selection = None;
             app.runtime.last_live_snapshot = None;
             app.runtime.timeline_review = Default::default();
@@ -1240,13 +1257,15 @@ fn apply_error_plane(app: &mut App, render_state: &egui_wgpu::RenderState) {
         app.core.export_encode_pass_name = result.export_encode_pass_name;
         app.core.passes = result.pass_bindings;
         sync_wireframe_mode(app);
+        app.runtime.pipeline_rebuild_count = app.runtime.pipeline_rebuild_count.saturating_add(1);
         app.runtime.last_pipeline_signature = None;
         app.runtime.dynamic_gaussian_blur_dirty = false;
         app.core.gaussian_blur_bundles.clear();
     }
 }
 
-fn broadcast_error(app: &App, request_id: Option<String>, code: &str, message: String) {
+fn broadcast_error(app: &mut App, request_id: Option<String>, code: &str, message: String) {
+    app.report_scene_error(format!("{code}: {message}"));
     let msg = protocol::WSMessage {
         msg_type: "error".to_string(),
         timestamp: protocol::now_millis(),

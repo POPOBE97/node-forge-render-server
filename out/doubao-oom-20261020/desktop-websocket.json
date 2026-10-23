@@ -1,0 +1,20 @@
+[
+  {
+    "type": "loaded",
+    "nodes": 156
+  },
+  {
+    "type": "error",
+    "code": "PARSE_ERROR",
+    "message": "invalid json: EOF while parsing an object at line 1 column 1"
+  },
+  {
+    "type": "error",
+    "code": "PARSE_ERROR",
+    "message": "invalid json: EOF while parsing an object at line 1 column 1"
+  },
+  {
+    "type": "recovered",
+    "nodes": 156
+  }
+]

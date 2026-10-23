@@ -570,7 +570,7 @@ pub(crate) fn assemble_render_pass(
             .unwrap_or(&texture_ref.image_node_id);
         let kind = nodes_by_id
             .get(sampler_node_id)
-            .map(|n| sampler_kind_from_node_params(&n.params))
+            .map(|n| if n.node_type == "TextSdf" { SamplerKind::NearestClamp } else { sampler_kind_from_node_params(&n.params) })
             .unwrap_or(SamplerKind::LinearClamp);
         sampler_kinds.push(kind);
     }

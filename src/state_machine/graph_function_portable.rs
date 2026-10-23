@@ -17,6 +17,31 @@ thread_local! {
     static PREPARED: RefCell<HashMap<String, PreparedFunction>> = RefCell::new(HashMap::new());
 }
 
+/// Thread-owned document context, including prepared QuickJS functions.
+/// Entering another document restores this context without recompiling its functions.
+#[derive(Default)]
+pub struct DocumentFunctions {
+    resources: HashMap<String, FunctionResource>,
+    prepared: HashMap<String, PreparedFunction>,
+}
+
+impl DocumentFunctions {
+    pub fn with<R>(&mut self, operation: impl FnOnce() -> R) -> R {
+        struct Restore<'a>(&'a mut DocumentFunctions);
+        impl Drop for Restore<'_> {
+            fn drop(&mut self) { self.0.swap_active(); }
+        }
+        self.swap_active();
+        let _restore = Restore(self);
+        operation()
+    }
+
+    fn swap_active(&mut self) {
+        RESOURCES.with(|active| std::mem::swap(&mut *active.borrow_mut(), &mut self.resources));
+        PREPARED.with(|active| std::mem::swap(&mut *active.borrow_mut(), &mut self.prepared));
+    }
+}
+
 pub fn install_document_functions(functions: impl IntoIterator<Item = FunctionResource>) -> Result<()> {
     let mut next = HashMap::new();
     for function in functions {

@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::BTreeSet,
+    sync::{Arc, Mutex},
+};
 
 use rust_wgpu_fiber::{eframe::egui, shader_space::ShaderSpace};
 
@@ -7,10 +10,10 @@ use super::{
     design_tokens::{self, FontWeight, TextRole},
     pass_graph::{self, GraphNode, PassGraph},
     resource_tree::ResourceSnapshot,
+    tool_window,
 };
 
 const CANVAS_BG: egui::Color32 = egui::Color32::from_gray(12);
-const PANEL_BG: egui::Color32 = egui::Color32::from_gray(20);
 const CARD_BG: egui::Color32 = egui::Color32::from_gray(23);
 const CARD: egui::Vec2 = egui::vec2(240.0, 112.0);
 const STEP: egui::Vec2 = egui::vec2(284.0, 184.0);
@@ -29,9 +32,55 @@ struct WindowState {
     initialized: bool,
     generation: Option<u64>,
     execution: Vec<String>,
+    execution_graph: PassGraph,
     graph: PassGraph,
+    expanded_blurs: BTreeSet<String>,
+    show_ordering: bool,
     view: View,
     debug_pass: Option<String>,
+}
+
+impl WindowState {
+    fn rebuild_presentation(&mut self) {
+        let selected = self.view.selected.and_then(|index| {
+            let node = self.graph.nodes.get(index)?;
+            let occurrence = self.graph.nodes[..=index]
+                .iter()
+                .flat_map(GraphNode::passes)
+                .filter(|pass| pass.name == node.pass.name)
+                .count()
+                - 1;
+            Some((node.pass.name.clone(), occurrence, node.blur_group.clone()))
+        });
+        self.graph = self
+            .execution_graph
+            .presentation(&self.expanded_blurs, self.show_ordering);
+        self.view.selected = selected.and_then(|(name, occurrence, group)| {
+            let mut seen = 0;
+            self.graph
+                .nodes
+                .iter()
+                .position(|node| {
+                    let count = node.passes().filter(|pass| pass.name == name).count();
+                    let contains = (seen..seen + count).contains(&occurrence);
+                    seen += count;
+                    contains
+                })
+                .or_else(|| {
+                    self.graph
+                        .nodes
+                        .iter()
+                        .position(|node| group.is_some() && node.blur_group == group)
+                })
+        });
+    }
+
+    fn toggle_blur(&mut self, key: &str) {
+        if !self.expanded_blurs.remove(key) {
+            self.expanded_blurs.insert(key.to_owned());
+        }
+        self.rebuild_presentation();
+    }
 }
 
 struct View {
@@ -91,27 +140,10 @@ impl PassGraphWindow {
             // user's camera whenever the new route still contains known passes.
             let reframe = state.graph.nodes.is_empty()
                 || !execution.iter().any(|name| state.execution.contains(name));
-            let selected = state.view.selected.and_then(|index| {
-                let node = state.graph.nodes.get(index)?;
-                let occurrence = state.graph.nodes[..index]
-                    .iter()
-                    .filter(|previous| previous.pass.name == node.pass.name)
-                    .count();
-                Some((node.pass.name.clone(), occurrence))
-            });
-            state.graph = snapshot
+            state.execution_graph = snapshot
                 .map(|snapshot| PassGraph::capture(snapshot, space))
                 .unwrap_or_default();
-            state.view.selected = selected.and_then(|(name, occurrence)| {
-                state
-                    .graph
-                    .nodes
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, node)| node.pass.name == name)
-                    .nth(occurrence)
-                    .map(|(index, _)| index)
-            });
+            state.rebuild_presentation();
             if reframe {
                 state.view.fit = true;
                 state.view.initial_frame = true;
@@ -207,7 +239,7 @@ fn control(ui: &mut egui::Ui, label: &str, tooltip: &str) -> egui::Response {
 
 fn contents(ui: &mut egui::Ui, state: &mut WindowState) {
     ui.scope(|ui| {
-        // Inherit the render server's visuals, including search fields and tooltips.
+        tool_window::apply(ui);
         let mut zoom_factor = 1.0;
         let (find_shortcut, escape_shortcut) = ui.input_mut(|input| {
             (
@@ -220,11 +252,7 @@ fn contents(ui: &mut egui::Ui, state: &mut WindowState) {
             state.view.selected = None;
         }
         egui::Panel::top("pass-graph-toolbar")
-            .frame(
-                egui::Frame::NONE
-                    .fill(PANEL_BG)
-                    .inner_margin(egui::Margin::symmetric(16, 10)),
-            )
+            .frame(tool_window::toolbar_frame())
             .show_inside(ui, |ui| {
                 ui.horizontal(|ui| {
                     let (icon, _) =
@@ -233,15 +261,6 @@ fn contents(ui: &mut egui::Ui, state: &mut WindowState) {
                     ui.label(design_tokens::rich_text(
                         "Render Passes",
                         TextRole::SectionTitle,
-                    ));
-                    ui.add_space(6.0);
-                    ui.label(design_tokens::rich_text(
-                        format!(
-                            "{} passes · {} dependencies",
-                            state.graph.nodes.len(),
-                            state.graph.edges.len()
-                        ),
-                        TextRole::AttributeTitle,
                     ));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if control(ui, "Fit", "Fit the graph in the window (F)").clicked() {
@@ -265,8 +284,12 @@ fn contents(ui: &mut egui::Ui, state: &mut WindowState) {
                         }
                     });
                 });
-                ui.add_space(10.0);
-                ui.horizontal(|ui| {
+                tool_window::caption(ui, format!(
+                    "{} GPU passes · {} nodes · {} dependencies",
+                    state.execution_graph.nodes.len(), state.graph.nodes.len(), state.graph.edges.len()
+                ));
+                ui.add_space(tool_window::GAP);
+                ui.horizontal_wrapped(|ui| {
                     let search = ui.add(
                         egui::TextEdit::singleline(&mut state.view.query)
                             .hint_text("Find a pass or texture…")
@@ -284,22 +307,34 @@ fn contents(ui: &mut egui::Ui, state: &mut WindowState) {
                         state.view.focus_search = true;
                         state.view.selected = None;
                     }
-                    ui.add_space(10.0);
-                    legend(ui, design_tokens::RESOURCE_PASS_FG, "Render");
-                    legend(ui, design_tokens::RESOURCE_BUFFER_FG, "Compute");
-                    legend(ui, design_tokens::RESOURCE_TEXTURE_FG, "Output");
+                    if control(ui, "Collapse blurs", "Group each blur's internal GPU passes").clicked() {
+                        state.expanded_blurs.clear();
+                        state.rebuild_presentation();
+                    }
+                    if control(ui, "Expand blurs", "Show every active GPU pass").clicked() {
+                        state.expanded_blurs = state.execution_graph.nodes.iter()
+                            .filter_map(|node| node.blur_group.clone()).collect();
+                        state.rebuild_presentation();
+                    }
+                    if ui.checkbox(&mut state.show_ordering, "Reuse order")
+                        .on_hover_text("Include write-after-read/write constraints; these are execution hazards, not sampled inputs")
+                        .changed()
+                    {
+                        state.rebuild_presentation();
+                    }
                 });
             });
 
         egui::Panel::bottom("pass-graph-footer")
-            .frame(
-                egui::Frame::NONE
-                    .fill(PANEL_BG)
-                    .inner_margin(egui::Margin::symmetric(16, 10)),
-            )
+            .frame(tool_window::toolbar_frame())
             .show_inside(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
-                    let command = if cfg!(target_os = "macos") { "⌘" } else { "Ctrl+" };
+                    legend(ui, design_tokens::RESOURCE_PASS_FG, "Render");
+                    legend(ui, design_tokens::RESOURCE_BUFFER_FG, "Compute");
+                    legend(ui, design_tokens::RESOURCE_TEXTURE_FG, "Output");
+                });
+                ui.horizontal_wrapped(|ui| {
+                    let command = if cfg!(target_os = "macos") { "Cmd+" } else { "Ctrl+" };
                     ui.label(design_tokens::rich_text(
                         format!(
                             "Drag / scroll to pan · Pinch / {command}scroll to zoom · F fit · {command}F find · Esc deselect"
@@ -308,7 +343,11 @@ fn contents(ui: &mut egui::Ui, state: &mut WindowState) {
                     ));
                     ui.separator();
                     ui.label(design_tokens::rich_text(
-                        "Solid: data dependency    Dashed: resource reuse order",
+                        if state.show_ordering {
+                            "Solid: data dependency    Dashed: resource reuse order"
+                        } else {
+                            "Data dependencies · Resource reuse order hidden"
+                        },
                         TextRole::AttributeTitle,
                     ));
                 });
@@ -321,8 +360,9 @@ fn contents(ui: &mut egui::Ui, state: &mut WindowState) {
         {
             egui::Panel::right("pass-graph-details")
                 .default_size(270.0)
-                .resizable(false)
-                .frame(egui::Frame::NONE.fill(PANEL_BG).inner_margin(16))
+                .size_range(230.0..=400.0)
+                .resizable(true)
+                .frame(tool_window::panel_frame())
                 .show_inside(ui, |ui| {
                     egui::ScrollArea::vertical().show(ui, |ui| details(ui, state, index));
                 });
@@ -364,6 +404,17 @@ fn matches_query(node: &GraphNode, query: &str) -> bool {
             .sampled_textures
             .iter()
             .any(|texture| texture.to_lowercase().contains(query))
+        || node.collapsed_passes.iter().any(|pass| {
+            pass.name.to_lowercase().contains(query)
+                || pass
+                    .target_texture
+                    .as_ref()
+                    .is_some_and(|name| name.to_lowercase().contains(query))
+                || pass
+                    .sampled_textures
+                    .iter()
+                    .any(|name| name.to_lowercase().contains(query))
+        })
 }
 
 fn details(ui: &mut egui::Ui, state: &mut WindowState, index: usize) {
@@ -378,6 +429,22 @@ fn details(ui: &mut egui::Ui, state: &mut WindowState, index: usize) {
             }
         });
     });
+    let mut toggle = None;
+    let node = &state.graph.nodes[index];
+    if let Some(key) = &node.blur_group {
+        let label = if node.collapsed_passes.is_empty() {
+            "Collapse blur"
+        } else {
+            "Expand blur"
+        };
+        if control(ui, label, "Toggle this blur's internal passes").clicked() {
+            toggle = Some(key.clone());
+        }
+    }
+    if let Some(key) = toggle {
+        state.toggle_blur(&key);
+        return;
+    }
     let node = &state.graph.nodes[index];
     ui.add_space(12.0);
     ui.label(design_tokens::rich_text(
@@ -392,23 +459,47 @@ fn details(ui: &mut egui::Ui, state: &mut WindowState, index: usize) {
             .color(design_tokens::white(60)),
     );
     ui.add_space(14.0);
-    if control(ui, "Open shader", "Open this pass in the shader debugger").clicked() {
-        state.debug_pass = Some(node.pass.name.clone());
+    if node.collapsed_passes.is_empty() {
+        if control(ui, "Open shader", "Open this pass in the shader debugger").clicked() {
+            state.debug_pass = Some(node.pass.name.clone());
+        }
+    } else {
+        detail(
+            ui,
+            "Internal GPU passes",
+            &format!("{} passes", node.collapsed_passes.len()),
+        );
+        for pass in &node.collapsed_passes {
+            let size = pass
+                .target_size
+                .map(|(w, h)| format!(" · {w} × {h}"))
+                .unwrap_or_default();
+            ui.label(format!("#{}{}", pass.order_index + 1, size));
+            if ui.link(&pass.name).on_hover_text("Open shader").clicked() {
+                state.debug_pass = Some(pass.name.clone());
+            }
+        }
     }
     ui.add_space(16.0);
-    detail(
-        ui,
-        "Execution",
-        &format!(
+    let execution = if let Some(first) = node.collapsed_passes.first() {
+        format!(
+            "#{}–{} · {} GPU passes",
+            first.order_index + 1,
+            node.pass.order_index + 1,
+            node.collapsed_passes.len()
+        )
+    } else {
+        format!(
             "#{:02} · {}",
-            index + 1,
+            node.pass.order_index + 1,
             if node.pass.is_compute {
                 "Compute pass"
             } else {
                 "Render pass"
             }
-        ),
-    );
+        )
+    };
+    detail(ui, "Execution", &execution);
     if let Some(target) = &node.pass.target_texture {
         detail(ui, "Target", target);
     }
@@ -427,7 +518,7 @@ fn details(ui: &mut egui::Ui, state: &mut WindowState, index: usize) {
             "Dispatch",
             &format!("{} workgroups", node.pass.workgroup_count),
         );
-    } else {
+    } else if node.collapsed_passes.is_empty() {
         detail(
             ui,
             "Draw",
@@ -455,7 +546,7 @@ fn details(ui: &mut egui::Ui, state: &mut WindowState, index: usize) {
         ui.label(design_tokens::rich_text(
             format!(
                 "#{:02}  {}",
-                edge.from + 1,
+                state.graph.nodes[edge.from].pass.order_index + 1,
                 title(&state.graph.nodes[edge.from])
             ),
             TextRole::ActiveItemTitle,
@@ -685,6 +776,7 @@ fn canvas(ui: &mut egui::Ui, state: &mut WindowState, toolbar_zoom: f32) {
         }
     }
     let mut clicked_node = false;
+    let mut toggle_blur = None;
     for (index, node) in state.graph.nodes.iter().enumerate() {
         let rect = screen_rects[index];
         if !canvas.intersects(rect) {
@@ -698,7 +790,11 @@ fn canvas(ui: &mut egui::Ui, state: &mut WindowState, toolbar_zoom: f32) {
             clicked_node = true;
         }
         if card_response.double_clicked() {
-            state.debug_pass = Some(node.pass.name.clone());
+            if !node.collapsed_passes.is_empty() {
+                toggle_blur = node.blur_group.clone();
+            } else {
+                state.debug_pass = Some(node.pass.name.clone());
+            }
         }
         paint_card(
             &painter,
@@ -709,16 +805,41 @@ fn canvas(ui: &mut egui::Ui, state: &mut WindowState, toolbar_zoom: f32) {
             card_response.hovered(),
             matching[index],
         );
+        if !node.collapsed_passes.is_empty() {
+            let expand_rect =
+                egui::Rect::from_min_max(rect.min + egui::vec2(125.0, 83.0) * zoom, rect.max);
+            if ui
+                .interact(
+                    expand_rect,
+                    response.id.with((index, "expand")),
+                    egui::Sense::click(),
+                )
+                .clicked()
+            {
+                toggle_blur = node.blur_group.clone();
+                clicked_node = true;
+            }
+        }
         card_response
             .on_hover_cursor(egui::CursorIcon::PointingHand)
             .on_hover_text(format!(
-                "{}\n{}\nClick for dependencies · Double-click to open shader",
+                "{}\n{}\nClick for dependencies · {}",
                 title(node),
-                node.pass.name
+                node.pass.name,
+                if node.collapsed_passes.is_empty() {
+                    "Double-click to open shader"
+                } else {
+                    "Double-click to expand blur"
+                }
             ));
     }
     if response.clicked() && !clicked_node {
         state.view.selected = None;
+    }
+    if let Some(key) = toggle_blur {
+        state.toggle_blur(&key);
+        // Keep the camera on the clicked group while replacing it with its steps.
+        ui.ctx().request_repaint();
     }
 }
 
@@ -886,6 +1007,8 @@ fn paint_card(
     );
     let kind = if node.is_output {
         "Final output"
+    } else if !node.collapsed_passes.is_empty() {
+        "Gaussian blur"
     } else if node.pass.is_compute {
         "Compute pass"
     } else {
@@ -901,7 +1024,10 @@ fn paint_card(
     painter.text(
         at(225.0, 19.0),
         egui::Align2::RIGHT_CENTER,
-        format!("#{:02}", node.pass.order_index + 1),
+        node.collapsed_passes
+            .first()
+            .map(|first| format!("#{}–{}", first.order_index + 1, node.pass.order_index + 1))
+            .unwrap_or_else(|| format!("#{:02}", node.pass.order_index + 1)),
         egui::FontId::monospace(10.0 * zoom),
         faded(design_tokens::white(60)),
     );
@@ -941,7 +1067,11 @@ fn paint_card(
         faded(design_tokens::white(60)),
     );
     let count = node.pass.sampled_textures.len();
-    let inputs = format!("{count} texture{}", if count == 1 { "" } else { "s" });
+    let inputs = if node.collapsed_passes.is_empty() {
+        format!("{count} texture{}", if count == 1 { "" } else { "s" })
+    } else {
+        format!("{} passes · Expand ›", node.collapsed_passes.len())
+    };
     painter.text(
         at(226.0, 96.0),
         egui::Align2::RIGHT_CENTER,
@@ -968,6 +1098,69 @@ fn text_line(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn blur_state() -> WindowState {
+        let mut state = WindowState::default();
+        for (index, stage) in ["h", "v"].iter().enumerate() {
+            state.execution_graph.nodes.push(GraphNode {
+                pass: super::super::resource_tree::PassInfo {
+                    name: format!("sys.blur.effect.{stage}.ds4.pass.route4"),
+                    display_label: None,
+                    source_node_id: None,
+                    source_node_type: None,
+                    order_index: index,
+                    target_texture: Some(format!("blur.{stage}")),
+                    target_size: Some((100, 100)),
+                    target_format: None,
+                    is_compute: false,
+                    sampled_textures: vec![],
+                    instance_count: 1,
+                    vertex_count: 3,
+                    workgroup_count: 0,
+                },
+                external_inputs: vec![],
+                is_output: index == 1,
+                blur_group: Some("effect#0".into()),
+                collapsed_passes: vec![],
+            });
+        }
+        state.execution_graph.edges.push(pass_graph::GraphEdge {
+            from: 0,
+            to: 1,
+            resources: BTreeSet::from(["blur.h".into()]),
+            ordering: false,
+        });
+        state.rebuild_presentation();
+        state
+    }
+
+    #[test]
+    fn blur_expansion_preserves_selection_and_hidden_pass_search() {
+        let mut state = blur_state();
+        assert_eq!(state.graph.nodes.len(), 1);
+        assert!(matches_query(&state.graph.nodes[0], "h.ds4"));
+        assert!(matches_query(&state.graph.nodes[0], "blur.h"));
+        state.view.selected = Some(0);
+        state.toggle_blur("effect#0");
+        assert_eq!(state.graph.nodes.len(), 2);
+        assert_eq!(state.view.selected, Some(1));
+        state.view.selected = Some(0);
+        state.toggle_blur("effect#0");
+        assert_eq!(state.view.selected, Some(0));
+        assert_eq!(state.graph.nodes[0].collapsed_passes.len(), 2);
+    }
+
+    #[test]
+    fn live_route_change_keeps_selected_blur_group() {
+        let mut state = blur_state();
+        state.view.selected = Some(0);
+        for node in &mut state.execution_graph.nodes {
+            node.pass.name = node.pass.name.replace("ds4.pass.route4", "ds8.pass.route8");
+        }
+        state.rebuild_presentation();
+        assert_eq!(state.view.selected, Some(0));
+        assert!(matches_query(&state.graph.nodes[0], "route8"));
+    }
 
     #[test]
     fn trackpad_scroll_pans_in_both_axes() {

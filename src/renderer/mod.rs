@@ -29,6 +29,8 @@ pub mod scene_prep;
 pub mod shader_space;
 pub mod types;
 pub(crate) mod text;
+pub(crate) mod text_inputs;
+pub(crate) mod text_sdf;
 pub mod utils;
 pub mod validation;
 pub mod wgsl;
@@ -47,7 +49,7 @@ pub use render_plan::pass_assemblers::dynamic_gaussian_blur::GaussianBlurBundleR
 pub use scene_prep::{PreparedScene, prepare_scene};
 #[cfg(feature = "native")]
 pub use shader_space::{
-    HeadlessRuntimeOverrides, render_scene_pass_to_file_headless,
+    HeadlessRuntimeOverrides, render_animation_frame_to_file_headless, render_scene_pass_to_file_headless,
     render_scene_pass_to_file_headless_with_frame_freeze,
     render_scene_pass_to_file_headless_with_runtime_overrides,
     render_scene_texture_to_file_headless, render_scene_texture_to_file_headless_with_frame_freeze,

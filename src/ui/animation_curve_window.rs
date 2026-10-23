@@ -21,7 +21,7 @@ use crate::{
             self, ButtonGroupPosition, ButtonOptions, ButtonSize, ButtonVariant,
             GroupButtonBehavior, GroupButtonOptions,
         },
-        design_tokens, timeline_panel,
+        design_tokens, timeline_panel, tool_window,
     },
 };
 
@@ -29,7 +29,6 @@ const WINDOW_TITLE: &str = "Animation Curves";
 const WINDOW_DEFAULT_SIZE: egui::Vec2 = egui::vec2(960.0, 540.0);
 const WINDOW_MIN_SIZE: egui::Vec2 = egui::vec2(480.0, 320.0);
 const SERIES_PANEL_WIDTH: f32 = 280.0;
-const TOOLBAR_HEIGHT: f32 = 44.0;
 const PLOT_LEFT_GUTTER: f32 = 44.0;
 const PLOT_RIGHT_GUTTER: f32 = 8.0;
 const PLOT_TOP_GUTTER: f32 = 26.0;
@@ -303,7 +302,6 @@ pub fn show_animation_curve_window(
                 egui::Window::new(WINDOW_TITLE)
                     .id(egui::Id::new("animation-curves-embedded"))
                     .open(&mut open)
-                    .title_bar(false)
                     .default_size(WINDOW_DEFAULT_SIZE)
                     .show(ui.ctx(), |window_ui| {
                         render_animation_curve_window(window_ui, &document, &history);
@@ -354,34 +352,25 @@ fn render_animation_curve_window(
     document: &Arc<Mutex<AnimationCurveWindowDocument>>,
     history: &Arc<Mutex<CurveHistorySnapshot>>,
 ) {
+    tool_window::apply(ui);
     let Ok(mut document) = document.lock() else {
         ui.label("Animation curve state is unavailable");
         return;
     };
 
     egui::Panel::top("animation-curve-toolbar")
-        .exact_size(TOOLBAR_HEIGHT)
-        .frame(
-            egui::Frame::NONE
-                .fill(egui::Color32::from_gray(20))
-                .inner_margin(egui::Margin::symmetric(10, 8)),
-        )
+        .frame(tool_window::toolbar_frame())
         .show_inside(ui, |ui| {
-            ui.horizontal_centered(|ui| {
-                ui.label(design_tokens::rich_text(
-                    "P / Q",
-                    design_tokens::TextRole::ActiveItemTitle,
-                ));
-                ui.label(design_tokens::rich_text(
-                    "shared curve filter",
-                    design_tokens::TextRole::AttributeTitle,
-                ));
-                ui.separator();
-                ui.label("Search");
+            ui.horizontal_wrapped(|ui| {
+                tool_window::heading(ui, WINDOW_TITLE);
+                tool_window::caption(ui, "P · Physical value   /   Q · Mutation target");
+            });
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
                 ui.add(
                     egui::TextEdit::singleline(&mut document.filter)
-                        .hint_text("channel or component")
-                        .desired_width(220.0),
+                        .hint_text("Filter channels or components…")
+                        .desired_width(ui.available_width().min(360.0)),
                 );
             });
         });
@@ -405,13 +394,9 @@ fn render_animation_curve_window(
         .default_size(SERIES_PANEL_WIDTH)
         .min_size(180.0)
         .max_size(420.0)
-        .frame(
-            egui::Frame::NONE
-                .fill(egui::Color32::from_gray(16))
-                .inner_margin(egui::Margin::same(8)),
-        )
+        .frame(tool_window::panel_frame())
         .show_inside(ui, |ui| {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.label(design_tokens::rich_text(
                     format!("Curves ({})", series.len()),
                     design_tokens::TextRole::ActiveItemTitle,
@@ -464,7 +449,7 @@ fn render_animation_curve_window(
                     );
                 }
             });
-            ui.separator();
+            ui.add_space(tool_window::GAP);
 
             if series.is_empty() {
                 ui.label(design_tokens::rich_text(
@@ -477,6 +462,12 @@ fn render_animation_curve_window(
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
+                    if !series
+                        .iter()
+                        .any(|curve| series_matches_filter(curve, &normalized_filter))
+                    {
+                        tool_window::caption(ui, "No matching channels");
+                    }
                     for curve in series
                         .iter()
                         .filter(|curve| series_matches_filter(curve, &normalized_filter))
@@ -495,13 +486,15 @@ fn render_animation_curve_window(
                                 document.hidden_series.insert(curve.id.clone());
                             }
                         }
-                        if let Some(stats) = curve.physical {
-                            show_curve_stats(ui, "P", stats);
-                        }
-                        if let Some(stats) = curve.mutation_target {
-                            show_curve_stats(ui, "Q", stats);
-                        }
-                        ui.add_space(6.0);
+                        ui.indent((&curve.id, "stats"), |ui| {
+                            if let Some(stats) = curve.physical {
+                                show_curve_stats(ui, "P", stats);
+                            }
+                            if let Some(stats) = curve.mutation_target {
+                                show_curve_stats(ui, "Q", stats);
+                            }
+                        });
+                        ui.add_space(tool_window::GAP);
                     }
                 });
         });
@@ -509,17 +502,16 @@ fn render_animation_curve_window(
     egui::CentralPanel::default()
         .frame(
             egui::Frame::NONE
-                .fill(egui::Color32::BLACK)
+                .fill(tool_window::CANVAS)
                 .inner_margin(egui::Margin::same(0)),
         )
         .show_inside(ui, |ui| {
             if history_is_empty {
-                ui.centered_and_justified(|ui| {
-                    ui.label(design_tokens::rich_text(
-                        "Press Play or select a State to record",
-                        design_tokens::TextRole::InactiveItemTitle,
-                    ));
-                });
+                tool_window::empty_state(
+                    ui,
+                    "No animation samples",
+                    "Press Play or select a State to record",
+                );
                 return;
             }
 

@@ -455,6 +455,26 @@ where
     )?;
     let u_geo_px_radius = input_expr("uGeoPxRadius", input_f32_expr(node, "uGeoPxRadius", 24.0))?;
     let u_use_sdf_tex = input_expr("uUseSdfTex", input_bool_expr(node, "uUseSdfTex", false))?;
+    let has_external_shape = incoming_connection(scene, &node.id, "uSdfDistance").is_some();
+    let has_external_normal = incoming_connection(scene, &node.id, "uNormal").is_some();
+    if has_external_shape != has_external_normal {
+        bail!("GlassMaterial {}: connect both uSdfDistance and uNormal for an external shape", node.id);
+    }
+    let external_shape = if has_external_shape {
+        // Bevel normals need the expanded distance expression for local-pixel
+        // offset sampling. Compile them before the silhouette can cache a scalar
+        // temporary for a composed SDF (for example a Max-based difference).
+        let normal = input_expr("uNormal", TypedExpr::new("vec3f(0.0, 0.0, 1.0)", ValueType::Vec3))?;
+        let distance = input_expr("uSdfDistance", TypedExpr::new("0.0", ValueType::F32))?;
+        let strength = input_expr("uNormalStrength", input_f32_expr(node, "uNormalStrength", 1.0))?;
+        expect_ty(&distance, ValueType::F32, "uSdfDistance")?;
+        expect_ty(&normal, ValueType::Vec3, "uNormal")?;
+        expect_ty(&strength, ValueType::F32, "uNormalStrength")?;
+        Some((distance, normal, strength))
+    } else { None };
+    if has_external_shape {
+        ctx.needs_view_vector = true;
+    }
 
     let u_sdf_tex = if let Some(conn) = incoming_connection(scene, &node.id, "uSdfTex") {
         Some(compile_fn(
@@ -473,7 +493,7 @@ where
     let reflect = resolve_pass_binding(scene, nodes_by_id, node, "uReflectTex", ctx)?;
     let fg_blur = resolve_pass_binding(scene, nodes_by_id, node, "uLightTex", ctx)?;
 
-    let uses_time = [
+    let uses_time = external_shape.as_ref().is_some_and(|(d, n, s)| d.uses_time || n.uses_time || s.uses_time) || [
         u_blend_luminance_amount.uses_time,
         u_blend_luminance_values.uses_time,
         u_blend_saturation.uses_time,
@@ -669,6 +689,15 @@ where
     let mut vars: Vec<(&str, String)> = vec![
         ("node_id", node.id.clone()),
         ("out_var", out_var.clone()),
+        ("refract_screen_px", if has_external_shape {
+            "screen_px + glass_tangent.xy * (uv_display_px.x - local_px.x) + glass_bitangent.xy * (uv_display_px.y - local_px.y) + refract_dir.xy * refract_thickness".into()
+        } else { "geo_origin_px + refract_local_px".into() }),
+        ("reflect_screen_px", if has_external_shape {
+            "screen_px + glass_tangent.xy * (uv_display_px.x - local_px.x) + glass_bitangent.xy * (uv_display_px.y - local_px.y) + reflect_dir.xy * mix(0.0, f32({{uShapeReflectOffsetPx}}), 1.0 - clamp(normalized_sdf, 0.0, 1.0))".replace("{{uShapeReflectOffsetPx}}", &u_shape_reflect_offset_px.expr)
+        } else { "geo_origin_px + reflect_local_px".into() }),
+        ("lighting_add", if has_external_shape {
+            "glass_mat = vec4f(glass_mat.rgb + lighting1 + lighting2, glass_mat.a);".into()
+        } else { "glass_mat += lighting1 + lighting2;".into() }),
         ("uShapeEdgePx", u_shape_edge_px.expr.clone()),
         ("uShapeEdgePow", u_shape_edge_pow.expr.clone()),
         ("radius_expr", radius_expr),
@@ -727,6 +756,14 @@ where
         ("uAlpha", u_alpha.expr.clone()),
     ];
 
+    if let Some((distance, normal, strength)) = external_shape {
+        vars.push(("external_shape", "1".into()));
+        vars.push(("uSdfDistance", distance.expr));
+        vars.push(("uNormal", normal.expr));
+        vars.push(("uNormalStrength", strength.expr));
+    } else {
+        vars.push(("builtin_shape", "1".into()));
+    }
     if let Some(sdf_tex) = u_sdf_tex.as_ref() {
         let sdf_tex_var = MaterialCompileContext::tex_var_name(&sdf_tex.expr);
         let sdf_samp_var = MaterialCompileContext::sampler_var_name(&sdf_tex.expr);

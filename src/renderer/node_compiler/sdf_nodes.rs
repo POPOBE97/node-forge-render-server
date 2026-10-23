@@ -284,7 +284,7 @@ where
     ))
 }
 
-fn resolve_input_expr_vec2_or_default<F>(
+pub(super) fn resolve_input_expr_vec2_or_default<F>(
     scene: &SceneDSL,
     node: &Node,
     port_id: &str,
@@ -370,7 +370,7 @@ where
     ) -> Result<TypedExpr>,
 {
     let out = out_port.unwrap_or("distance");
-    if out != "distance" {
+    if out != "distance" && out != "coverage" {
         bail!("Sdf2D unsupported output port: {out}");
     }
 
@@ -406,7 +406,7 @@ where
         center.uses_time,
     );
 
-    match shape {
+    let result: Result<TypedExpr> = match shape {
         "rectangle" => {
             let sdf_lib = ensure_sdf2d_wgsl_lib(ctx, node);
             // Rounded rectangle with per-corner radii.
@@ -473,6 +473,12 @@ where
             )
             .inline())
         }
+    };
+    let distance = result?;
+    if out == "coverage" {
+        Ok(TypedExpr::with_time(format!("clamp(0.5 - ({0}) / max(fwidth({0}), 0.0001), 0.0, 1.0)", distance.expr), ValueType::F32, distance.uses_time).inline())
+    } else {
+        Ok(distance)
     }
 }
 
@@ -569,7 +575,22 @@ where
     // Normal from depth finite differences in geometry-local pixel space.
     // We approximate depth(x, y) in a small neighborhood by re-evaluating the upstream distance
     // expression with `in.local_px` substituted by offset values.
-    let normal_eps = format!("{}()", bevel_lib.bevel_eps_fn);
+    // Texture distance fields benefit from a wider stencil than analytic fields.
+    let has_normal_step = incoming_connection(scene, &node.id, "sampleDistance").is_some()
+        || node.params.contains_key("sampleDistance");
+    let normal_step = if has_normal_step {
+        resolve_input_expr_f32_or_default(scene, node, "sampleDistance", 0.002, ctx, cache, &compile_fn)?
+    } else {
+        TypedExpr::new(format!("{}()", bevel_lib.bevel_eps_fn), ValueType::F32)
+    };
+    let uses_time = uses_time || normal_step.uses_time;
+    let normal_eps = if has_normal_step {
+        // Preserve f32 literal type before abs() resolves its overload (1 -> 1.0).
+        let step_expr = normal_step.expr.parse::<f32>()
+            .map(|value| format!("{value:?}"))
+            .unwrap_or(normal_step.expr);
+        format!("max(abs({step_expr}), 0.001)")
+    } else { normal_step.expr };
     let d_px = offset_in_local_px(&d0.expr, &normal_eps, "0.0");
     let d_nx = offset_in_local_px(&d0.expr, &format!("-({normal_eps})"), "0.0");
     let d_py = offset_in_local_px(&d0.expr, "0.0", &normal_eps);
@@ -794,6 +815,7 @@ mod tests {
             params: HashMap::from([
                 ("curve".to_string(), serde_json::json!("smooth5")),
                 ("sdfDistance".to_string(), serde_json::json!(-0.25)),
+                ("sampleDistance".to_string(), serde_json::json!(1)),
             ]),
             inputs: vec![],
             input_bindings: Vec::new(),
@@ -824,5 +846,8 @@ mod tests {
         let lib = ctx.extra_wgsl_decls.get(SDF2D_BEVEL_WGSL_LIB_KEY).unwrap();
         assert!(lib.contains("fn sdf2d_bevel_smooth5"));
         assert!(lib.contains("fn sdf2d_bevel_normal"));
+        let shader = format!("{lib}\nfn normal() -> vec3f {{\n{stmts}\nreturn {};\n}}", expr.expr);
+        crate::renderer::validation::validate_wgsl(&shader)
+            .expect("integer-valued sampling steps must compile as float math");
     }
 }

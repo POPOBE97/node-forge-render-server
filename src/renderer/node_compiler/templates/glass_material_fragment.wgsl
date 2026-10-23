@@ -532,6 +532,7 @@ fn glass_texture_map(
      let edge_pow = f32({{uShapeEdgePow}});
      let radius_px = {{radius_expr}};
      let safe_edge = max(edge, 1e-6);
+{{#if builtin_shape}}
      let box_sdf = glass_shape_sdf(pos_from_center, half_size_px, radius_px, edge, edge_pow);
      let normalized_sdf = -box_sdf / safe_edge;
      let edge_sdf = glass_shape_sdf(pos_from_center, half_size_px, radius_px, edge, 1.0);
@@ -546,6 +547,25 @@ fn glass_texture_map(
      // --- Anti-aliasing ---
      let aa_depth = edge * glass_curve(clamp(2.5 / max(edge, 0.0001), 0.0, 1.0), 1.0);
      var final_alpha = smoothstep(0.0, aa_depth, -edge_sdf);
+{{/if}}
+{{#if external_shape}}
+     let shape_distance = {{uSdfDistance}};
+     let normalized_sdf = clamp(-shape_distance / safe_edge, 0.0, 1.0);
+     let local_normal = {{uNormal}};
+     // Transform the local bevel normal and offsets with this instance's frame.
+     let qx = dpdx(in.world_pos); let qy = dpdy(in.world_pos);
+     let sx = dpdx(local_px); let sy = dpdy(local_px);
+     let det = sx.x * sy.y - sx.y * sy.x;
+     let safe_det = select(-max(abs(det), 1e-8), max(abs(det), 1e-8), det >= 0.0);
+     let glass_tangent = (qx * sy.y - qy * sx.y) / safe_det;
+     let glass_bitangent = (qy * sx.x - qx * sy.x) / safe_det;
+     let geometric = normalize(cross(glass_tangent, glass_bitangent));
+     let normal = normalize(cross(glass_bitangent, geometric) * local_normal.x * {{uNormalStrength}}
+         + cross(geometric, glass_tangent) * local_normal.y * {{uNormalStrength}}
+         + cross(glass_tangent, glass_bitangent) * local_normal.z);
+     let light_normal = normal;
+     var final_alpha = clamp(0.5 - shape_distance / max(fwidth(shape_distance), 0.0001), 0.0, 1.0);
+{{/if}}
 
 {{#if use_sdf_tex}}
      if ({{uUseSdfTex}}) {
@@ -561,13 +581,13 @@ fn glass_texture_map(
      let refract_dir = refract(incident_ray, normal, 1.0 / max(refractive_index, 1e-6));
      let refract_thickness = mix((f32({{uShapeThicknessPx}}) - edge) * 2.0, f32({{uShapeThicknessPx}}) * 2.0, clamp(normalized_sdf, 0.0, 1.0));
      let refract_local_px = uv_display_px + refract_dir.xy * refract_thickness;
-     let refract_uv = glass_sample_screen_uv(geo_origin_px + refract_local_px, params.target_size);
+     let refract_uv = glass_sample_screen_uv({{refract_screen_px}}, params.target_size);
      let refraction = {{refraction_expr}};
 
      // --- Reflection ---
      let reflect_dir = reflect(incident_ray, normal);
      let reflect_local_px = uv_display_px + reflect_dir.xy * mix(0.0, f32({{uShapeReflectOffsetPx}}), 1.0 - clamp(normalized_sdf, 0.0, 1.0));
-     let reflect_uv = glass_sample_screen_uv(geo_origin_px + reflect_local_px, params.target_size);
+     let reflect_uv = glass_sample_screen_uv({{reflect_screen_px}}, params.target_size);
      let reflection = {{reflection_expr}};
 
      // --- Mix refraction + reflection ---
@@ -612,7 +632,7 @@ fn glass_texture_map(
      let lighting1 = glass_calculate_lighting(light_normal, {{uDirectionalLightDirection}}, {{uDirectionalLightIntensity}}, {{uDirectionalLightAngleRange}});
      let lighting2 = glass_calculate_lighting(light_normal, {{uDirectionalLightDirection}} * vec3f(-1.0, -1.0, 1.0), {{uDirectionalLightOppositeIntensity}}, {{uDirectionalLightAngleRange}});
      let light_ratio = glass_dynamic_add(glass_mat.rgb);
-     glass_mat += lighting1 + lighting2;
+     {{lighting_add}}
 
      // --- Final adjustments ---
      glass_mat = vec4f(pow(glass_mat.rgb, vec3f({{uInnerColorPow}})), glass_mat.a);

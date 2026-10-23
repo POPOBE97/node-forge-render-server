@@ -1,0 +1,41 @@
+{
+  "spinReport": "/Library/Logs/DiagnosticReports/NodeForgeEditor_2026-10-20-154346_workbook-m3.spin",
+  "renderProcess": "node-forge-render-server [27232]",
+  "footprint": "Footprint:        221.66 GB -> 672 KB (-221.66 GB)",
+  "sampleTime": "2026-10-20 15:42:50.894 +0800",
+  "repeatedFrame": "0x103395140",
+  "symbol": "node_forge_render_server::ui::resource_tree::build_dependency_tree::build_pass_node + 548",
+  "inferredImageBase": "0x102ff8000",
+  "binaryUuid": "8C1D83EA-69A9-310D-8D53-A7607A32E37D",
+  "windowServerTermination": {
+    "flags": 0,
+    "indicator": "monitoring timed out for service",
+    "code": 1,
+    "namespace": "WATCHDOG",
+    "details": [
+      "(1 monitored services unresponsive): checkin with service: WindowServer (1 induced crashes) returned not alive with context:",
+      "unresponsive dispatch queue(s): com.apple.WindowServer.HIDEvents(tid:2863158) unresponsive work processor(s): WindowServer main thread",
+      "80 seconds since last successful checkin, 8813 total successful checkins since 91803 seconds ago, 39 seconds since last crashed by watchdogd, , has not exited since first loaded"
+    ]
+  },
+  "windowServerCaptureTime": "2026-10-20 15:48:12.7023 +0800",
+  "systemBootTime": "2026-10-20 15:49:30 +0800",
+  "regression": {
+    "passes": 179,
+    "dependencyTreeNodes": 454,
+    "testsPassed": 11
+  },
+  "verification": {
+    "resourceTreeTests": 11,
+    "sceneRuntimeTests": 17,
+    "finalBinaryBuildSucceeded": true,
+    "desktopWindowSeconds": 34.83,
+    "desktopPeakRssMiB": 841.14,
+    "desktopFinalRssMiB": 810.19,
+    "desktopTreeBuildMilliseconds": 2.63,
+    "desktopActualPasses": 186,
+    "websocketLoadAndRecoveryObserved": true,
+    "documentRevision": 4314,
+    "exampleAndFixtureValid": true
+  }
+}

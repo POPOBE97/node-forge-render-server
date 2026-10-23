@@ -1,0 +1,58 @@
+[
+  {
+    "state": "Off",
+    "returncode": 0,
+    "attempts": 1,
+    "peakRssMiB": 570.9375,
+    "seconds": 2.712578959
+  },
+  {
+    "state": "Idle",
+    "returncode": 0,
+    "attempts": 1,
+    "peakRssMiB": 542.296875,
+    "seconds": 1.884869375
+  },
+  {
+    "state": "Warmup",
+    "returncode": 0,
+    "attempts": 1,
+    "peakRssMiB": 506.328125,
+    "seconds": 1.8838792500000006
+  },
+  {
+    "state": "Listening",
+    "returncode": 0,
+    "attempts": 1,
+    "peakRssMiB": 509.21875,
+    "seconds": 1.8864660409999985
+  },
+  {
+    "state": "Thinking",
+    "returncode": 0,
+    "attempts": 1,
+    "peakRssMiB": 543.4375,
+    "seconds": 1.9038947910000008
+  },
+  {
+    "state": "Speaking",
+    "returncode": 0,
+    "attempts": 1,
+    "peakRssMiB": 538.015625,
+    "seconds": 1.9202333750000005
+  },
+  {
+    "state": "PushToTalk",
+    "returncode": 0,
+    "attempts": 1,
+    "peakRssMiB": 505.625,
+    "seconds": 1.892569708
+  },
+  {
+    "state": "PushToTalkCancel",
+    "returncode": 0,
+    "attempts": 1,
+    "peakRssMiB": 543.359375,
+    "seconds": 3.6442346249999993
+  }
+]

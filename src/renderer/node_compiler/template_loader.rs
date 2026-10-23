@@ -52,6 +52,34 @@ fn resolve_override_path_in(root: Option<&Path>, reference: &str) -> Option<Path
     Some(PathBuf::from(reference))
 }
 
+/// Explicit document ownership for hosts scheduling several scenes on one thread.
+#[derive(Default)]
+pub struct DocumentMaterials {
+    overrides: HashMap<String, String>,
+    generation: u64,
+    _thread_owned: std::marker::PhantomData<std::rc::Rc<()>>,
+}
+
+impl DocumentMaterials {
+    pub fn with<R>(&mut self, operation: impl FnOnce() -> R) -> R {
+        struct Restore<'a>(&'a mut DocumentMaterials);
+        impl Drop for Restore<'_> {
+            fn drop(&mut self) { self.0.swap_active(); }
+        }
+        self.swap_active();
+        let _restore = Restore(self);
+        operation()
+    }
+
+    fn swap_active(&mut self) {
+        DOCUMENT_OVERRIDES.with(|active| std::mem::swap(&mut *active.borrow_mut(), &mut self.overrides));
+        DOCUMENT_OVERRIDE_GENERATION.with(|active| {
+            let previous = active.replace(self.generation);
+            self.generation = previous;
+        });
+    }
+}
+
 pub fn install_document_overrides(overrides: impl IntoIterator<Item = (String, String)>) {
     DOCUMENT_OVERRIDES.with(|current| {
         let mut current = current.borrow_mut();
@@ -103,11 +131,11 @@ pub fn load_template(name: &str) -> String {
         }
     }
 
-    #[cfg(any(feature = "web-core", feature = "android-core"))]
+    #[cfg(any(feature = "web-core", feature = "android-core", feature = "embedded-templates"))]
     let content = embedded_template(name)
         .unwrap_or_else(|| panic!("unknown embedded WGSL template '{name}'"))
         .to_string();
-    #[cfg(all(feature = "native", not(feature = "android-core")))]
+    #[cfg(all(feature = "native", not(any(feature = "android-core", feature = "embedded-templates"))))]
     let content = {
         let path = templates_dir().join(name);
         std::fs::read_to_string(&path)
@@ -136,9 +164,9 @@ pub fn load_template_with_override(
         {
             return content;
         }
-        #[cfg(any(feature = "web-core", feature = "android-core"))]
+        #[cfg(any(feature = "web-core", feature = "android-core", feature = "embedded-templates"))]
         return load_template(template_name);
-        #[cfg(all(feature = "native", not(feature = "android-core")))]
+        #[cfg(all(feature = "native", not(any(feature = "android-core", feature = "embedded-templates"))))]
         {
             let c = override_cache().read().unwrap();
             if let Some(content) = c.get(path) {
@@ -146,7 +174,7 @@ pub fn load_template_with_override(
             }
         }
 
-        #[cfg(all(feature = "native", not(feature = "android-core")))]
+        #[cfg(all(feature = "native", not(any(feature = "android-core", feature = "embedded-templates"))))]
         match std::fs::read_to_string(path) {
             Ok(content) => {
                 let mut c = override_cache().write().unwrap();
@@ -165,7 +193,7 @@ pub fn load_template_with_override(
     load_template(template_name)
 }
 
-#[cfg(any(feature = "web-core", feature = "android-core"))]
+#[cfg(any(feature = "web-core", feature = "android-core", feature = "embedded-templates"))]
 fn embedded_template(name: &str) -> Option<&'static str> {
     Some(match name {
         "glass_material_fragment.wgsl" => include_str!("templates/glass_material_fragment.wgsl"),

@@ -168,6 +168,8 @@ pub(super) fn run(
     }
 
     if app.shell.resource_snapshot_generation != app.runtime.pipeline_rebuild_count {
+        let tree_started = std::time::Instant::now();
+        crate::diagnostics::record("resource-tree", "building sidebar resource snapshot");
         let snapshot = ui::resource_tree::ResourceSnapshot::capture(
             &app.core.shader_space,
             &app.core.passes,
@@ -175,8 +177,31 @@ pub(super) fn run(
             app.runtime.uniform_scene.as_ref(),
         );
         app.shell.resource_tree_nodes = snapshot.to_tree();
+        crate::diagnostics::record(
+            "resource-tree",
+            &format!(
+                "built {} passes, {} buffers, {} samplers in {:.2} ms",
+                snapshot.passes.len(),
+                snapshot.buffers.len(),
+                snapshot.samplers.len(),
+                tree_started.elapsed().as_secs_f64() * 1000.0,
+            ),
+        );
         app.shell.resource_snapshot = Some(snapshot);
         app.shell.resource_snapshot_generation = app.runtime.pipeline_rebuild_count;
+    }
+    if let Some(message) = app.shell.scene_error.as_ref() {
+        egui::Window::new("Scene error")
+            .default_width(560.0)
+            .show(ctx, |ui| {
+                egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
+                    ui.label(message);
+                });
+                if ui.button("Copy error").clicked() {
+                    ctx.copy_text(message.clone());
+                }
+                ui.label(format!("Log: {}", crate::diagnostics::log_path().display()));
+            });
     }
     if app.core.ws_hub.client_count() == 0 {
         app.shell.resource_snapshot_broadcast_generation = u64::MAX;

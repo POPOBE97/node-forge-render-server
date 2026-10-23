@@ -1,0 +1,11 @@
+[
+  {
+    "state": "reopen",
+    "setupPath": "reopen",
+    "captureSeconds": "4.2",
+    "returncode": 0,
+    "attempts": 1,
+    "peakRssMiB": 505.578125,
+    "seconds": 3.667651083
+  }
+]

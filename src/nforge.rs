@@ -606,6 +606,41 @@ fn read_scene(connection: &Connection) -> Result<(SceneDSL, AssetStore, DebugArt
     Ok((parsed, asset_store, debug_store))
 }
 
+/// Load an authenticated, self-contained archive snapshot without a plaintext file.
+/// The caller owns outer authentication and must supply a checkpointed SQLite snapshot.
+pub fn load_bytes(bytes: &[u8]) -> Result<LoadedNforge> {
+    if bytes.len() < 100 || bytes.len() > 256 * 1024 * 1024
+        || !bytes.starts_with(b"SQLite format 3\0") {
+        bail!("invalid or oversized .nforge memory snapshot");
+    }
+    // Match the Web playback reader: WAL-mode headers on standalone checkpointed
+    // snapshots must be normalized in the private SQLite allocation, never on disk.
+    let connection = Connection::open_in_memory()?;
+    unsafe {
+        let memory = rusqlite::ffi::sqlite3_malloc64(bytes.len() as u64).cast::<u8>();
+        if memory.is_null() { bail!("SQLite snapshot allocation failed"); }
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), memory, bytes.len());
+        if *memory.add(18) == 2 || *memory.add(19) == 2 {
+            *memory.add(18) = 1;
+            *memory.add(19) = 1;
+        }
+        let rc = rusqlite::ffi::sqlite3_deserialize(
+            connection.handle(), c"main".as_ptr(), memory, bytes.len() as i64,
+            bytes.len() as i64,
+            rusqlite::ffi::SQLITE_DESERIALIZE_FREEONCLOSE | rusqlite::ffi::SQLITE_DESERIALIZE_READONLY,
+        );
+        if rc != rusqlite::ffi::SQLITE_OK {
+            // FREEONCLOSE also frees memory on sqlite3_deserialize failure.
+            bail!("SQLite memory snapshot rejected ({rc})");
+        }
+    }
+    connection.execute_batch("PRAGMA temp_store=MEMORY; PRAGMA query_only=ON; PRAGMA trusted_schema=OFF;")?;
+    validate_format(&connection)?;
+    validate_container(&connection)?;
+    let (scene, asset_store, debug_artifacts) = read_scene(&connection)?;
+    Ok(LoadedNforge { scene, asset_store, debug_artifacts })
+}
+
 pub fn load(path: &Path) -> Result<LoadedNforge> {
     let connection = open_readonly(path)?;
     validate_container(&connection)?;

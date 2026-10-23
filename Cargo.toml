@@ -23,6 +23,8 @@ native = [
     "dep:libc",
 ]
 portable-js = ["dep:rquickjs"]
+# Embed built-in WGSL for sandboxed native playback without source-tree access.
+embedded-templates = []
 android-core = ["rust-wgpu-fiber/android-core", "portable-js", "dep:tungstenite"]
 web-core = [
     "rust-wgpu-fiber/web-core",

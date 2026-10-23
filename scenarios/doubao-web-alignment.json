@@ -1,0 +1,111 @@
+{
+    "schemaVersion": 1,
+    "name": "doubao-web-alignment-regression",
+    "fps": 60,
+    "actions": [
+        {
+            "type": "step",
+            "frames": 0
+        },
+        {
+            "type": "event",
+            "eventType": "keydown",
+            "key": " "
+        },
+        {
+            "type": "step",
+            "seconds": 0.1
+        },
+        {
+            "type": "event",
+            "eventType": "keyup",
+            "key": " "
+        },
+        {
+            "type": "assertState",
+            "stateId": "st_mshiyxvq_3"
+        },
+        {
+            "type": "step",
+            "seconds": 2.5
+        },
+        {
+            "type": "assertState",
+            "stateId": "st_mrerxocx_8"
+        },
+        {
+            "type": "mouse",
+            "x": 630,
+            "y": 217
+        },
+        {
+            "type": "event",
+            "eventType": "mousedown",
+            "button": "primary"
+        },
+        {
+            "type": "assertState",
+            "stateId": "st_push_to_talk"
+        },
+        {
+            "type": "step",
+            "seconds": 0.5
+        },
+        {
+            "type": "mouse",
+            "x": 630,
+            "y": 650
+        },
+        {
+            "type": "event",
+            "eventType": "mousemove"
+        },
+        {
+            "type": "assertState",
+            "stateId": "st_push_to_talk_cancel"
+        },
+        {
+            "type": "step",
+            "seconds": 0.4
+        },
+        {
+            "type": "mouse",
+            "x": 630,
+            "y": 217
+        },
+        {
+            "type": "event",
+            "eventType": "mousemove"
+        },
+        {
+            "type": "assertState",
+            "stateId": "st_push_to_talk"
+        },
+        {
+            "type": "step",
+            "seconds": 0.3
+        },
+        {
+            "type": "event",
+            "eventType": "mouseup",
+            "button": "primary"
+        },
+        {
+            "type": "assertState",
+            "stateId": "st_command_delivered"
+        },
+        {
+            "type": "step",
+            "seconds": 0.4
+        },
+        {
+            "type": "event",
+            "eventType": "keydown",
+            "key": "Enter"
+        },
+        {
+            "type": "step",
+            "seconds": 0.1
+        }
+    ]
+}

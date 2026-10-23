@@ -6,6 +6,7 @@ use std::{
 use rust_wgpu_fiber::eframe::egui;
 
 use crate::metric_log;
+use crate::ui::tool_window;
 use crate::ui::pass_debug::event::PassDebugWindowAction;
 use crate::ui::pass_debug::render::dependency_panel::render_side_panel;
 use crate::ui::pass_debug::render::editor::{
@@ -22,7 +23,7 @@ const SIDE_PANEL_MAX_WIDTH: f32 = 560.0;
 const PASS_DEBUG_SPLIT_HANDLE_WIDTH: f32 = 6.0;
 const PASS_DEBUG_SPLIT_LINE_WIDTH: f32 = 1.0;
 const PASS_DEBUG_EDITOR_MIN_WIDTH: f32 = 320.0;
-const PASS_DEBUG_COLUMN_HEADER_HEIGHT: f32 = 28.0;
+const PASS_DEBUG_COLUMN_HEADER_HEIGHT: f32 = 80.0;
 
 pub(crate) fn render_pass_debug_viewport(
     ui: &mut egui::Ui,
@@ -30,23 +31,32 @@ pub(crate) fn render_pass_debug_viewport(
     pending_actions: &Arc<Mutex<Vec<PassDebugWindowAction>>>,
     close_requested: &AtomicBool,
 ) {
+    tool_window::apply(ui);
     let pass_name = document
         .lock()
         .map(|document| document.pass_name.clone())
         .unwrap_or_else(|_| "unavailable".to_string());
 
     let t_central = Instant::now();
-    egui::CentralPanel::default().show_inside(ui, |ui| {
-        let Ok(mut document) = document.lock() else {
-            ui.label("Debug document unavailable");
-            return;
-        };
-        if !root_view(&document).source_available {
-            render_missing_source_message(ui);
-            return;
-        }
-        render_dependency_editor_split(ui, &mut document, pending_actions, close_requested, true);
-    });
+    egui::CentralPanel::default()
+        .frame(tool_window::panel_frame())
+        .show_inside(ui, |ui| {
+            let Ok(mut document) = document.lock() else {
+                ui.label("Debug document unavailable");
+                return;
+            };
+            if !root_view(&document).source_available {
+                render_missing_source_message(ui);
+                return;
+            }
+            render_dependency_editor_split(
+                ui,
+                &mut document,
+                pending_actions,
+                close_requested,
+                true,
+            );
+        });
     let central_dur = t_central.elapsed();
 
     metric_log!(
@@ -62,6 +72,7 @@ pub(crate) fn render_pass_debug_embedded_content(
     pending_actions: &Arc<Mutex<Vec<PassDebugWindowAction>>>,
     close_requested: &AtomicBool,
 ) {
+    tool_window::apply(ui);
     let Ok(mut document) = document.lock() else {
         ui.label("Debug document unavailable");
         return;
@@ -97,7 +108,7 @@ fn render_dependency_editor_split(
         close_requested,
         send_viewport_close,
     );
-    ui.separator();
+    ui.add_space(tool_window::GAP);
 
     let full_rect = ui.available_rect_before_wrap();
     if full_rect.width() <= 0.0 || full_rect.height() <= PASS_DEBUG_COLUMN_HEADER_HEIGHT {
@@ -271,7 +282,7 @@ fn render_dependency_editor_split(
     let mut panel_ui = ui.new_child(
         egui::UiBuilder::new()
             .id_salt(("pass-debug-side-child", document.pass_name.as_str()))
-            .max_rect(panel_rect)
+            .max_rect(panel_rect.shrink(8.0))
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
     panel_ui.set_clip_rect(panel_rect.intersect(ui.clip_rect()));
@@ -282,7 +293,7 @@ fn render_dependency_editor_split(
     let mut editor_ui = ui.new_child(
         egui::UiBuilder::new()
             .id_salt(("pass-debug-editor-child", document.pass_name.as_str()))
-            .max_rect(current_rect)
+            .max_rect(current_rect.shrink2(egui::vec2(4.0, 8.0)))
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
     editor_ui.set_clip_rect(current_rect.intersect(ui.clip_rect()));
@@ -293,7 +304,7 @@ fn render_dependency_editor_split(
     let mut reference_ui = ui.new_child(
         egui::UiBuilder::new()
             .id_salt(("pass-debug-reference-child", document.pass_name.as_str()))
-            .max_rect(reference_rect)
+            .max_rect(reference_rect.shrink2(egui::vec2(4.0, 8.0)))
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
     reference_ui.set_clip_rect(reference_rect.intersect(ui.clip_rect()));

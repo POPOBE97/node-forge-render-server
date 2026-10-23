@@ -471,7 +471,8 @@ impl Workspace {
     pub(super) fn dialogs(&mut self, ctx: &egui::Context) {
         if self.diagnostics_open {
             let mut open = true;
-            egui::Window::new("Camera diagnostics").open(&mut open).default_width(520.).show(ctx, |ui| {
+            egui::Window::new("Camera diagnostics").open(&mut open).default_width(520.).frame(tool_window::dialog_frame(ctx)).show(ctx, |ui| {
+                tool_window::apply(ui);
                 ui.add_enabled_ui(!self.busy_capture(), |ui| { ui.checkbox(&mut self.release_occupied, "Release other camera apps if USB is occupied"); });
                 muted(ui, "Known camera clients are stopped only after an occupied connection attempt.");
                 if let Some(info) = &self.status.info { ui.label(format!("{} · {}", info.model, info.port)); ui.collapsing("Camera details", |ui| { ui.label(&info.summary); }); }
@@ -487,7 +488,10 @@ impl Workspace {
             egui::Window::new("Error details")
                 .open(&mut open)
                 .default_width(480.)
-                .show(ctx, |ui| {
+                .max_height(560.)
+                .vscroll(true)
+                .frame(tool_window::dialog_frame(ctx)).show(ctx, |ui| {
+                tool_window::apply(ui);
                     ui.label(&detail);
                     if action(ui, "Copy details", true) {
                         ctx.copy_text(detail.clone());
@@ -500,14 +504,16 @@ impl Workspace {
         self.capture_details(ctx);
         if self.close_dialog {
             egui::Window::new("Finish camera work before closing")
+                .default_width(520.)
                 .collapsible(false)
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-                .show(ctx, |ui| {
+                .frame(tool_window::dialog_frame(ctx)).show(ctx, |ui| {
+                tool_window::apply(ui);
                     ui.label(
                         "Recording, downloads and corrected image saves must finish before closing.",
                     );
-                    ui.horizontal(|ui| {
+                    ui.horizontal_wrapped(|ui| {
                         if action(ui, "Stay open", true) {
                             self.close_dialog = false;
                             self.parent_to_close = None;

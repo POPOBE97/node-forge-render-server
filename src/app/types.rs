@@ -544,6 +544,7 @@ impl Default for MatrixConfig {
 }
 
 pub(super) struct AppShell {
+    pub scene_error: Option<String>,
     pub window_mode: UiWindowMode,
     pub prev_window_mode: UiWindowMode,
     pub ui_sidebar_factor: f32,
@@ -838,6 +839,7 @@ impl App {
                 frame_freeze_capture_blocked: false,
             },
             shell: AppShell {
+                scene_error: None,
                 window_mode: UiWindowMode::Sidebar,
                 prev_window_mode: UiWindowMode::Sidebar,
                 ui_sidebar_factor: 1.0,

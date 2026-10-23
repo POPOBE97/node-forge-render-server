@@ -20,10 +20,10 @@ use super::{
     model::*,
     rulers,
 };
-use crate::ui::button::{ButtonOptions, button};
+use crate::ui::tool_window;
 
 fn action(ui: &mut egui::Ui, label: &str) -> bool {
-    button(ui, ButtonOptions::new(label)).clicked()
+    tool_window::action(ui, label, true).clicked()
 }
 fn screen_point(p: egui::Pos2, rect: egui::Rect) -> Point {
     [(p.x - rect.left()) as f64, (p.y - rect.top()) as f64]
@@ -543,6 +543,7 @@ impl Workspace {
         self.export_open = true;
     }
     pub fn show(&mut self, ui: &mut egui::Ui) {
+        tool_window::apply(ui);
         if self.closed {
             return;
         }
@@ -580,8 +581,8 @@ impl Workspace {
                 self.open_paths(files, ctx.clone());
             }
         }
-        egui::Panel::top("pp.toolbar").show_inside(ui, |ui| self.toolbar(ui));
-        egui::Panel::bottom("pp.status").show_inside(ui,|ui|{
+        egui::Panel::top("pp.toolbar").frame(tool_window::toolbar_frame()).show_inside(ui, |ui| self.toolbar(ui));
+        egui::Panel::bottom("pp.status").frame(tool_window::toolbar_frame()).show_inside(ui,|ui|{
             ui.horizontal_wrapped(|ui|{
                 if let Some(job)=&self.job{ui.spinner();ui.label(format!("{} {}%",job.label,job.progress.load(Ordering::Relaxed)));}
                 else{ui.colored_label(if self.error{egui::Color32::from_rgb(255,125,115)}else{egui::Color32::from_gray(170)},&self.status);}
@@ -592,13 +593,15 @@ impl Workspace {
             .default_size(215.)
             .size_range(180.0..=320.)
             .resizable(true)
+            .frame(tool_window::panel_frame())
             .show_inside(ui, |ui| self.layers_panel(ui));
         egui::Panel::right("pp.inspector")
             .default_size(290.)
             .size_range(250.0..=410.)
             .resizable(true)
+            .frame(tool_window::panel_frame())
             .show_inside(ui, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| self.inspector(ui));
+                egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| self.inspector(ui));
             });
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
@@ -732,7 +735,7 @@ impl Workspace {
     }
     fn toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
-            ui.strong("PIXEL PERFECTO");
+            tool_window::heading(ui, "Pixel Perfecto");
             if self.dirty() {
                 ui.label("•");
             }
@@ -776,7 +779,9 @@ impl Workspace {
                 self.refit_requested = None;
                 self.history_action = true;
             }
-            ui.separator();
+        });
+        ui.add_space(4.0);
+        ui.horizontal_wrapped(|ui| {
             if ui
                 .toggle_value(&mut self.calibration, "Calibrate")
                 .changed()
@@ -809,7 +814,9 @@ impl Workspace {
                 self.doc.rulers_mut().visible = rulers;
             }
         });
+        ui.add_space(4.0);
         ui.horizontal_wrapped(|ui| {
+            tool_window::caption(ui, "Compare");
             for mode in CompareMode::ALL {
                 ui.selectable_value(&mut self.doc.comparison.mode, mode, mode.label());
             }
@@ -858,9 +865,12 @@ impl Workspace {
         });
     }
     fn layers_panel(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Layers");
-        ui.small("Top row is the topmost image");
-        ui.separator();
+        tool_window::heading(ui, "Layers");
+        tool_window::caption(ui, "Top row is the topmost image");
+        ui.add_space(tool_window::GAP);
+        if self.doc.layers.is_empty() {
+            tool_window::caption(ui, "Import or drop images to add layers.");
+        }
         let mut remove = None;
         let mut reorder = None;
         let layer_count = self.doc.layers.len();
@@ -884,14 +894,14 @@ impl Workspace {
                             ui.checkbox(&mut layer.locked, "Lock");
                         });
                         ui.add(egui::Slider::new(&mut layer.opacity, 0.0..=1.0).text("Opacity"));
-                        ui.horizontal(|ui| {
-                            if ui.small_button("Up").clicked() && index + 1 < layer_count {
+                        ui.horizontal_wrapped(|ui| {
+                            if tool_window::action(ui, "Up", index + 1 < layer_count).clicked() {
                                 reorder = Some((index, index + 1));
                             }
-                            if ui.small_button("Down").clicked() && index > 0 {
+                            if tool_window::action(ui, "Down", index > 0).clicked() {
                                 reorder = Some((index, index - 1));
                             }
-                            if ui.small_button("Remove").clicked() {
+                            if tool_window::action(ui, "Remove", true).clicked() {
                                 remove = Some(index);
                             }
                         });
@@ -931,8 +941,7 @@ impl Workspace {
             });
             if settings!=before {self.doc.rulers=Some(settings);}
         });
-        ui.separator();
-        ui.heading("Diamond grid");
+        tool_window::section(ui, "Diamond grid");
         ui.checkbox(&mut self.doc.grid.visible, "Show grid");
         ui.horizontal(|ui| {
             ui.checkbox(&mut self.doc.grid.lines, "Lines");
@@ -950,7 +959,7 @@ impl Workspace {
             ui.label("Import images to start aligning.");
             return;
         };
-        ui.heading("Selected image");
+        tool_window::section(ui, "Selected image");
         ui.text_edit_singleline(&mut layer.name);
         ui.small(format!(
             "{} × {} · {} bit",
@@ -985,7 +994,7 @@ impl Workspace {
                 }
             }
             if self.calibration {
-                ui.separator();ui.heading("Align in place");
+                tool_window::section(ui, "Align in place");
                 ui.label("Drag a grid point onto its matching center in this corrected image. Release to update the accumulated result here.");
                 ui.small("The grid stays fixed. Each correction builds on all existing anchors; inspect the image and residual arrows to find the next area to refine.");
                 ui.horizontal(|ui|{for kind in Subpixel::ALL{ui.selectable_value(&mut self.kind,kind,kind.label());}});
@@ -1478,7 +1487,7 @@ impl Workspace {
         });
     }
     fn measurement_panel(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Measure");
+        tool_window::heading(ui, "Measure");
         ui.small("Click A then B, or drag. Drag either endpoint to adjust. Shift: horizontal / vertical.");
         ui.checkbox(
             &mut self.measure_snap,
@@ -2262,9 +2271,12 @@ impl Workspace {
         let mut export = false;
         let mut roi = false;
         egui::Window::new("Export corrected image")
+            .default_width(400.)
             .open(&mut open)
             .resizable(false)
+            .frame(tool_window::dialog_frame(ctx))
             .show(ctx, |ui| {
+                tool_window::apply(ui);
                 ui.checkbox(&mut self.doc.export.selected_only, "Selected image only");
                 ui.checkbox(
                     &mut self.doc.export.grid,
@@ -2344,10 +2356,13 @@ impl Workspace {
         let mut discard = false;
         let mut cancel = false;
         egui::Window::new("Unsaved Pixel Perfecto project")
+            .default_width(440.)
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .frame(tool_window::dialog_frame(ctx))
             .show(ctx, |ui| {
+                tool_window::apply(ui);
                 ui.label(if self.job.is_some() {
                     "Wait for the current operation to finish, or cancel closing."
                 } else {

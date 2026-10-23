@@ -1,3 +1,4 @@
+use crate::ui::tool_window;
 use super::{
     controller::{Command, Controller, Prepare},
     model::*,
@@ -86,15 +87,9 @@ impl Panel {
     }
 }
 fn action(ui: &mut egui::Ui, label: &str, enabled: bool) -> bool {
-    crate::ui::button::button(
-        ui,
-        crate::ui::button::ButtonOptions {
-            enabled,
-            ..crate::ui::button::ButtonOptions::new(label)
-        },
-    )
-    .clicked()
+    tool_window::action(ui, label, enabled).clicked()
 }
+
 impl Panel {
     pub fn show(&mut self, ui: &mut egui::Ui, capture_issue: Option<&str>) {
         let previous = self.workflow;
@@ -132,7 +127,7 @@ impl Panel {
                 ui.small("Session geometry · not calibrated");
             }
         }
-        ui.separator();
+        tool_window::section(ui, "Display");
         ui.add_enabled_ui(!busy, |ui| {
             if let Some(device) = &self.controller.device {
                 ui.label(&device.name);
@@ -174,6 +169,7 @@ impl Panel {
                     ui.small("Install with Xcode; open Screen Test on the iPhone. USB only.");
                 }
             }
+            tool_window::section(ui, "Capture conditions");
             egui::ComboBox::from_id_salt("screen.color_mode")
                 .selected_text(self.mode.label())
                 .show_ui(ui, |ui| {
@@ -267,7 +263,8 @@ impl Panel {
                 "Captures use RAW. The camera's original photo format is restored after transfer.",
             );
             let connected = self.controller.device.is_some();
-            ui.horizontal(|ui| {
+            ui.add_space(tool_window::GAP);
+            ui.horizontal_wrapped(|ui| {
                 if action(ui, "Show pattern", connected) {
                     self.prepare(false);
                 }
@@ -294,9 +291,8 @@ impl Panel {
         if busy {
             ui.spinner();
         }
-        ui.separator();
         if self.workflow == Workflow::Reference {
-            ui.label("Reference library");
+            tool_window::section(ui, "Reference library");
             ui.add(
                 egui::TextEdit::singleline(&mut self.library_filter)
                     .hint_text("Filter date / brightness / batch / mode")
@@ -375,7 +371,7 @@ impl Panel {
                 ));
             }
         } else if self.workflow == Workflow::Inspection {
-            ui.label("Test exposures");
+            tool_window::section(ui, "Test exposures");
             if self.baseline.is_none() {
                 ui.small("You can save RAW now and choose a baseline for comparison later.");
             }
@@ -508,7 +504,11 @@ impl Panel {
             egui::Window::new("Screen inspection report")
                 .open(&mut open)
                 .default_width(650.)
+                .max_height(720.)
+                .vscroll(true)
+                .frame(tool_window::dialog_frame(ui.ctx()))
                 .show(ui.ctx(), |ui| {
+                    tool_window::apply(ui);
                     ui.heading(&report.conclusion);
                     ui.small(format!("Baseline: {}", report.reference));
                     ui.small(format!("Capture: {}", report.capture));
@@ -565,6 +565,8 @@ impl Panel {
                         .show(ui, |ui| {
                             egui::Grid::new("screen.patch_report")
                                 .striped(true)
+                                .min_row_height(tool_window::ROW_HEIGHT)
+                                .spacing([12.0, 0.0])
                                 .show(ui, |ui| {
                                     ui.label("Patch");
                                     ui.label("Max RGB / reference white");

@@ -97,6 +97,7 @@
     "StringFormat",
     "Tan",
     "TextPass",
+    "TextSdf",
     "TextureInput",
     "TextureSampler",
     "TimeInput",
@@ -2242,6 +2243,27 @@
           "id": "uSdfTex",
           "name": "SDF",
           "type": "texture"
+        },
+        {
+          "id": "uSdfDistance",
+          "name": "Shape SDF Distance (px)",
+          "type": "float"
+        },
+        {
+          "id": "uNormal",
+          "name": "Shape Normal · Local",
+          "type": "vector3"
+        },
+        {
+          "id": "uNormalStrength",
+          "name": "Normal Strength",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": -4,
+            "max": 4,
+            "step": 0.01
+          }
         },
         {
           "id": "uAlpha",
@@ -5998,7 +6020,7 @@
       "type": "PBRMaterial",
       "label": "PBR Material",
       "category": "Material",
-      "description": "Preset physically-based material (outputs material)",
+      "description": "GGX metallic/roughness material with geometry-local normals and explicit world-space lighting",
       "inputs": [
         {
           "id": "baseColor",
@@ -6025,8 +6047,24 @@
         },
         {
           "id": "normal",
-          "name": "Normal",
-          "type": "vector3"
+          "name": "Local Normal",
+          "type": "vector3",
+          "default": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "id": "normalStrength",
+          "name": "Normal Strength",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": -4,
+            "max": 4,
+            "step": 0.01
+          }
         },
         {
           "id": "emission",
@@ -6044,6 +6082,59 @@
           "name": "Alpha",
           "type": "float",
           "default": 1
+        },
+        {
+          "id": "lightDirection",
+          "name": "Direction toward Light · World",
+          "type": "vector3",
+          "default": [
+            -0.4,
+            0.6,
+            1
+          ]
+        },
+        {
+          "id": "lightColor",
+          "name": "Light Color",
+          "type": "color",
+          "default": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "id": "lightIntensity",
+          "name": "Light Intensity",
+          "type": "float",
+          "default": 3,
+          "range": {
+            "min": 0,
+            "max": 100,
+            "step": 0.1
+          }
+        },
+        {
+          "id": "ambientColor",
+          "name": "Ambient Irradiance",
+          "type": "color",
+          "default": [
+            0.08,
+            0.08,
+            0.08,
+            1
+          ]
+        },
+        {
+          "id": "viewDirection",
+          "name": "Direction toward Viewer · World",
+          "type": "vector3",
+          "default": [
+            0,
+            0,
+            1
+          ]
         }
       ],
       "outputs": [
@@ -6706,6 +6797,11 @@
           "id": "distance",
           "name": "Distance",
           "type": "float"
+        },
+        {
+          "id": "coverage",
+          "name": "Coverage",
+          "type": "float"
         }
       ],
       "defaultParams": {
@@ -6723,6 +6819,16 @@
           "name": "Curve",
           "type": "any",
           "default": "smooth7"
+        },
+        {
+          "id": "sampleDistance",
+          "name": "Normal Sample Step (px; default 0.002)",
+          "type": "float",
+          "range": {
+            "min": 0.001,
+            "max": 4,
+            "step": 0.01
+          }
         },
         {
           "id": "sdfDistance",
@@ -7073,6 +7179,112 @@
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
         "dst_alpha_factor": "one-minus-src-alpha"
+      }
+    },
+    {
+      "type": "TextSdf",
+      "label": "Text SDF",
+      "category": "2D SDF",
+      "description": "Shape embedded font text into a signed Euclidean distance field in LocalPx; negative inside",
+      "inputs": [
+        {
+          "id": "text",
+          "name": "Text",
+          "type": "string"
+        },
+        {
+          "id": "font",
+          "name": "Font",
+          "type": "FontFile"
+        },
+        {
+          "id": "fallbackFont",
+          "name": "Fallback Font",
+          "type": "FontFile"
+        },
+        {
+          "id": "fontSize",
+          "name": "Font Size (px)",
+          "type": "float",
+          "default": 28,
+          "range": {
+            "min": 0.1,
+            "max": 2048,
+            "step": 0.1
+          }
+        },
+        {
+          "id": "fontWeight",
+          "name": "Font Weight (0 = font default)",
+          "type": "int",
+          "default": 0,
+          "range": {
+            "min": 0,
+            "max": 1000,
+            "step": 1
+          }
+        },
+        {
+          "id": "lineHeight",
+          "name": "Line Height (px; 0 = auto)",
+          "type": "float",
+          "default": 0,
+          "range": {
+            "min": 0,
+            "max": 8192,
+            "step": 0.1
+          }
+        },
+        {
+          "id": "letterSpacing",
+          "name": "Letter Spacing (px)",
+          "type": "float",
+          "default": 0,
+          "range": {
+            "min": -4096,
+            "max": 4096,
+            "step": 0.1
+          }
+        },
+        {
+          "id": "size",
+          "name": "Layout Size · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
+        },
+        {
+          "id": "position",
+          "name": "Layout Origin · LocalPx",
+          "type": "vector2",
+          "default": [
+            0,
+            0
+          ],
+          "coordinateSpace": "local-px"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "distance",
+          "name": "Distance (px)",
+          "type": "float"
+        },
+        {
+          "id": "coverage",
+          "name": "Coverage",
+          "type": "float"
+        }
+      ],
+      "defaultParams": {
+        "text": "Node Forge",
+        "fontSize": 28,
+        "fontWeight": 0,
+        "lineHeight": 0,
+        "letterSpacing": 0,
+        "align": "left",
+        "verticalAlign": "top",
+        "wrap": "none",
+        "hinting": false
       }
     },
     {

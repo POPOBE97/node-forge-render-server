@@ -849,6 +849,19 @@ fn plan_image_textures(
         }
 
         let node = find_node(&prepared.nodes_by_id, node_id)?;
+        if node.node_type == "TextSdf" {
+            let inputs = crate::renderer::text_inputs::TextInputs {
+                scene: &prepared.scene, nodes: &prepared.nodes_by_id, asset_store,
+            };
+            let (request, fonts) = crate::renderer::text_inputs::resolve(&inputs, node)?;
+            image_textures.push(ImageTextureSpec {
+                name: prepared.ids.get(node_id).cloned().ok_or_else(|| anyhow!("missing TextSdf resource name"))?,
+                image: crate::renderer::text_sdf::prepare(&request, &fonts)?,
+                usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST | TextureUsages::COPY_SRC,
+                srgb: false,
+            });
+            continue;
+        }
         if node.node_type != "ImageTexture" && node.node_type != "Matcap" {
             bail!(
                 "expected ImageTexture node for {node_id}, got {}",

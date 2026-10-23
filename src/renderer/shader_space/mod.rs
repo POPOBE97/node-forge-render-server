@@ -14,7 +14,7 @@ pub use api::{
 };
 #[cfg(feature = "native")]
 pub use headless::{
-    HeadlessRuntimeOverrides, render_scene_pass_to_file_headless,
+    HeadlessRuntimeOverrides, render_animation_frame_to_file_headless, render_scene_pass_to_file_headless,
     render_scene_pass_to_file_headless_with_frame_freeze,
     render_scene_pass_to_file_headless_with_runtime_overrides,
     render_scene_texture_to_file_headless, render_scene_texture_to_file_headless_with_frame_freeze,

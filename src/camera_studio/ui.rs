@@ -10,6 +10,7 @@ use crate::ui::{
         two_column_section as section,
     },
     design_tokens::{self as tokens, TextRole},
+    tool_window,
 };
 use image::{ImageDecoder, metadata::Orientation};
 use rust_wgpu_fiber::eframe::egui::{self, Color32};
@@ -800,21 +801,7 @@ impl Workspace {
         if self.closed {
             return;
         }
-        ui.spacing_mut().item_spacing = egui::vec2(8., 8.);
-        ui.spacing_mut().button_padding = egui::vec2(8., 5.);
-        ui.style_mut().visuals.panel_fill = PANEL;
-        ui.style_mut().visuals.widgets.inactive.bg_fill = Color32::from_gray(40);
-        ui.style_mut().visuals.widgets.inactive.weak_bg_fill = Color32::from_gray(40);
-        ui.style_mut().visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
-        ui.style_mut().visuals.selection.bg_fill = Color32::from_gray(70);
-        ui.style_mut().text_styles.insert(
-            egui::TextStyle::Body,
-            tokens::font_id(13., tokens::FontWeight::Normal),
-        );
-        ui.style_mut().text_styles.insert(
-            egui::TextStyle::Button,
-            tokens::font_id(13., tokens::FontWeight::Normal),
-        );
+        tool_window::apply(ui);
         if ctx.input(|i| i.viewport().close_requested()) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.request_close(None);
@@ -824,11 +811,7 @@ impl Workspace {
             .default_size(340.)
             .size_range(280.0..=420.0)
             .resizable(true)
-            .frame(
-                egui::Frame::new()
-                    .fill(PANEL)
-                    .inner_margin(egui::Margin::same(16)),
-            )
+            .frame(tool_window::panel_frame())
             .show_inside(ui, |ui| {
                 self.device(ui);
                 ui.add_space(8.);

@@ -1,5 +1,5 @@
 //! Text is shaped on the CPU, then drawn as native-density glyph quads.
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, ensure};
 use rust_wgpu_fiber::{ResourceName, wgpu};
 
 use super::super::{
@@ -13,10 +13,10 @@ use super::{
     mesh_gradient::parse_color_value,
 };
 use crate::{
-    dsl::{Node, data_parse_output, evaluate_data_parse, incoming_connection},
+    dsl::{Node, incoming_connection},
     renderer::{
         camera::{legacy_projection_camera_matrix, resolve_effective_camera_for_pass_node},
-        text::{FontSource, TextRequest, format_numbers, prepare_text},
+        text::prepare_text,
         utils::cpu_num_f32,
     },
 };
@@ -25,210 +25,17 @@ pub(crate) fn build_text_wgsl() -> String {
     include_str!("../../node_compiler/templates/text_pass.wgsl").into()
 }
 
-fn vec2(sc: &SceneContext<'_>, node: &Node, port: &str) -> Result<Option<[f32; 2]>> {
-    let computed;
-    let value = if let Some(edge) = incoming_connection(sc.scene(), &node.id, port) {
-        let source = sc
-            .nodes_by_id()
-            .get(&edge.from.node_id)
-            .context("missing TextPass vector source")?;
-        match source.node_type.as_str() {
-            "Vector2Input" if edge.from.port_id == "vector" => return Ok(Some([
-                cpu_num_f32(sc.scene(), sc.nodes_by_id(), source, "x", 0.0)?,
-                cpu_num_f32(sc.scene(), sc.nodes_by_id(), source, "y", 0.0)?,
-            ])),
-            "DataParse" => {
-                computed = evaluate_data_parse(
-                    sc.scene(), sc.nodes_by_id(), source, 0,
-                    &mut crate::renderer::scene_prep::data_parse_runtime::TsRuntime::new(),
-                )?;
-                data_parse_output(source, &computed, &edge.from.port_id)?
-            }
-            _ => bail!("TextPass.{port} requires a CPU Vector2Input or DataParse, got {}.{}",
-                source.node_type, edge.from.port_id),
-        }
-    } else {
-        let Some(value) = node.params.get(port) else { return Ok(None) };
-        value
-    };
-    let xy = if let Some(a) = value.as_array() {
-        ensure!(a.len() == 2, "TextPass.{port} requires exactly two components");
-        [
-            a.first().and_then(|v| v.as_f64()),
-            a.get(1).and_then(|v| v.as_f64()),
-        ]
-    } else {
-        [
-            value.get("x").and_then(|v| v.as_f64()),
-            value.get("y").and_then(|v| v.as_f64()),
-        ]
-    };
-    let [Some(x), Some(y)] = xy else {
-        bail!("TextPass.{port} requires [x,y] or {{x,y}}");
-    };
-    ensure!(
-        x.is_finite() && y.is_finite(),
-        "TextPass.{port} must be finite"
-    );
-    Ok(Some([x as f32, y as f32]))
-}
-
-fn font(sc: &SceneContext<'_>, node: &Node, port: &str) -> Result<Option<FontSource>> {
-    let Some(edge) = incoming_connection(sc.scene(), &node.id, port) else {
-        return Ok(None);
-    };
-    let source = sc
-        .nodes_by_id()
-        .get(&edge.from.node_id)
-        .context("missing FontFile node")?;
-    ensure!(
-        source.node_type == "FontFile" && edge.from.port_id == "font",
-        "TextPass.{port} requires FontFile.font"
-    );
-    let id = source
-        .params
-        .get("assetId")
-        .and_then(|v| v.as_str())
-        .context("FontFile needs assetId")?;
-    let bytes = if let Some(bytes) = crate::renderer::scene_prep::procedural_test_texture::font_bytes(id) {
-        bytes.to_vec()
-    } else {
-        sc.asset_store
-            .and_then(|store| store.get(id))
-            .with_context(|| format!("FontFile asset '{id}' is not loaded"))?
-            .bytes
-    };
-    let face_index = source
-        .params
-        .get("faceIndex")
-        .map(|v| {
-            v.as_u64()
-                .context("FontFile faceIndex must be a nonnegative integer")
-        })
-        .transpose()?
-        .unwrap_or(0);
-    Ok(Some(FontSource {
-        bytes,
-        face_index: u32::try_from(face_index)?,
-    }))
-}
-
-fn text(sc: &SceneContext<'_>, node: &Node) -> Result<String> {
-    let Some(edge) = incoming_connection(sc.scene(), &node.id, "text") else {
-        return Ok(node
-            .params
-            .get("text")
-            .and_then(|v| v.as_str())
-            .unwrap_or("Node Forge")
-            .into());
-    };
-    let source = sc
-        .nodes_by_id()
-        .get(&edge.from.node_id)
-        .context("missing text source")?;
-    ensure!(
-        source.node_type == "StringFormat" && edge.from.port_id == "text",
-        "TextPass.text requires StringFormat.text"
-    );
-    let decimals = source
-        .params
-        .get("decimals")
-        .map(|v| {
-            v.as_u64()
-                .context("StringFormat decimals must be an integer")
-        })
-        .transpose()?
-        .unwrap_or(0);
-    let values = [
-        crate::dsl::resolve_input_f64(sc.scene(), sc.nodes_by_id(), &source.id, "value0")?
-            .unwrap_or(0.0),
-        crate::dsl::resolve_input_f64(sc.scene(), sc.nodes_by_id(), &source.id, "value1")?
-            .unwrap_or(0.0),
-    ];
-    format_numbers(
-        source
-            .params
-            .get("format")
-            .and_then(|v| v.as_str())
-            .unwrap_or("{0} × {1}"),
-        &values,
-        decimals as usize,
-    )
-}
-
 pub(crate) fn assemble_text_pass(
     sc: &SceneContext<'_>,
     bs: &mut BuilderState<'_>,
     id: &str,
     node: &Node,
 ) -> Result<()> {
-    if let Some(machine) = &sc.scene().state_machine {
-        let dynamic = crate::state_machine::dynamic_render_keys(machine);
-        let mut pending = vec![id.to_string()];
-        let mut visited = std::collections::HashSet::new();
-        while let Some(dependency) = pending.pop() {
-            if !visited.insert(dependency.clone()) {
-                continue;
-            }
-            let prefix = format!("{dependency}:");
-            ensure!(
-                !dynamic.iter().any(|key| key.starts_with(&prefix)),
-                "TextPass {id} depends on animated input {dependency}; per-frame text updates are not supported yet (scene edits are supported)"
-            );
-            pending.extend(
-                sc.scene()
-                    .connections
-                    .iter()
-                    .filter(|edge| edge.to.node_id == dependency)
-                    .map(|edge| edge.from.node_id.clone()),
-            );
-        }
-    }
+    let inputs = crate::renderer::text_inputs::TextInputs {
+        scene: sc.scene(), nodes: sc.nodes_by_id(), asset_store: sc.asset_store,
+    };
+    let (mut request, fonts) = crate::renderer::text_inputs::resolve(&inputs, node)?;
     let number = |port, default| cpu_num_f32(sc.scene(), sc.nodes_by_id(), node, port, default);
-    let string = |port, default: &str| {
-        node.params
-            .get(port)
-            .and_then(|v| v.as_str())
-            .unwrap_or(default)
-            .to_string()
-    };
-    let mut fonts = vec![
-        font(sc, node, "font")?
-            .context("TextPass requires an embedded FontFile on its font input")?,
-    ];
-    if let Some(fallback) = font(sc, node, "fallbackFont")? {
-        fonts.push(fallback);
-    }
-    let font_size = number("fontSize", 28.0)?;
-    let line_height = number("lineHeight", 0.0)?;
-    let weight = number("fontWeight", 0.0)?;
-    ensure!(
-        weight.fract() == 0.0 && (0.0..=1000.0).contains(&weight),
-        "TextPass fontWeight must be an integer in [0, 1000] (0 = embedded face weight)"
-    );
-    let mut request = TextRequest {
-        text: text(sc, node)?,
-        font_size,
-        weight: weight as u16,
-        line_height: if line_height == 0.0 {
-            font_size * 1.2
-        } else {
-            line_height
-        },
-        letter_spacing: number("letterSpacing", 0.0)?,
-        size: vec2(sc, node, "size")?,
-        align: string("align", "left"),
-        vertical_align: string("verticalAlign", "top"),
-        wrap: string("wrap", "none"),
-        hinting: node
-            .params
-            .get("hinting")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false),
-        density: 1.0,
-        phase: [0.0; 2],
-        measured_frame: None,
-    };
     let local_output = sc
         .scene()
         .connections
@@ -250,7 +57,7 @@ pub(crate) fn assemble_text_pass(
     let center = if local_output {
         [target[0] * 0.5, target[1] * 0.5]
     } else {
-        vec2(sc, node, "position")?.unwrap_or([target[0] * 0.5, target[1] * 0.5])
+        crate::renderer::text_inputs::vec2(&inputs, node, "position")?.unwrap_or([target[0] * 0.5, target[1] * 0.5])
     };
     ensure!(
         center.iter().all(|n| n.is_finite()),
