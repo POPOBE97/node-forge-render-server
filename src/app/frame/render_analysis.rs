@@ -613,6 +613,8 @@ pub(super) fn run(
                 );
             }
 
+            let clipping_source_color_space =
+                crate::app::texture_bridge::texture_color_space(app, source.texture_name);
             let should_update_clipping = app.canvas.invalidation.analysis_dirty()
                 || app.canvas.invalidation.clipping_dirty()
                 || app.canvas.analysis.clipping_texture_id.is_none()
@@ -626,6 +628,7 @@ pub(super) fn run(
                     source.view,
                     source.size,
                     app.canvas.analysis.clipping_settings,
+                    clipping_source_color_space,
                 );
 
                 let mut sampler =
@@ -1005,6 +1008,7 @@ fn update_matrix_cell_analysis(
                 &clip_view,
                 clip_size,
                 clipping_settings,
+                cell.variant_scene.working_color_space,
             );
 
             let mut sampler = texture_bridge::canvas_sampler_descriptor(wgpu::FilterMode::Nearest);

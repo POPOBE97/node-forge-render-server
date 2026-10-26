@@ -8,7 +8,7 @@ struct ClipParams {
     shadow_threshold: f32,
     highlight_threshold: f32,
     mode: u32,
-    _pad0: u32,
+    source_color_space: u32,
     _pad1: u32,
     _pad2: u32,
 };
@@ -28,7 +28,14 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         return;
     }
 
-    let rgb = textureLoad(source_tex, vec2<i32>(gid.xy), 0).rgb;
+    var rgb = textureLoad(source_tex, vec2<i32>(gid.xy), 0).rgb;
+    if (params.mode == 1u && params.source_color_space == 1u) {
+        rgb = vec3<f32>(
+            1.2249402 * rgb.r - 0.22494018 * rgb.g,
+            -0.042056955 * rgb.r + 1.042057 * rgb.g,
+            -0.019637555 * rgb.r - 0.07863604 * rgb.g + 1.0982736 * rgb.b,
+        );
+    }
     let max_rgb = max(max(rgb.r, rgb.g), rgb.b);
     let min_rgb = min(min(rgb.r, rgb.g), rgb.b);
 
@@ -69,7 +76,8 @@ struct ClipParams {
     shadow_threshold: f32,
     highlight_threshold: f32,
     mode: u32,
-    _padding: [u32; 3],
+    source_color_space: u32,
+    _padding: [u32; 2],
 }
 
 pub struct ClippingMapRenderer {
@@ -204,6 +212,7 @@ impl ClippingMapRenderer {
         source_view: &wgpu::TextureView,
         source_size: [u32; 2],
         settings: ClippingSettings,
+        source_color_space: crate::color::WorkingColorSpace,
     ) {
         self.ensure_output_size(device, source_size);
 
@@ -212,7 +221,11 @@ impl ClippingMapRenderer {
             shadow_threshold: settings.shadow_threshold.clamp(0.0, 1.0),
             highlight_threshold: settings.highlight_threshold.clamp(0.0, 1.0),
             mode: settings.mode.shader_code(),
-            _padding: [0; 3],
+            source_color_space: match source_color_space {
+                crate::color::WorkingColorSpace::Srgb => 0,
+                crate::color::WorkingColorSpace::DisplayP3 => 1,
+            },
+            _padding: [0; 2],
         };
         queue.write_buffer(&self.params_buffer, 0, bytemuck::bytes_of(&params));
 
@@ -312,5 +325,13 @@ mod tests {
     #[test]
     fn classify_none() {
         assert_eq!(classify([0.3, 0.4, 0.5], 0.02, 0.98), ClipClass::None);
+    }
+
+    #[test]
+    fn p3_cyan_clips_linear_srgb_without_hdr_p3() {
+        let p3 = [0.0, 1.0, 0.92];
+        let srgb = crate::color::linear_p3_to_linear_srgb(p3);
+        assert!(p3.into_iter().all(|channel| (0.0..=1.0).contains(&channel)));
+        assert!(srgb[1] > 1.0);
     }
 }
