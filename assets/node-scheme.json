@@ -2518,7 +2518,7 @@
         },
         {
           "id": "uRefractBlurScale",
-          "name": "blur",
+          "name": "blurScale",
           "type": "float",
           "default": 1,
           "range": {
@@ -3236,7 +3236,7 @@
         },
         {
           "id": "uRefractBlurScale",
-          "name": "blur",
+          "name": "blurScale",
           "type": "float",
           "default": 1,
           "range": {
@@ -4332,17 +4332,19 @@
       "type": "MathClosure",
       "label": "Math Closure",
       "category": "Math",
-      "description": "Encapsulate a custom math expression",
+      "description": "Typed GLSL function body compiled by Naga; assign output or return a value. uv is LocalUV; sample_<texture>(uv) samples a texture input.",
       "inputs": [],
       "outputs": [
         {
           "id": "output",
           "name": "Output",
-          "type": "any"
+          "type": "float"
         }
       ],
       "defaultParams": {
-        "source": "// output = input1 + input2;"
+        "source": "output = 0.0;",
+        "outputType": "float",
+        "outputArrayLength": 1
       }
     },
     {

@@ -97,14 +97,14 @@ fn lc_luminance_curve_rgb__LuminanceCurve_1(color: vec4f, factors: vec4f, mix_fa
     return vec4f(mixed * color.a, color.a);
 }
 
-fn mc_math_closure(uv: vec2<f32>) -> vec4<f32> {
+fn nf_math_closure_fragment_closure(uv: vec2<f32>) -> vec4<f32> {
     var uv_1: vec2<f32>;
-    var output: vec4<f32> = vec4(0f);
+    var output: vec4<f32>;
 
     uv_1 = uv;
     output = vec4<f32>(0f, 0.33333334f, 0.6666667f, 1f);
-    let _e14: vec4<f32> = output;
-    return _e14;
+    let _e12: vec4<f32> = output;
+    return _e12;
 }
 
 
@@ -153,12 +153,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         img_samp_GroupInstance_26_ImageTexture_2,
         image_texture_uv,
     );
-    var math_closure_out: vec4f;
-    {
-        var output: vec4f;
-        output = mc_math_closure(in.uv);
-        math_closure_out = output;
-    }
+    let math_closure_out = nf_math_closure_fragment_closure(vec2f(in.uv.x, 1.0 - in.uv.y));
     // Final composite
     let _frag_out = lc_luminance_curve_rgb__LuminanceCurve_1(image_texture_sample, math_closure_out, 1.0);
     return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));

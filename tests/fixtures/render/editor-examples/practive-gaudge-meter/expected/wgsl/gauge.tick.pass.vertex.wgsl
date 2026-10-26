@@ -35,10 +35,12 @@ var<uniform> params: Params;
 
 
 struct GraphInputs {
-    // Node: Vector4Input_6ab22c56_7
-    node_Vector4Input_6ab22c56_7_6867e865: vec4f,
+    // Node: Vector4Input_063772fb_9
+    node_Vector4Input_063772fb_9_8ef0f049: vec4f,
     // Node: gauge.clock.angle
     node_gauge_clock_angle_d5c8a937: vec4f,
+    // Node: gauge.glass.tint
+    node_gauge_glass_tint_95754a06: vec4f,
 };
 
 @group(0) @binding(2)
@@ -352,18 +354,6 @@ fn glass_adjust_color(color: vec4f, saturation: f32, brightness: f32) -> vec4f {
     return vec4f(adjusted_brightness, alpha);
 }
 
-fn glass_process_color(
-    color: vec4f,
-    luminance_values: vec4f,
-    luminance_amount: f32,
-    saturation: f32,
-    brightness: f32,
-) -> vec4f {
-    var c = glass_luminance_curve_lab(color, luminance_values, luminance_amount);
-    c = vec4f(glass_adjust_color(c, saturation, brightness).rgb, c.a);
-    return c;
-}
-
 fn glass_smooth5_map(t_in: f32) -> f32 {
     // Symmetry avoids catastrophic cancellation in finite-difference normals.
     let t = clamp(0.5 + t_in * 0.5, 0.0, 1.0);
@@ -489,23 +479,6 @@ fn glass_blend_reflect_light(dst: vec4f, lighten: f32, blend_mode: i32) -> vec4f
     }
 }
 
-fn glass_dynamic_add(color: vec3f) -> f32 {
-    // var white_dis = distance(vec3f(1.0), color);
-    // white_dis = smoothstep(0.2, 1.0, white_dis);
-    // white_dis = mix(0.5, 1.0, white_dis);
-    // let lumin = glass_luma(color);
-    // return mix(0.5, white_dis, lumin);
-    return 1.0;
-}
-
-fn glass_add_light(color: vec3f, light_color: vec3f, light_strength: f32) -> vec3f {
-    // var white_dis = distance(vec3f(1.0), color);
-    // white_dis = smoothstep(0.2, 1.0, white_dis);
-    // white_dis = mix(0.3, 1.0, white_dis);
-    // return color + light_color * (light_strength * white_dis);
-    return color + light_color * light_strength;
-}
-
 fn glass_calculate_lighting(normal: vec3f, light_dir: vec3f, intensity: f32, angle_range: f32) -> f32 {
     let normalized_light_dir = normalize(light_dir);
     let dot_product = dot(normal, normalized_light_dir);
@@ -517,33 +490,6 @@ fn glass_calculate_lighting(normal: vec3f, light_dir: vec3f, intensity: f32, ang
 
 fn glass_sample_screen_uv(screen_px: vec2f, resolution: vec2f) -> vec2f {
     return vec2f(screen_px.x, resolution.y - screen_px.y) / resolution;
-}
-
-fn glass_texture_map(
-    tex: texture_2d<f32>,
-    samp: sampler,
-    sample_uv: vec2f,
-    add_foreground: bool,
-    reflect_lighten_opacity: f32,
-    reflect_lighten_blend_mode: i32,
-    fg_tex: texture_2d<f32>,
-    fg_samp: sampler,
-    frag_uv: vec2f,
-) -> vec4f {
-    var col = textureSample(tex, samp, sample_uv);
-
-    if (add_foreground) {
-        let lighten = glass_get_lighten(fg_tex, fg_samp, frag_uv);
-        let curve_value = mix(
-            vec4f(0.0/3.0 + 0.0, 1.0/3.0 + 0.0, 2.0/3.0 + 0.0, 3.0/3.0 + 0.0),
-            vec4f(0.0/3.0 + 0.2, 1.0/3.0 + 0.2, 2.0/3.0 + 0.2, 3.0/3.0 + 0.2),
-            lighten
-        );
-        col = glass_luminance_curve_lab(col, curve_value, 1.0);
-        // col = glass_blend_reflect_light(col, lighten * reflect_lighten_opacity, reflect_lighten_blend_mode);
-    }
-
-    return col;
 }
 
 
@@ -691,53 +637,59 @@ fn sdf2d_smooth_round_rect(point: vec2f, center: vec2f, radius: f32, axis_mix: v
 
 
 // --- Extra WGSL declarations (generated) ---
-fn mc_math_closure(uv: vec2<f32>, index: i32, angle: f32) -> vec3<f32> {
+fn nf_math_closure_vertex_closure(uv: vec2<f32>, index: i32, angle: f32) -> vec3<f32> {
     var uv_1: vec2<f32>;
     var index_1: i32;
     var angle_1: f32;
-    var output: vec3<f32> = vec3(0f);
-    var i: f32;
+    var output: vec3<f32>;
+    var theta: f32;
     var a: f32;
+    var p: vec2<f32>;
+    var local: vec3<f32>;
 
     uv_1 = uv;
     index_1 = index;
     angle_1 = angle;
-    let _e9: i32 = index_1;
-    let _e11: i32 = index_1;
-    let _e17: i32 = index_1;
-    i = (f32(_e9) + floor(((f32(_e17) + 1f) / 4f)));
-    let _e27: f32 = i;
-    let _e31: f32 = angle_1;
-    let _e34: f32 = i;
-    let _e38: f32 = angle_1;
-    a = radians(((132f + (_e34 * 6f)) + _e38));
-    let _e47: f32 = a;
-    let _e50: f32 = a;
-    let _e55: vec2<f32> = (vec2<f32>(1575f, -90f) + (vec2<f32>(cos(_e47), sin(_e50)) * 1350f));
-    output = vec3<f32>(_e55.x, _e55.y, 0f);
-    let _e60: vec3<f32> = output;
-    return _e60;
+    let _e8: i32 = index_1;
+    let _e10: i32 = index_1;
+    let _e14: i32 = index_1;
+    let _e25: f32 = angle_1;
+    theta = ((150f - (((f32(_e8) + floor((f32(_e14) / 4f))) + 1f) * 6f)) + _e25);
+    let _e29: f32 = theta;
+    a = radians(_e29);
+    let _e37: f32 = a;
+    let _e40: f32 = a;
+    p = (vec2<f32>(1575f, -90f) + (vec2<f32>(cos(_e37), sin(_e40)) * 1350f));
+    let _e47: f32 = theta;
+    let _e50: f32 = theta;
+    if ((_e47 < 132f) || (_e50 > 168f)) {
+        local = vec3<f32>(100000f, 100000f, 0f);
+    } else {
+        let _e58: vec2<f32> = p;
+        local = vec3<f32>(_e58.x, _e58.y, 0f);
+    }
+    let _e64: vec3<f32> = local;
+    output = _e64;
+    let _e65: vec3<f32> = output;
+    return _e65;
 }
 
-fn mc_math_closure_856912e0_(uv: vec2<f32>, index: i32, angle: f32) -> vec3<f32> {
+fn nf_math_closure_vertex_f3d1e576_closure(uv: vec2<f32>, index: i32, angle: f32) -> vec3<f32> {
     var uv_1: vec2<f32>;
     var index_1: i32;
     var angle_1: f32;
-    var output: vec3<f32> = vec3(0f);
-    var i: f32;
+    var output: vec3<f32>;
 
     uv_1 = uv;
     index_1 = index;
     angle_1 = angle;
-    let _e9: i32 = index_1;
-    let _e11: i32 = index_1;
-    let _e17: i32 = index_1;
-    i = (f32(_e9) + floor(((f32(_e17) + 1f) / 4f)));
-    let _e29: f32 = i;
-    let _e33: f32 = angle_1;
-    output = vec3<f32>(0f, 0f, ((132f + (_e29 * 6f)) + _e33));
-    let _e36: vec3<f32> = output;
-    return _e36;
+    let _e10: i32 = index_1;
+    let _e12: i32 = index_1;
+    let _e16: i32 = index_1;
+    let _e27: f32 = angle_1;
+    output = vec3<f32>(0f, 0f, ((150f - (((f32(_e10) + floor((f32(_e16) / 4f))) + 1f) * 6f)) + _e27));
+    let _e30: vec3<f32> = output;
+    return _e30;
 }
 
 
@@ -770,22 +722,8 @@ fn sys_apply_trs_xyz(p: vec3f, t: vec3f, r_deg: vec3f, s: vec3f) -> vec3f {
  ) -> VSOut {
  var out: VSOut;
 
-    var math_closure_out: vec3f;
-    {
-        let index = i32(instance_index);
-        let angle = (graph_inputs.node_gauge_clock_angle_d5c8a937).x;
-        var output: vec3f;
-        output = mc_math_closure(uv, index, angle);
-        math_closure_out = output;
-    }
-    var math_closure_out_57c25048: vec3f;
-    {
-        let index = i32(instance_index);
-        let angle = (graph_inputs.node_gauge_clock_angle_d5c8a937).x;
-        var output: vec3f;
-        output = mc_math_closure_856912e0_(uv, index, angle);
-        math_closure_out_57c25048 = output;
-    }
+    let math_closure_out = nf_math_closure_vertex_closure(vec2f(uv.x, 1.0 - uv.y), i32(instance_index), (graph_inputs.node_gauge_clock_angle_d5c8a937).x);
+    let math_closure_out_80c6ab09 = nf_math_closure_vertex_f3d1e576_closure(vec2f(uv.x, 1.0 - uv.y), i32(instance_index), (graph_inputs.node_gauge_clock_angle_d5c8a937).x);
  out.instance_index = instance_index;
 
  let _unused_geo_size = params.geo_size;
@@ -804,7 +742,7 @@ fn sys_apply_trs_xyz(p: vec3f, t: vec3f, r_deg: vec3f, s: vec3f) -> vec3f {
 
  var p_local = (inst_m * vec4f(position, 1.0)).xyz;
 
- let delta_t = (sys_apply_trs_xyz(p_local, math_closure_out, math_closure_out_57c25048, vec3f(1.0, 1.0, 1.0)) - p_local);
+ let delta_t = (sys_apply_trs_xyz(p_local, math_closure_out, math_closure_out_80c6ab09, vec3f(1.0, 1.0, 1.0)) - p_local);
  p_local = p_local + delta_t;
 
  // Geometry vertices are in local pixel units centered at (0,0).

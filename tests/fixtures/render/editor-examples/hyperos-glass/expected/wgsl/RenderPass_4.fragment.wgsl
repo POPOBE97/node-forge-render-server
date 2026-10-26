@@ -271,21 +271,43 @@ fn hyperos_glass_luminance_curve(color: vec4f, factors: vec4f, mix_factor: f32) 
         factors.x,
     );
 
-    let alpha = max(color.a, 0.0001);
-    let scale = 1.0 / alpha;
-    let scaled_rgb = scale * color.rgb;
-    let luminance = dot(scaled_rgb, vec3f(0.2125, 0.7153, 0.0721));
+    if (color.a <= 0.0001) {
+        return color;
+    }
 
-    var adj = luminance * factor_adjust.x + factor_adjust.y;
-    adj = adj * luminance + factor_adjust.z;
-    adj = adj * luminance + factor_adjust.w;
+    let rgb = color.rgb / color.a;
+    let lms = vec3f(
+        0.4122214708 * rgb.r + 0.5363325363 * rgb.g + 0.0514459929 * rgb.b,
+        0.2119034982 * rgb.r + 0.6806995451 * rgb.g + 0.1073969566 * rgb.b,
+        0.0883024619 * rgb.r + 0.2817188376 * rgb.g + 0.6299787005 * rgb.b,
+    );
+    let lms_cbrt = sign(lms) * pow(abs(lms), vec3f(1.0 / 3.0));
+    let lab = vec3f(
+        0.2104542553 * lms_cbrt.x + 0.7936177850 * lms_cbrt.y - 0.0040720468 * lms_cbrt.z,
+        1.9779984951 * lms_cbrt.x - 2.4285922050 * lms_cbrt.y + 0.4505937099 * lms_cbrt.z,
+        0.0259040371 * lms_cbrt.x + 0.7827717662 * lms_cbrt.y - 0.8086757660 * lms_cbrt.z,
+    );
 
-    let ray_scale = select(0.0, adj / luminance, luminance > 0.0001);
-    let mapped_rgb = scaled_rgb * ray_scale;
-    let mixed = mix(scaled_rgb, mapped_rgb, mix_factor);
-    let result_rgb = mixed * alpha;
+    let curve_input = clamp(lab.x, 0.0, 1.0);
+    var target_l = curve_input * factor_adjust.x + factor_adjust.y;
+    target_l = target_l * curve_input + factor_adjust.z;
+    target_l = target_l * curve_input + factor_adjust.w;
 
-    return vec4f(result_rgb, color.a);
+    let mapped_l = mix(lab.x, target_l, mix_factor);
+    let mapped_lms_cbrt = vec3f(
+        mapped_l + 0.3963377774 * lab.y + 0.2158037573 * lab.z,
+        mapped_l - 0.1055613458 * lab.y - 0.0638541728 * lab.z,
+        mapped_l - 0.0894841775 * lab.y - 1.2914855480 * lab.z,
+    );
+    let mapped_lms = mapped_lms_cbrt * mapped_lms_cbrt * mapped_lms_cbrt;
+    var mapped_rgb = vec3f(
+        4.0767416621 * mapped_lms.x - 3.3077115913 * mapped_lms.y + 0.2309699292 * mapped_lms.z,
+        -1.2684380046 * mapped_lms.x + 2.6097574011 * mapped_lms.y - 0.3413193965 * mapped_lms.z,
+        -0.0041960863 * mapped_lms.x - 0.7034186147 * mapped_lms.y + 1.7076147010 * mapped_lms.z,
+    );
+    mapped_rgb = max(vec3f(0.0), mapped_rgb);
+
+    return vec4f(mapped_rgb * color.a, color.a);
 }
 
 fn hyperos_glass_adjust_color(color: vec4f, saturation: f32, brightness: f32) -> vec4f {
@@ -294,18 +316,6 @@ fn hyperos_glass_adjust_color(color: vec4f, saturation: f32, brightness: f32) ->
     let alpha = color.a;
     let adjusted_brightness = adjusted_saturation + vec3f(brightness * alpha);
     return vec4f(adjusted_brightness, alpha);
-}
-
-fn hyperos_glass_process_color(
-    color: vec4f,
-    luminance_values: vec4f,
-    luminance_amount: f32,
-    saturation: f32,
-    brightness: f32,
-) -> vec4f {
-    var c = hyperos_glass_luminance_curve(color, luminance_values, luminance_amount);
-    c = vec4f(hyperos_glass_adjust_color(c, saturation, brightness).rgb, c.a);
-    return c;
 }
 
 fn hyperos_glass_smooth5_map(t_in: f32) -> f32 {
@@ -429,14 +439,6 @@ fn hyperos_glass_blend_reflect_light(dst: vec4f, lighten: f32, blend_mode: i32) 
             return vec4f(hyperos_glass_hsvv(dst.rgb, lighten), dst.a);
         }
     }
-}
-
-fn hyperos_glass_dynamic_add(color: vec3f) -> f32 {
-    var white_dis = distance(vec3f(1.0), color);
-    white_dis = smoothstep(0.2, 1.0, white_dis);
-    white_dis = mix(0.5, 1.0, white_dis);
-    let lumin = hyperos_glass_luma(color);
-    return mix(0.5, white_dis, lumin);
 }
 
 fn hyperos_glass_add_light(color: vec3f, light_color: vec3f, light_strength: f32) -> vec3f {
@@ -594,7 +596,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      let refract_thickness = mix((f32(50.0) - edge) * 2.0, f32(50.0) * 2.0, normalized_sdf);
      let refract_local_px = uv_display_px + refract_dir.xy * refract_thickness;
      let refract_uv = hyperos_glass_sample_screen_uv(geo_origin_px + refract_local_px, params.target_size);
-     var refraction = hyperos_glass_texture_map(pass_tex_sys_group_BackgroundPass_GuassianBlurPass_42, pass_samp_sys_group_BackgroundPass_GuassianBlurPass_42, refract_uv, false, 1.0, 0, pass_tex_sys_group_BackgroundPass_GuassianBlurPass_42, pass_samp_sys_group_BackgroundPass_GuassianBlurPass_42, screen_uv);
+     var refraction = textureSample(pass_tex_sys_group_BackgroundPass_GuassianBlurPass_42, pass_samp_sys_group_BackgroundPass_GuassianBlurPass_42, refract_uv);
      {
          let l = hyperos_glass_luma(refraction.rgb);
          let dark_target = 0.1 * (vec3f(1.0) - vec3f(0.2126, 0.7152, 0.0722));
@@ -605,7 +607,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      let reflect_dir = reflect(incident_ray, normal);
      let reflect_local_px = uv_display_px + reflect_dir.xy * mix(0.0, f32(0.0), 1.0 - normalized_sdf);
      let reflect_uv = hyperos_glass_sample_screen_uv(geo_origin_px + reflect_local_px, params.target_size);
-     var reflection = hyperos_glass_texture_map(pass_tex_sys_group_BackgroundPass_GuassianBlurPass_42, pass_samp_sys_group_BackgroundPass_GuassianBlurPass_42, reflect_uv, false, 1.0, 0, pass_tex_sys_group_BackgroundPass_GuassianBlurPass_42, pass_samp_sys_group_BackgroundPass_GuassianBlurPass_42, screen_uv);
+     var reflection = textureSample(pass_tex_sys_group_BackgroundPass_GuassianBlurPass_42, pass_samp_sys_group_BackgroundPass_GuassianBlurPass_42, reflect_uv);
      {
          let l = hyperos_glass_luma(reflection.rgb);
          let dark_target = 0.1 * (vec3f(1.0) - vec3f(0.2126, 0.7152, 0.0722));
@@ -616,12 +618,8 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      var hyperos_glass_mat = mix(refraction, reflection, (1.0 - edge_normalized_sdf) * f32(0.5));
      hyperos_glass_mat = vec4f(hyperos_glass_add_light(hyperos_glass_mat.rgb, reflection.rgb, (1.0 - light_normalized_sdf) * f32(0.5)), hyperos_glass_mat.a);
 
-     // --- Process color (luminance curve + saturation + brightness) ---
-     hyperos_glass_mat = hyperos_glass_luminance_curve(hyperos_glass_mat, vec4f(0.0, 1.387034059, 1.116781473, 1.732936382), f32(0.0));
-     hyperos_glass_mat = vec4f(hyperos_glass_adjust_color(hyperos_glass_mat, f32(1.0), f32(0.0)).rgb, hyperos_glass_mat.a);
-
      // --- Background color tinting ---
-     var hyperos_glass_color = hyperos_glass_texture_map(pass_tex_sys_group_BackgroundPass_GuassianBlurPass_42, pass_samp_sys_group_BackgroundPass_GuassianBlurPass_42, screen_uv, false, 1.0, 0, pass_tex_sys_group_BackgroundPass_GuassianBlurPass_42, pass_samp_sys_group_BackgroundPass_GuassianBlurPass_42, screen_uv);
+     var hyperos_glass_color = textureSample(pass_tex_sys_group_BackgroundPass_GuassianBlurPass_42, pass_samp_sys_group_BackgroundPass_GuassianBlurPass_42, screen_uv);
      {
          let l = hyperos_glass_luma(hyperos_glass_color.rgb);
          let dark_target = 0.1 * (vec3f(1.0) - vec3f(0.2126, 0.7152, 0.0722));
@@ -656,13 +654,17 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      // --- Apply color ratio + inner color ---
      hyperos_glass_mat = vec4f(hyperos_glass_mat.rgb * hyperos_glass_color_ratio, hyperos_glass_mat.a);
      hyperos_glass_mat = vec4f(mix(hyperos_glass_mat.rgb, hyperos_glass_color_ratio, f32(0.0) * color_ratio), hyperos_glass_mat.a);
-     hyperos_glass_mat = vec4f(hyperos_glass_mat.rgb + vec3f(pow(smoothstep(1.0, 0.0, 1.0 - in.uv.y), 2.0) * f32(0.0)), hyperos_glass_mat.a);
 
-     // --- Directional lighting ---
-     let lighting1 = hyperos_glass_calculate_lighting(light_normal, vec3f(0.5, -0.699999988, 0.5), f32(1.0), f32(0.5));
-     let lighting2 = hyperos_glass_calculate_lighting(light_normal, vec3f(0.5, -0.699999988, 0.5) * vec3f(-1.0, -1.0, 1.0), f32(0.0), f32(0.5));
-     let light_ratio = hyperos_glass_dynamic_add(hyperos_glass_mat.rgb);
-     hyperos_glass_mat = vec4f(hyperos_glass_hsvv(hyperos_glass_mat.rgb, (lighting1 + lighting2) * 2.0 * light_ratio), hyperos_glass_mat.a);
+     // --- Combine every light source before one icon-style OKLab remap ---
+     let lighting1 = hyperos_glass_calculate_lighting(light_normal, vec3f(0.699999988, -0.600000024, 0.0), f32(1.0), f32(0.5));
+     let lighting2 = hyperos_glass_calculate_lighting(light_normal, vec3f(0.699999988, -0.600000024, 0.0) * vec3f(-1.0, -1.0, 1.0), f32(0.600000024), f32(0.5));
+     let bottom_lighting = pow(smoothstep(1.0, 0.0, 1.0 - in.uv.y), 2.0) * f32(0.0);
+     let luminance_amount = f32(0.0) + lighting1 + lighting2 + 0.0 + bottom_lighting;
+     if (luminance_amount != 0.0) {
+         let lit = hyperos_glass_luminance_curve(vec4f(hyperos_glass_mat.rgb, 1.0), vec4f(0.701035976, 0.700163722, 1.502358794, 1.499537945), luminance_amount);
+         hyperos_glass_mat = vec4f(lit.rgb, hyperos_glass_mat.a);
+     }
+     hyperos_glass_mat = vec4f(hyperos_glass_adjust_color(hyperos_glass_mat, f32(1.0), f32(0.0)).rgb, hyperos_glass_mat.a);
 
      // --- Final adjustments ---
      hyperos_glass_mat = vec4f(pow(hyperos_glass_mat.rgb, vec3f(f32(1.0))), hyperos_glass_mat.a);

@@ -357,18 +357,6 @@ fn glass_adjust_color(color: vec4f, saturation: f32, brightness: f32) -> vec4f {
     return vec4f(adjusted_brightness, alpha);
 }
 
-fn glass_process_color(
-    color: vec4f,
-    luminance_values: vec4f,
-    luminance_amount: f32,
-    saturation: f32,
-    brightness: f32,
-) -> vec4f {
-    var c = glass_luminance_curve_lab(color, luminance_values, luminance_amount);
-    c = vec4f(glass_adjust_color(c, saturation, brightness).rgb, c.a);
-    return c;
-}
-
 fn glass_smooth5_map(t_in: f32) -> f32 {
     // Symmetry avoids catastrophic cancellation in finite-difference normals.
     let t = clamp(0.5 + t_in * 0.5, 0.0, 1.0);
@@ -494,23 +482,6 @@ fn glass_blend_reflect_light(dst: vec4f, lighten: f32, blend_mode: i32) -> vec4f
     }
 }
 
-fn glass_dynamic_add(color: vec3f) -> f32 {
-    // var white_dis = distance(vec3f(1.0), color);
-    // white_dis = smoothstep(0.2, 1.0, white_dis);
-    // white_dis = mix(0.5, 1.0, white_dis);
-    // let lumin = glass_luma(color);
-    // return mix(0.5, white_dis, lumin);
-    return 1.0;
-}
-
-fn glass_add_light(color: vec3f, light_color: vec3f, light_strength: f32) -> vec3f {
-    // var white_dis = distance(vec3f(1.0), color);
-    // white_dis = smoothstep(0.2, 1.0, white_dis);
-    // white_dis = mix(0.3, 1.0, white_dis);
-    // return color + light_color * (light_strength * white_dis);
-    return color + light_color * light_strength;
-}
-
 fn glass_calculate_lighting(normal: vec3f, light_dir: vec3f, intensity: f32, angle_range: f32) -> f32 {
     let normalized_light_dir = normalize(light_dir);
     let dot_product = dot(normal, normalized_light_dir);
@@ -522,33 +493,6 @@ fn glass_calculate_lighting(normal: vec3f, light_dir: vec3f, intensity: f32, ang
 
 fn glass_sample_screen_uv(screen_px: vec2f, resolution: vec2f) -> vec2f {
     return vec2f(screen_px.x, resolution.y - screen_px.y) / resolution;
-}
-
-fn glass_texture_map(
-    tex: texture_2d<f32>,
-    samp: sampler,
-    sample_uv: vec2f,
-    add_foreground: bool,
-    reflect_lighten_opacity: f32,
-    reflect_lighten_blend_mode: i32,
-    fg_tex: texture_2d<f32>,
-    fg_samp: sampler,
-    frag_uv: vec2f,
-) -> vec4f {
-    var col = textureSample(tex, samp, sample_uv);
-
-    if (add_foreground) {
-        let lighten = glass_get_lighten(fg_tex, fg_samp, frag_uv);
-        let curve_value = mix(
-            vec4f(0.0/3.0 + 0.0, 1.0/3.0 + 0.0, 2.0/3.0 + 0.0, 3.0/3.0 + 0.0),
-            vec4f(0.0/3.0 + 0.2, 1.0/3.0 + 0.2, 2.0/3.0 + 0.2, 3.0/3.0 + 0.2),
-            lighten
-        );
-        col = glass_luminance_curve_lab(col, curve_value, 1.0);
-        // col = glass_blend_reflect_light(col, lighten * reflect_lighten_opacity, reflect_lighten_blend_mode);
-    }
-
-    return col;
 }
 
 
@@ -657,6 +601,8 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
 
 
 
+
+
      // --- Refraction ---
      let uv_display_px = (local_px - half_size_px) * f32(1.0) + half_size_px;
      let incident_ray = normalize(vec3f(0.0, 0.0, -1.0));
@@ -665,21 +611,19 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      let refract_thickness = mix((f32(80.0) - edge) * 2.0, f32(80.0) * 2.0, clamp(normalized_sdf, 0.0, 1.0));
      let refract_local_px = uv_display_px + refract_dir.xy * refract_thickness;
      let refract_uv = glass_sample_screen_uv(geo_origin_px + refract_local_px, params.target_size);
-     let refraction = glass_texture_map(pass_tex_sys_group_BackgroundPass_GuassianBlurPass_42, pass_samp_sys_group_BackgroundPass_GuassianBlurPass_42, refract_uv, true, 1.0, 0, pass_tex_TextureRender_GroupInstance_79_out_0, pass_samp_TextureRender_GroupInstance_79_out_0, screen_uv);
+     let refraction = textureSample(pass_tex_sys_group_BackgroundPass_GuassianBlurPass_42, pass_samp_sys_group_BackgroundPass_GuassianBlurPass_42, refract_uv);
 
      // --- Reflection ---
      let reflect_dir = reflect(incident_ray, normal);
      let reflect_local_px = uv_display_px + reflect_dir.xy * mix(0.0, f32(750.0), 1.0 - clamp(normalized_sdf, 0.0, 1.0));
      let reflect_uv = glass_sample_screen_uv(geo_origin_px + reflect_local_px, params.target_size);
-     let reflection = glass_texture_map(pass_tex_sys_group_BackgroundPass_GuassianBlurPass_42, pass_samp_sys_group_BackgroundPass_GuassianBlurPass_42, reflect_uv, true, 1.0, 0, pass_tex_TextureRender_GroupInstance_79_out_0, pass_samp_TextureRender_GroupInstance_79_out_0, screen_uv);
+     let reflection = textureSample(pass_tex_sys_group_BackgroundPass_GuassianBlurPass_42, pass_samp_sys_group_BackgroundPass_GuassianBlurPass_42, reflect_uv);
 
      // --- Mix refraction + reflection ---
      var glass_mat = mix(refraction, reflection, clamp(1.0 + dot(normal, incident_ray) * 1.0, 0.0, 1.0));
-    glass_mat = glass_luminance_curve_lab(glass_mat, (graph_inputs.node_Vector4Input_82_911287d3), 1.0);
-    //  glass_mat = vec4f(glass_add_light(glass_mat.rgb, reflection.rgb, (1.0 - light_normalized_sdf) * 0.0), glass_mat.a);
 
      // --- Background color tinting ---
-     var glass_color = glass_texture_map(pass_tex_sys_group_BackgroundPass_GuassianBlurPass_42, pass_samp_sys_group_BackgroundPass_GuassianBlurPass_42, screen_uv, true, 1.0, 0, pass_tex_TextureRender_GroupInstance_79_out_0, pass_samp_TextureRender_GroupInstance_79_out_0, screen_uv);
+     var glass_color = textureSample(pass_tex_sys_group_BackgroundPass_GuassianBlurPass_42, pass_samp_sys_group_BackgroundPass_GuassianBlurPass_42, screen_uv);
      glass_color = glass_adjust_color(glass_color, 1.0, 0.0);
      glass_color = vec4f(mix(glass_color.rgb, vec3f(1.0), 0.0), glass_color.a);
      let glass_color_luma = clamp(glass_luma(glass_color.rgb), 0.0, 1.0);
@@ -709,13 +653,18 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      // --- Apply color ratio + inner color ---
      glass_mat = vec4f(glass_mat.rgb * mix(vec3f(1.0), glass_color_ratio, 1.0), glass_mat.a);
      glass_mat = vec4f(mix(glass_mat.rgb, glass_color_ratio, 0.0 * color_ratio), glass_mat.a);
-     glass_mat = vec4f(glass_mat.rgb + vec3f(pow(smoothstep(1.0, 0.0, 1.0 - in.uv.y), 2.0) * 0.0), glass_mat.a);
-
-     // --- Directional lighting ---
+     // --- Combine all light sources and the authored curve before one OKLab remap ---
      let lighting1 = glass_calculate_lighting(light_normal, vec3f(-0.400000006, 0.600000024, -0.25), 0.800000012, 0.280000001);
      let lighting2 = glass_calculate_lighting(light_normal, vec3f(-0.400000006, 0.600000024, -0.25) * vec3f(-1.0, -1.0, 1.0), 0.600000024, 0.280000001);
-     let light_ratio = glass_dynamic_add(glass_mat.rgb);
-     glass_mat += lighting1 + lighting2;
+     let bottom_lighting = pow(smoothstep(1.0, 0.0, 1.0 - in.uv.y), 2.0) * 0.0;
+     let lighting = lighting1 + lighting2 + glass_get_lighten(pass_tex_TextureRender_GroupInstance_79_out_0, pass_samp_TextureRender_GroupInstance_79_out_0, screen_uv) + bottom_lighting;
+     if (lighting != 0.0 || 1.0 != 0.0) {
+         let identity_curve = vec4f(0.0, 1.0 / 3.0, 2.0 / 3.0, 1.0);
+         let curve = mix(identity_curve, (graph_inputs.node_Vector4Input_82_911287d3), 1.0) + vec4f(0.2 * lighting);
+         // Material RGB is premultiplied only at the end; illumination must not change alpha.
+         let lit = glass_luminance_curve_lab(vec4f(glass_mat.rgb, 1.0), curve, 1.0);
+         glass_mat = vec4f(lit.rgb, glass_mat.a);
+     }
 
      // --- Final adjustments ---
      glass_mat = vec4f(pow(glass_mat.rgb, vec3f(1.0)), glass_mat.a);

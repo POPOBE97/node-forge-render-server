@@ -19,7 +19,6 @@
 pub mod camera;
 pub(crate) mod gaussian_contract;
 pub mod geometry_resolver;
-pub mod glsl_snippet;
 pub mod graph_uniforms;
 pub mod node_compiler;
 pub mod pass_debug;

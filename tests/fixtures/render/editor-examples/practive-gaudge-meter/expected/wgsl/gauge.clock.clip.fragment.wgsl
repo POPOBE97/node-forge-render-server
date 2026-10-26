@@ -47,38 +47,34 @@ var<uniform> graph_inputs: GraphInputs;
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;
 @group(1) @binding(0)
-var pass_tex_sys_route_texture_gauge_surface_pass: texture_2d<f32>;
+var pass_tex_sys_route_texture_gauge_surface_glass_pass: texture_2d<f32>;
 
 @group(1) @binding(1)
-var pass_samp_sys_route_texture_gauge_surface_pass: sampler;
+var pass_samp_sys_route_texture_gauge_surface_glass_pass: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---
-fn mc_math_closure(uv: vec2<f32>) -> vec4<f32> {
-    var uv_1: vec2<f32>;
-    var output: vec4<f32> = vec4(0f);
+fn nf_math_closure_fragment_closure(uv_2: vec2<f32>) -> vec4<f32> {
+    var uv_3: vec2<f32>;
+    var output: vec4<f32>;
 
-    uv_1 = uv;
-    let _e6: vec2<f32> = uv_1;
-    let _e7: vec4<f32> = sample_pass_image(_e6);
-    output = _e7;
-    let _e8: vec4<f32> = output;
-    return _e8;
+    uv_3 = uv_2;
+    let _e4: vec2<f32> = uv_3;
+    let _e5: vec4<f32> = nf_math_closure_fragment_closure_sample_image_texture(_e4);
+    output = _e5;
+    let _e6: vec4<f32> = output;
+    return _e6;
 }
 
-fn sample_pass_image(uv_in: vec2f) -> vec4f {
-    return textureSample(pass_tex_sys_route_texture_gauge_surface_pass, pass_samp_sys_route_texture_gauge_surface_pass, uv_in);
+fn nf_math_closure_fragment_closure_sample_image_texture(uv: vec2f) -> vec4f {
+    let raster_uv = vec2f(uv.x, 1.0 - uv.y);
+    return textureSample(pass_tex_sys_route_texture_gauge_surface_glass_pass, pass_samp_sys_route_texture_gauge_surface_glass_pass, raster_uv);
 }
 
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    var math_closure_out: vec4f;
-    {
-        var output: vec4f;
-        output = mc_math_closure(in.uv);
-        math_closure_out = output;
-    }
+    let math_closure_out = nf_math_closure_fragment_closure(vec2f(in.uv.x, 1.0 - in.uv.y));
     // MathClamp sys.image-pass.gauge.clock.clip.alpha.clamp.result
     let math_clamp = clamp(
         (graph_inputs.sys_image_pass_gauge_clock_clip_alpha_default).x,

@@ -290,54 +290,56 @@ fn blendLuminance(src: vec4f, dst: vec4f) -> vec4f {
     return blendHSLColor(vec2f(1.0, 0.0), src, dst);
 }
 
-fn mc_math_closure(uv: vec2<f32>, intelli: vec4<f32>) -> vec4<f32> {
-    var uv_1: vec2<f32>;
+fn nf_math_closure_fragment_8350e9df_closure(uv_4: vec2<f32>, intelli: vec4<f32>) -> vec4<f32> {
+    var uv_5: vec2<f32>;
     var intelli_1: vec4<f32>;
-    var output: vec4<f32> = vec4(0f);
+    var output: vec4<f32>;
     var c_l0_: vec4<f32>;
     var c_l1_: vec4<f32>;
     var bloom: vec4<f32>;
 
-    uv_1 = uv;
+    uv_5 = uv_4;
     intelli_1 = intelli;
-    let _e8: vec2<f32> = uv_1;
-    let _e9: vec4<f32> = sample_pass_l0_(_e8);
-    c_l0_ = _e9;
-    let _e12: vec2<f32> = uv_1;
-    let _e13: vec4<f32> = sample_pass_l1_(_e12);
-    c_l1_ = _e13;
-    let _e15: vec4<f32> = c_l0_;
-    let _e16: vec4<f32> = c_l1_;
-    bloom = (_e15 + _e16);
-    let _e19: vec4<f32> = bloom;
-    let _e20: vec4<f32> = intelli_1;
-    output = ((_e19 * _e20) * 1.5f);
-    let _e24: vec4<f32> = output;
-    return _e24;
+    let _e6: vec2<f32> = uv_5;
+    let _e7: vec4<f32> = nf_math_closure_fragment_8350e9df_closure_sample_l0_texture(_e6);
+    c_l0_ = _e7;
+    let _e10: vec2<f32> = uv_5;
+    let _e11: vec4<f32> = nf_math_closure_fragment_8350e9df_closure_sample_l1_texture(_e10);
+    c_l1_ = _e11;
+    let _e13: vec4<f32> = c_l0_;
+    let _e14: vec4<f32> = c_l1_;
+    bloom = (_e13 + _e14);
+    let _e17: vec4<f32> = bloom;
+    let _e18: vec4<f32> = intelli_1;
+    output = ((_e17 * _e18) * 1.5f);
+    let _e22: vec4<f32> = output;
+    return _e22;
 }
 
-fn mc_math_closure_534c24ef(uv: vec2<f32>, x: vec4<f32>, y: vec4<f32>) -> vec4<f32> {
+fn nf_math_closure_fragment_8350e9df_closure_sample_l0_texture(uv: vec2f) -> vec4f {
+    let raster_uv = vec2f(uv.x, 1.0 - uv.y);
+    return textureSample(pass_tex_TextureRender_RenderPass_4_pass, pass_samp_TextureRender_RenderPass_4_pass, raster_uv);
+}
+
+fn nf_math_closure_fragment_8350e9df_closure_sample_l1_texture(uv: vec2f) -> vec4f {
+    let raster_uv = vec2f(uv.x, 1.0 - uv.y);
+    return textureSample(pass_tex_BloomNode_52, pass_samp_BloomNode_52, raster_uv);
+}
+
+fn nf_math_closure_fragment_closure(uv: vec2<f32>, x: vec4<f32>, y: vec4<f32>) -> vec4<f32> {
     var uv_1: vec2<f32>;
     var x_1: vec4<f32>;
     var y_1: vec4<f32>;
-    var output: vec4<f32> = vec4(0f);
+    var output: vec4<f32>;
 
     uv_1 = uv;
     x_1 = x;
     y_1 = y;
-    let _e9: vec4<f32> = x_1;
-    let _e10: vec4<f32> = y_1;
-    output = (_e9 + _e10);
-    let _e12: vec4<f32> = output;
-    return _e12;
-}
-
-fn sample_pass_l0_(uv_in: vec2f) -> vec4f {
-    return textureSample(pass_tex_TextureRender_RenderPass_4_pass, pass_samp_TextureRender_RenderPass_4_pass, uv_in);
-}
-
-fn sample_pass_l1_(uv_in: vec2f) -> vec4f {
-    return textureSample(pass_tex_BloomNode_52, pass_samp_BloomNode_52, uv_in);
+    let _e7: vec4<f32> = x_1;
+    let _e8: vec4<f32> = y_1;
+    output = (_e7 + _e8);
+    let _e10: vec4<f32> = output;
+    return _e10;
 }
 
 
@@ -394,22 +396,9 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         img_samp_ImageTexture_50,
         image_texture_uv_6ef50715,
     );
-    var math_closure_out_4bd9b11e: vec4f;
-    {
-        let intelli = image_texture_sample_9bb83210;
-        var output: vec4f;
-        output = mc_math_closure(in.uv, intelli);
-        math_closure_out_4bd9b11e = output;
-    }
-    var math_closure_out: vec4f;
-    {
-        let x = blendNormal((vec4f((graph_inputs.color_input_48).rgb * (graph_inputs.color_input_48).a, (graph_inputs.color_input_48).a)), (image_texture_sample));
-        let y = math_closure_out_4bd9b11e;
-        var output: vec4f;
-        output = mc_math_closure_534c24ef(in.uv, x, y);
-        math_closure_out = output;
-    }
+    let math_closure_out = nf_math_closure_fragment_8350e9df_closure(vec2f(in.uv.x, 1.0 - in.uv.y), image_texture_sample_9bb83210);
+    let math_closure_out_f020af35 = nf_math_closure_fragment_closure(vec2f(in.uv.x, 1.0 - in.uv.y), blendNormal((vec4f((graph_inputs.color_input_48).rgb * (graph_inputs.color_input_48).a, (graph_inputs.color_input_48).a)), (image_texture_sample)), math_closure_out);
     // Final composite
-    let _frag_out = math_closure_out;
+    let _frag_out = math_closure_out_f020af35;
     return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

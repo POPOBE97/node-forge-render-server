@@ -50,17 +50,17 @@ var<uniform> graph_inputs: GraphInputs;
 var<storage, read> baked_data_parse: array<vec4f>;
 
 // --- Extra WGSL declarations (generated) ---
-fn mc_math_closure(uv: vec2<f32>, n: vec3<f32>) -> f32 {
+fn nf_math_closure_fragment_closure(uv: vec2<f32>, n: vec3<f32>) -> f32 {
     var uv_1: vec2<f32>;
     var n_1: vec3<f32>;
-    var output: f32 = 0f;
+    var output: f32;
 
     uv_1 = uv;
     n_1 = n;
-    let _e12: vec3<f32> = n_1;
-    output = dot(_e12, vec3<f32>(0f, 0f, 1f));
-    let _e18: f32 = output;
-    return _e18;
+    let _e10: vec3<f32> = n_1;
+    output = dot(_e10, vec3<f32>(0f, 0f, 1f));
+    let _e16: f32 = output;
+    return _e16;
 }
 
 
@@ -241,13 +241,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         _2d_sdf_bevel_normal_depth_ny,
         sdf2d_bevel_eps(),
     );
-    var math_closure_out: f32;
-    {
-        let n = _2d_sdf_bevel_normal_normal;
-        var output: f32;
-        output = mc_math_closure(in.uv, n);
-        math_closure_out = output;
-    }
+    let math_closure_out = nf_math_closure_fragment_closure(vec2f(in.uv.x, 1.0 - in.uv.y), _2d_sdf_bevel_normal_normal);
     // Remap Remap_64.result
     let remap = smoothstep(
         0.0,

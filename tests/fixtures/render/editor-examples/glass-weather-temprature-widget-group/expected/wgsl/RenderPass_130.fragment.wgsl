@@ -294,13 +294,104 @@ fn blendLuminance(src: vec4f, dst: vec4f) -> vec4f {
     return blendHSLColor(vec2f(1.0, 0.0), src, dst);
 }
 
-fn mc_math_closure(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>, depth: f32, refract_offset: vec3<f32>) -> vec2<f32> {
+fn nf_math_closure_fragment_0f7f3acb_closure(uv: vec2<f32>, n: vec3<f32>, i: vec3<f32>) -> f32 {
+    var uv_1: vec2<f32>;
+    var n_1: vec3<f32>;
+    var i_1: vec3<f32>;
+    var output: f32;
+    var r: f32;
+
+    uv_1 = uv;
+    n_1 = n;
+    i_1 = i;
+    let _e8: vec3<f32> = n_1;
+    n_1 = normalize(_e8);
+    let _e11: vec3<f32> = n_1;
+    let _e13: vec3<f32> = i_1;
+    let _e15: vec3<f32> = n_1;
+    let _e17: vec3<f32> = i_1;
+    let _e21: vec3<f32> = n_1;
+    let _e23: vec3<f32> = i_1;
+    let _e25: vec3<f32> = n_1;
+    let _e27: vec3<f32> = i_1;
+    let _e32: vec3<f32> = n_1;
+    let _e34: vec3<f32> = i_1;
+    let _e36: vec2<f32> = -(_e34.xy);
+    let _e37: vec3<f32> = i_1;
+    let _e42: vec3<f32> = n_1;
+    let _e44: vec3<f32> = i_1;
+    let _e46: vec2<f32> = -(_e44.xy);
+    let _e47: vec3<f32> = i_1;
+    let _e54: vec3<f32> = n_1;
+    let _e56: vec3<f32> = i_1;
+    let _e58: vec2<f32> = -(_e56.xy);
+    let _e59: vec3<f32> = i_1;
+    let _e64: vec3<f32> = n_1;
+    let _e66: vec3<f32> = i_1;
+    let _e68: vec2<f32> = -(_e66.xy);
+    let _e69: vec3<f32> = i_1;
+    r = (max(0f, dot(_e25.xyz, _e27.xyz)) + max(0f, dot(_e64.xyz, vec3<f32>(_e68.x, _e68.y, _e69.z))));
+    let _e78: f32 = r;
+    output = (_e78 * 0.7f);
+    let _e81: f32 = output;
+    return _e81;
+}
+
+fn nf_math_closure_fragment_1b35870a_closure(uv: vec2<f32>, n: vec3<f32>) -> f32 {
+    var uv_1: vec2<f32>;
+    var n_1: vec3<f32>;
+    var output: f32;
+
+    uv_1 = uv;
+    n_1 = n;
+    let _e10: vec3<f32> = n_1;
+    output = dot(_e10, vec3<f32>(0f, 0f, 1f));
+    let _e16: f32 = output;
+    return _e16;
+}
+
+fn nf_math_closure_fragment_28d85e0a_closure(uv: vec2<f32>, sampleUV: vec2<f32>, scale: f32) -> vec2<f32> {
+    var uv_1: vec2<f32>;
+    var sampleUV_1: vec2<f32>;
+    var scale_1: f32;
+    var output: vec2<f32>;
+
+    uv_1 = uv;
+    sampleUV_1 = sampleUV;
+    scale_1 = scale;
+    let _e7: vec2<f32> = sampleUV_1;
+    let _e11: f32 = scale_1;
+    output = (((_e7 - vec2(0.5f)) * _e11) + vec2(0.5f));
+    let _e16: vec2<f32> = output;
+    return _e16;
+}
+
+fn nf_math_closure_fragment_45d5ce8f_closure(uv_2: vec2<f32>, sampleUV: vec2<f32>) -> vec4<f32> {
+    var uv_3: vec2<f32>;
+    var sampleUV_1: vec2<f32>;
+    var output: vec4<f32>;
+
+    uv_3 = uv_2;
+    sampleUV_1 = sampleUV;
+    let _e6: vec2<f32> = sampleUV_1;
+    let _e7: vec4<f32> = nf_math_closure_fragment_45d5ce8f_closure_sample_texture_texture(_e6);
+    output = _e7;
+    let _e8: vec4<f32> = output;
+    return _e8;
+}
+
+fn nf_math_closure_fragment_45d5ce8f_closure_sample_texture_texture(uv: vec2f) -> vec4f {
+    let raster_uv = vec2f(uv.x, 1.0 - uv.y);
+    return textureSample(pass_tex_GroupInstance_135_PassTexture_86, pass_samp_GroupInstance_135_PassTexture_86, raster_uv);
+}
+
+fn nf_math_closure_fragment_8c67890a_closure(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>, depth: f32, refract_offset: vec3<f32>) -> vec2<f32> {
     var uv_1: vec2<f32>;
     var xy_1: vec2<f32>;
     var size_1: vec2<f32>;
     var depth_1: f32;
     var refract_offset_1: vec3<f32>;
-    var output: vec2<f32> = vec2(0f);
+    var output: vec2<f32>;
     var offset: vec2<f32>;
 
     uv_1 = uv;
@@ -308,45 +399,18 @@ fn mc_math_closure(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>, depth: f32, re
     size_1 = size;
     depth_1 = depth;
     refract_offset_1 = refract_offset;
-    let _e13: vec2<f32> = xy_1;
-    let _e14: vec3<f32> = refract_offset_1;
-    let _e16: f32 = depth_1;
-    offset = (_e13 + (_e14.xy * _e16));
-    let _e20: vec2<f32> = offset;
-    let _e22: vec2<f32> = size_1;
-    output = (_e20.xy / _e22);
-    let _e24: vec2<f32> = output;
-    return _e24;
+    let _e11: vec2<f32> = xy_1;
+    let _e12: vec3<f32> = refract_offset_1;
+    let _e14: f32 = depth_1;
+    offset = (_e11 + (_e12.xy * _e14));
+    let _e18: vec2<f32> = offset;
+    let _e20: vec2<f32> = size_1;
+    output = (_e18.xy / _e20);
+    let _e22: vec2<f32> = output;
+    return _e22;
 }
 
-fn mc_math_closure_05401580_(uv: vec2<f32>, uv_1: vec2<f32>) -> vec4<f32> {
-    var uv_2: vec2<f32>;
-    var uv_3: vec2<f32>;
-    var output: vec4<f32> = vec4(0f);
-
-    uv_2 = uv;
-    uv_3 = uv_1;
-    let _e8: vec2<f32> = uv_3;
-    let _e9: vec4<f32> = sample_pass_texture(_e8);
-    output = _e9;
-    let _e10: vec4<f32> = output;
-    return _e10;
-}
-
-fn mc_math_closure_26a57d04_(uv: vec2<f32>, x: f32) -> f32 {
-    var uv_1: vec2<f32>;
-    var x_1: f32;
-    var output: f32 = 0f;
-
-    uv_1 = uv;
-    x_1 = x;
-    let _e8: f32 = x_1;
-    output = (1f - _e8);
-    let _e10: f32 = output;
-    return _e10;
-}
-
-fn mc_math_closure_3faa7d04_(uv: vec2<f32>, c_edge: vec4<f32>, e: f32, f: f32, l: f32, selection: f32, lumin_edge: f32) -> vec4<f32> {
+fn nf_math_closure_fragment_closure(uv: vec2<f32>, c_edge: vec4<f32>, e: f32, f: f32, l: f32, selection: f32, lumin_edge: f32) -> vec4<f32> {
     var uv_1: vec2<f32>;
     var c_edge_1: vec4<f32>;
     var e_1: f32;
@@ -354,7 +418,7 @@ fn mc_math_closure_3faa7d04_(uv: vec2<f32>, c_edge: vec4<f32>, e: f32, f: f32, l
     var l_1: f32;
     var selection_1: f32;
     var lumin_edge_1: f32;
-    var output: vec4<f32> = vec4(0f);
+    var output: vec4<f32>;
 
     uv_1 = uv;
     c_edge_1 = c_edge;
@@ -363,158 +427,74 @@ fn mc_math_closure_3faa7d04_(uv: vec2<f32>, c_edge: vec4<f32>, e: f32, f: f32, l
     l_1 = l;
     selection_1 = selection;
     lumin_edge_1 = lumin_edge;
-    let _e17: vec4<f32> = c_edge_1;
-    let _e21: vec4<f32> = c_edge_1;
-    let _e26: vec4<f32> = c_edge_1;
-    let _e28: f32 = lumin_edge_1;
-    let _e30: vec3<f32> = mix(vec3(1f), _e26.xyz, vec3(_e28));
-    c_edge_1.x = _e30.x;
-    c_edge_1.y = _e30.y;
-    c_edge_1.z = _e30.z;
-    let _e38: vec4<f32> = c_edge_1;
-    let _e40: f32 = e_1;
-    let _e41: f32 = f_1;
-    c_edge_1.w = (_e38.w * ((_e40 * _e41) * 0.05f));
-    let _e47: vec4<f32> = c_edge_1;
-    let _e54: f32 = lumin_edge_1;
-    let _e56: f32 = l_1;
-    let _e57: f32 = f_1;
-    let _e62: f32 = selection_1;
-    let _e63: f32 = f_1;
-    let _e68: f32 = e_1;
-    c_edge_1.w = (_e47.w + (((mix(0.08f, 0.22f, _e54) + ((_e56 * _e57) * 0.6f)) + ((_e62 * _e63) * 0.2f)) * _e68));
+    let _e15: vec4<f32> = c_edge_1;
+    let _e19: vec4<f32> = c_edge_1;
+    let _e24: vec4<f32> = c_edge_1;
+    let _e26: f32 = lumin_edge_1;
+    let _e28: vec3<f32> = mix(vec3(1f), _e24.xyz, vec3(_e26));
+    c_edge_1.x = _e28.x;
+    c_edge_1.y = _e28.y;
+    c_edge_1.z = _e28.z;
+    let _e36: vec4<f32> = c_edge_1;
+    let _e38: f32 = e_1;
+    let _e39: f32 = f_1;
+    c_edge_1.w = (_e36.w * ((_e38 * _e39) * 0.05f));
+    let _e45: vec4<f32> = c_edge_1;
+    let _e52: f32 = lumin_edge_1;
+    let _e54: f32 = l_1;
+    let _e55: f32 = f_1;
+    let _e60: f32 = selection_1;
+    let _e61: f32 = f_1;
+    let _e66: f32 = e_1;
+    c_edge_1.w = (_e45.w + (((mix(0.08f, 0.22f, _e52) + ((_e54 * _e55) * 0.6f)) + ((_e60 * _e61) * 0.2f)) * _e66));
+    let _e69: vec4<f32> = c_edge_1;
     let _e71: vec4<f32> = c_edge_1;
-    let _e73: vec4<f32> = c_edge_1;
-    let _e77: f32 = l_1;
-    let _e78: f32 = f_1;
-    let _e80: f32 = selection_1;
-    let _e81: f32 = f_1;
-    let _e84: vec4<f32> = c_edge_1;
-    let _e88: f32 = l_1;
-    let _e89: f32 = f_1;
-    let _e91: f32 = selection_1;
-    let _e92: f32 = f_1;
-    let _e96: vec3<f32> = mix(_e84.xyz, vec3(1f), vec3(((_e88 * _e89) + (_e91 * _e92))));
-    c_edge_1.x = _e96.x;
-    c_edge_1.y = _e96.y;
-    c_edge_1.z = _e96.z;
+    let _e75: f32 = l_1;
+    let _e76: f32 = f_1;
+    let _e78: f32 = selection_1;
+    let _e79: f32 = f_1;
+    let _e82: vec4<f32> = c_edge_1;
+    let _e86: f32 = l_1;
+    let _e87: f32 = f_1;
+    let _e89: f32 = selection_1;
+    let _e90: f32 = f_1;
+    let _e94: vec3<f32> = mix(_e82.xyz, vec3(1f), vec3(((_e86 * _e87) + (_e89 * _e90))));
+    c_edge_1.x = _e94.x;
+    c_edge_1.y = _e94.y;
+    c_edge_1.z = _e94.z;
+    let _e101: vec4<f32> = c_edge_1;
     let _e103: vec4<f32> = c_edge_1;
     let _e105: vec4<f32> = c_edge_1;
-    let _e107: vec4<f32> = c_edge_1;
-    let _e109: vec3<f32> = (_e105.xyz * _e107.w);
-    c_edge_1.x = _e109.x;
-    c_edge_1.y = _e109.y;
-    c_edge_1.z = _e109.z;
-    let _e116: vec4<f32> = c_edge_1;
-    output = _e116;
-    let _e117: vec4<f32> = output;
-    return _e117;
+    let _e107: vec3<f32> = (_e103.xyz * _e105.w);
+    c_edge_1.x = _e107.x;
+    c_edge_1.y = _e107.y;
+    c_edge_1.z = _e107.z;
+    let _e114: vec4<f32> = c_edge_1;
+    output = _e114;
+    let _e115: vec4<f32> = output;
+    return _e115;
 }
 
-fn mc_math_closure_5bd1a304_(uv: vec2<f32>, n: vec3<f32>) -> f32 {
+fn nf_math_closure_fragment_e608610a_closure(uv: vec2<f32>, x: f32) -> f32 {
     var uv_1: vec2<f32>;
-    var n_1: vec3<f32>;
-    var output: f32 = 0f;
+    var x_1: f32;
+    var output: f32;
 
     uv_1 = uv;
-    n_1 = n;
-    let _e12: vec3<f32> = n_1;
-    output = dot(_e12, vec3<f32>(0f, 0f, 1f));
-    let _e18: f32 = output;
-    return _e18;
+    x_1 = x;
+    let _e6: f32 = x_1;
+    output = (1f - _e6);
+    let _e8: f32 = output;
+    return _e8;
 }
 
-fn mc_math_closure_68747b04_(uv: vec2<f32>, uv_1: vec2<f32>, scale: f32) -> vec2<f32> {
-    var uv_2: vec2<f32>;
-    var uv_3: vec2<f32>;
-    var scale_1: f32;
-    var output: vec2<f32> = vec2(0f);
-
-    uv_2 = uv;
-    uv_3 = uv_1;
-    scale_1 = scale;
-    let _e9: vec2<f32> = uv_3;
-    let _e13: f32 = scale_1;
-    output = (((_e9 - vec2(0.5f)) * _e13) + vec2(0.5f));
-    let _e18: vec2<f32> = output;
-    return _e18;
-}
-
-fn mc_math_closure_cfffd7c9_(uv: vec2<f32>, n: vec3<f32>, i: vec3<f32>) -> f32 {
-    var uv_1: vec2<f32>;
-    var n_1: vec3<f32>;
-    var i_1: vec3<f32>;
-    var output: f32 = 0f;
-    var r: f32;
-
-    uv_1 = uv;
-    n_1 = n;
-    i_1 = i;
-    let _e10: vec3<f32> = n_1;
-    n_1 = normalize(_e10);
-    let _e13: vec3<f32> = n_1;
-    let _e15: vec3<f32> = i_1;
-    let _e17: vec3<f32> = n_1;
-    let _e19: vec3<f32> = i_1;
-    let _e23: vec3<f32> = n_1;
-    let _e25: vec3<f32> = i_1;
-    let _e27: vec3<f32> = n_1;
-    let _e29: vec3<f32> = i_1;
-    let _e34: vec3<f32> = n_1;
-    let _e36: vec3<f32> = i_1;
-    let _e38: vec2<f32> = -(_e36.xy);
-    let _e39: vec3<f32> = i_1;
-    let _e44: vec3<f32> = n_1;
-    let _e46: vec3<f32> = i_1;
-    let _e48: vec2<f32> = -(_e46.xy);
-    let _e49: vec3<f32> = i_1;
-    let _e56: vec3<f32> = n_1;
-    let _e58: vec3<f32> = i_1;
-    let _e60: vec2<f32> = -(_e58.xy);
-    let _e61: vec3<f32> = i_1;
-    let _e66: vec3<f32> = n_1;
-    let _e68: vec3<f32> = i_1;
-    let _e70: vec2<f32> = -(_e68.xy);
-    let _e71: vec3<f32> = i_1;
-    r = (max(0f, dot(_e27.xyz, _e29.xyz)) + max(0f, dot(_e66.xyz, vec3<f32>(_e70.x, _e70.y, _e71.z))));
-    let _e80: f32 = r;
-    output = (_e80 * 0.7f);
-    let _e83: f32 = output;
-    return _e83;
-}
-
-fn mc_show_thumb(uv: vec2<f32>, sdf: f32, show_thumb: bool) -> f32 {
-    var uv_1: vec2<f32>;
-    var sdf_1: f32;
-    var show_thumb_1: bool;
-    var output: f32 = 0f;
-    var r: f32;
-
-    uv_1 = uv;
-    sdf_1 = sdf;
-    show_thumb_1 = show_thumb;
-    let _e9: f32 = sdf_1;
-    let _e13: f32 = sdf_1;
-    r = max((_e13 + 22f), 0f);
-    let _e19: f32 = r;
-    r = (_e19 / 42f);
-    let _e22: f32 = r;
-    let _e24: f32 = r;
-    let _e26: f32 = r;
-    let _e28: f32 = r;
-    let _e32: bool = show_thumb_1;
-    output = (f32(exp((-(_e26) * _e28))) * select(0f, 1f, _e32));
-    let _e37: f32 = output;
-    return _e37;
-}
-
-fn mc_show_thumb_8d17d5c9_(uv: vec2<f32>, t: f32, c_ui: vec4<f32>, thumb: f32, show_thumb: bool) -> vec4<f32> {
+fn nf_show_thumb_fragment_cd9637cb_closure(uv: vec2<f32>, t: f32, c_ui: vec4<f32>, thumb: f32, show_thumb: bool) -> vec4<f32> {
     var uv_1: vec2<f32>;
     var t_1: f32;
     var c_ui_1: vec4<f32>;
     var thumb_1: f32;
     var show_thumb_1: bool;
-    var output: vec4<f32> = vec4(0f);
+    var output: vec4<f32>;
     var r: vec4<f32>;
 
     uv_1 = uv;
@@ -522,41 +502,62 @@ fn mc_show_thumb_8d17d5c9_(uv: vec2<f32>, t: f32, c_ui: vec4<f32>, thumb: f32, s
     c_ui_1 = c_ui;
     thumb_1 = thumb;
     show_thumb_1 = show_thumb;
-    let _e13: vec4<f32> = c_ui_1;
-    let _e18: f32 = t_1;
-    let _e19: bool = show_thumb_1;
-    r = (_e13 * select(1f, _e18, _e19));
-    let _e26: f32 = thumb_1;
-    let _e27: bool = show_thumb_1;
-    let _e32: vec4<f32> = r;
-    let _e35: f32 = thumb_1;
-    let _e36: bool = show_thumb_1;
-    r = mix(_e32, vec4(1f), vec4((_e35 * select(0f, 1f, _e36))));
-    let _e43: vec4<f32> = r;
-    output = _e43;
-    let _e44: vec4<f32> = output;
-    return _e44;
+    let _e11: vec4<f32> = c_ui_1;
+    let _e16: f32 = t_1;
+    let _e17: bool = show_thumb_1;
+    r = (_e11 * select(1f, _e16, _e17));
+    let _e24: f32 = thumb_1;
+    let _e25: bool = show_thumb_1;
+    let _e30: vec4<f32> = r;
+    let _e33: f32 = thumb_1;
+    let _e34: bool = show_thumb_1;
+    r = mix(_e30, vec4(1f), vec4((_e33 * select(0f, 1f, _e34))));
+    let _e41: vec4<f32> = r;
+    output = _e41;
+    let _e42: vec4<f32> = output;
+    return _e42;
 }
 
-fn mc_thumb_t(uv: vec2<f32>, t: f32, size: vec2<f32>) -> vec2<f32> {
+fn nf_show_thumb_fragment_closure(uv: vec2<f32>, sdf: f32, show_thumb: bool) -> f32 {
+    var uv_1: vec2<f32>;
+    var sdf_1: f32;
+    var show_thumb_1: bool;
+    var output: f32;
+    var r: f32;
+
+    uv_1 = uv;
+    sdf_1 = sdf;
+    show_thumb_1 = show_thumb;
+    let _e7: f32 = sdf_1;
+    let _e11: f32 = sdf_1;
+    r = max((_e11 + 22f), 0f);
+    let _e17: f32 = r;
+    r = (_e17 / 42f);
+    let _e20: f32 = r;
+    let _e22: f32 = r;
+    let _e24: f32 = r;
+    let _e26: f32 = r;
+    let _e30: bool = show_thumb_1;
+    output = (f32(exp((-(_e24) * _e26))) * select(0f, 1f, _e30));
+    let _e35: f32 = output;
+    return _e35;
+}
+
+fn nf_thumb_t_fragment_closure(uv: vec2<f32>, t: f32, size: vec2<f32>) -> vec2<f32> {
     var uv_1: vec2<f32>;
     var t_1: f32;
     var size_1: vec2<f32>;
-    var output: vec2<f32> = vec2(0f);
+    var output: vec2<f32>;
 
     uv_1 = uv;
     t_1 = t;
     size_1 = size;
-    let _e9: vec2<f32> = size_1;
-    let _e11: f32 = t_1;
-    let _e13: vec2<f32> = size_1;
-    output = vec2<f32>((_e9.x * _e11), (_e13.y / 2f));
-    let _e18: vec2<f32> = output;
-    return _e18;
-}
-
-fn sample_pass_texture(uv_in: vec2f) -> vec4f {
-    return textureSample(pass_tex_GroupInstance_135_PassTexture_86, pass_samp_GroupInstance_135_PassTexture_86, uv_in);
+    let _e7: vec2<f32> = size_1;
+    let _e9: f32 = t_1;
+    let _e11: vec2<f32> = size_1;
+    output = vec2<f32>((_e7.x * _e9), (_e11.y / 2f));
+    let _e16: vec2<f32> = output;
+    return _e16;
 }
 
 
@@ -744,87 +745,21 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         _2d_sdf_bevel_normal_depth_ny,
         sdf2d_bevel_eps(),
     );
-    var math_closure_out_d282d030: vec2f;
-    {
-        let xy = in.local_px.xy;
-        let size = in.geo_size_px;
-        let depth = _2d_sdf_bevel_depth_depth;
-        let refract_offset = refract(normalize((graph_inputs.node_GroupInstance_135_Vector3Input_80_cd4f4a91).xyz), normalize(_2d_sdf_bevel_normal_normal), (1.0 / (1.450000048)));
-        var output: vec2f;
-        output = mc_math_closure(in.uv, xy, size, depth, refract_offset);
-        math_closure_out_d282d030 = output;
-    }
-    var math_closure_out_4ae96100: vec2f;
-    {
-        let uv = math_closure_out_d282d030;
-        let scale = (graph_inputs.node_GroupInstance_135_FloatInput_89_00da25ed).x;
-        var output: vec2f;
-        output = mc_math_closure_68747b04_(in.uv, uv, scale);
-        math_closure_out_4ae96100 = output;
-    }
-    var math_closure_out_9ba70cac: vec4f;
-    {
-        let uv = math_closure_out_4ae96100;
-        var output: vec4f;
-        output = mc_math_closure_05401580_(in.uv, uv);
-        math_closure_out_9ba70cac = output;
-    }
+    let math_closure_out = nf_math_closure_fragment_8c67890a_closure(vec2f(in.uv.x, 1.0 - in.uv.y), in.local_px.xy, in.geo_size_px, _2d_sdf_bevel_depth_depth, refract(normalize((graph_inputs.node_GroupInstance_135_Vector3Input_80_cd4f4a91).xyz), normalize(_2d_sdf_bevel_normal_normal), (1.0 / (1.450000048))));
+    let math_closure_out_19d77a56 = nf_math_closure_fragment_28d85e0a_closure(vec2f(in.uv.x, 1.0 - in.uv.y), math_closure_out, (graph_inputs.node_GroupInstance_135_FloatInput_89_00da25ed).x);
+    let math_closure_out_0e16ccf8 = nf_math_closure_fragment_45d5ce8f_closure(vec2f(in.uv.x, 1.0 - in.uv.y), math_closure_out_19d77a56);
     // Remap GroupInstance_135/Remap_64.result
     let remap = smoothstep(
         0.0,
         -2.0,
         sdf2d_round_rect((in.local_px.xy - (in.geo_size_px * vec2f((graph_inputs.node_GroupInstance_135_FloatInput_10_2a8c3aed).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_GroupInstance_135_FloatInput_12_c4883aed).x)),
     );
-    var math_closure_out_5f704792: f32;
-    {
-        let n = _2d_sdf_bevel_normal_normal;
-        var output: f32;
-        output = mc_math_closure_5bd1a304_(in.uv, n);
-        math_closure_out_5f704792 = output;
-    }
-    var math_closure_out_589e41e9: f32;
-    {
-        let x = math_closure_out_5f704792;
-        var output: f32;
-        output = mc_math_closure_26a57d04_(in.uv, x);
-        math_closure_out_589e41e9 = output;
-    }
-    var math_closure_out_958b420d: f32;
-    {
-        let n = _2d_sdf_bevel_normal_normal;
-        let i = (graph_inputs.node_GroupInstance_135_Vector3Input_105_1bad8802).xyz;
-        var output: f32;
-        output = mc_math_closure_cfffd7c9_(in.uv, n, i);
-        math_closure_out_958b420d = output;
-    }
-    var thumb_t_out: vec2f;
-    {
-        let t = (graph_inputs.node_FloatInput_138_0ccf2f17).x;
-        let size = in.geo_size_px;
-        var output: vec2f;
-        output = mc_thumb_t(in.uv, t, size);
-        thumb_t_out = output;
-    }
-    var show_thumb_out: f32;
-    {
-        let sdf = (length((in.local_px.xy - thumb_t_out)) - 16.5);
-        let show_thumb = ((graph_inputs.node_BoolInput_141_609f47c1).x != 0);
-        var output: f32;
-        output = mc_show_thumb(in.uv, sdf, show_thumb);
-        show_thumb_out = output;
-    }
-    var math_closure_out: vec4f;
-    {
-        let c_edge = math_closure_out_9ba70cac;
-        let e = remap;
-        let f = smoothstep(0.0, 0.015, math_closure_out_589e41e9);
-        let l = math_closure_out_958b420d;
-        let selection = show_thumb_out;
-        let lumin_edge = clamp(dot((math_closure_out_9ba70cac).rgb, vec3f(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
-        var output: vec4f;
-        output = mc_math_closure_3faa7d04_(in.uv, c_edge, e, f, l, selection, lumin_edge);
-        math_closure_out = output;
-    }
+    let math_closure_out_c8fa2bf0 = nf_math_closure_fragment_1b35870a_closure(vec2f(in.uv.x, 1.0 - in.uv.y), _2d_sdf_bevel_normal_normal);
+    let math_closure_out_abfa5bd4 = nf_math_closure_fragment_e608610a_closure(vec2f(in.uv.x, 1.0 - in.uv.y), math_closure_out_c8fa2bf0);
+    let math_closure_out_6456fe79 = nf_math_closure_fragment_0f7f3acb_closure(vec2f(in.uv.x, 1.0 - in.uv.y), _2d_sdf_bevel_normal_normal, (graph_inputs.node_GroupInstance_135_Vector3Input_105_1bad8802).xyz);
+    let thumb_t_out = nf_thumb_t_fragment_closure(vec2f(in.uv.x, 1.0 - in.uv.y), (graph_inputs.node_FloatInput_138_0ccf2f17).x, in.geo_size_px);
+    let show_thumb_out = nf_show_thumb_fragment_closure(vec2f(in.uv.x, 1.0 - in.uv.y), (length((in.local_px.xy - thumb_t_out)) - 16.5), ((graph_inputs.node_BoolInput_141_609f47c1).x != 0));
+    let math_closure_out_149f3455 = nf_math_closure_fragment_closure(vec2f(in.uv.x, 1.0 - in.uv.y), math_closure_out_0e16ccf8, remap, smoothstep(0.0, 0.015, math_closure_out_abfa5bd4), math_closure_out_6456fe79, show_thumb_out, clamp(dot((math_closure_out_0e16ccf8).rgb, vec3f(0.2126, 0.7152, 0.0722)), 0.0, 1.0));
     // ImageTexture GroupInstance_135/ImageTexture_76 aspect-correct uv
     let image_uv = aspect_correct_uv_fill(
         (in.uv),
@@ -837,17 +772,8 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         img_samp_GroupInstance_135_ImageTexture_76,
         image_uv,
     );
-    var show_thumb_out_0bf8ff8b: vec4f;
-    {
-        let t = smoothstep(0.0, 1.0, (length((in.local_px.xy - thumb_t_out)) - 16.5));
-        let c_ui = image_sample;
-        let thumb = smoothstep(-7.0, -8.0, (length((in.local_px.xy - thumb_t_out)) - 16.5));
-        let show_thumb = ((graph_inputs.node_BoolInput_141_609f47c1).x != 0);
-        var output: vec4f;
-        output = mc_show_thumb_8d17d5c9_(in.uv, t, c_ui, thumb, show_thumb);
-        show_thumb_out_0bf8ff8b = output;
-    }
+    let show_thumb_out_b69a1bc0 = nf_show_thumb_fragment_cd9637cb_closure(vec2f(in.uv.x, 1.0 - in.uv.y), smoothstep(0.0, 1.0, (length((in.local_px.xy - thumb_t_out)) - 16.5)), image_sample, smoothstep(-7.0, -8.0, (length((in.local_px.xy - thumb_t_out)) - 16.5)), ((graph_inputs.node_BoolInput_141_609f47c1).x != 0));
     // Final composite
-    let _frag_out = blendNormal((show_thumb_out_0bf8ff8b), (math_closure_out));
+    let _frag_out = blendNormal((show_thumb_out_b69a1bc0), (math_closure_out_149f3455));
     return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

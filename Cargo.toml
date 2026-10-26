@@ -21,6 +21,10 @@ native = [
     "dep:tungstenite",
     "dep:libloading",
     "dep:libc",
+    "dep:tiff",
+    "dep:png",
+    "dep:crc32fast",
+    "dep:exr",
 ]
 portable-js = ["dep:rquickjs"]
 # Embed built-in WGSL for sandboxed native playback without source-tree access.
@@ -34,6 +38,7 @@ web-core = [
 ]
 
 [dependencies]
+node-forge-math-closure = { path = "../node-forge-editor/packages/math-closure/native" }
 node-forge-resource-store = { path = "../node-forge-editor/packages/document/native" }
 rust-wgpu-fiber = { version = "*", path = "../rust-wgpu-fiber", default-features = false }
 rquickjs = { package = "rquickjs-core", version = "0.14", features = ["bindgen"], optional = true }
@@ -42,7 +47,7 @@ base64 = "0.22"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
-tiff = "0.10.3"
+tiff = { version = "0.10.3", optional = true }
 cosmic-text = { version = "0.19", default-features = false, features = ["std", "swash"] }
 unicode-script = "0.5"
 crossbeam-channel = { version = "0.5", optional = true }
@@ -50,9 +55,9 @@ libloading = { version = "0.8", optional = true }
 libc = { version = "0.2", optional = true }
 tungstenite = { version = "0.21", optional = true }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "exr"] }
-png = "0.18"
-crc32fast = "1"
-exr = "1.74"
+png = { version = "0.18", optional = true }
+crc32fast = { version = "1", optional = true }
+exr = { version = "1.74", optional = true }
 rusqlite = { version = "0.32.1", features = ["bundled"], optional = true }
 # Used for WGSL validation at runtime and in tests
 naga = { version = "0.20", features = ["wgsl-in", "glsl-in", "wgsl-out"] }

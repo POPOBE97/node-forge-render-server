@@ -2245,7 +2245,7 @@ fn av_pixel_avatar_sculpt(uv: vec2f,aspect: f32,pixelSize: f32,yaw: f32,pitch: f
     return vec4f(av_shade_avatar_sculpt(vec3f(ro.xy,front.x),n,rd,front.y,s,h,g,gaze,clay),1.0);
   }
   var t=4.4;var found=false;var hit=vec2f(10.0,0.0);
-  for(var i=0;i<220;i+=1) {
+  for(var i=0;i<32;i+=1) {
     hit=av_map_avatar_sculpt(ro+rd*t,s,h,g);
     if(hit.x<max(0.0008,pixelSize*0.22)){found=true;break;}
     t+=max(hit.x*0.50,0.0004);

@@ -62,7 +62,13 @@ fn main() {
         .join("prebuilt")
         .join("arm64-v8a")
         .join("node-forge-hdr-screencap");
-    println!("cargo:rerun-if-changed={}", helper_prebuilt.display());
+    // Cargo treats a missing watched path as dirty on every build. Watch its
+    // nearest existing parent so creating the optional binary is still detected.
+    let helper_watch = helper_prebuilt
+        .ancestors()
+        .find(|path| path.exists())
+        .expect("manifest directory exists");
+    println!("cargo:rerun-if-changed={}", helper_watch.display());
     if helper_prebuilt.is_file() {
         println!("cargo:rustc-cfg=android_hdr_helper_prebuilt");
     }

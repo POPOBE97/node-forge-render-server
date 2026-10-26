@@ -48,32 +48,34 @@ var pass_samp_Upsample_41: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---
-fn mc_math_closure(uv: vec2<f32>) -> vec4<f32> {
-    var uv_1: vec2<f32>;
-    var output: vec4<f32> = vec4(0f);
+fn nf_math_closure_fragment_closure(uv_4: vec2<f32>) -> vec4<f32> {
+    var uv_5: vec2<f32>;
+    var output: vec4<f32>;
     var c_l0_: vec4<f32>;
     var c_l1_: vec4<f32>;
 
-    uv_1 = uv;
-    let _e6: vec2<f32> = uv_1;
-    let _e7: vec4<f32> = sample_pass_l0_(_e6);
-    c_l0_ = _e7;
-    let _e10: vec2<f32> = uv_1;
-    let _e11: vec4<f32> = sample_pass_l1_(_e10);
-    c_l1_ = _e11;
-    let _e13: vec4<f32> = c_l0_;
-    let _e14: vec4<f32> = c_l1_;
-    output = (_e13 + _e14);
-    let _e16: vec4<f32> = output;
-    return _e16;
+    uv_5 = uv_4;
+    let _e4: vec2<f32> = uv_5;
+    let _e5: vec4<f32> = nf_math_closure_fragment_closure_sample_l0_texture(_e4);
+    c_l0_ = _e5;
+    let _e8: vec2<f32> = uv_5;
+    let _e9: vec4<f32> = nf_math_closure_fragment_closure_sample_l1_texture(_e8);
+    c_l1_ = _e9;
+    let _e11: vec4<f32> = c_l0_;
+    let _e12: vec4<f32> = c_l1_;
+    output = (_e11 + _e12);
+    let _e14: vec4<f32> = output;
+    return _e14;
 }
 
-fn sample_pass_l0_(uv_in: vec2f) -> vec4f {
-    return textureSample(pass_tex_TextureRender_RenderPass_4_pass, pass_samp_TextureRender_RenderPass_4_pass, uv_in);
+fn nf_math_closure_fragment_closure_sample_l0_texture(uv: vec2f) -> vec4f {
+    let raster_uv = vec2f(uv.x, 1.0 - uv.y);
+    return textureSample(pass_tex_TextureRender_RenderPass_4_pass, pass_samp_TextureRender_RenderPass_4_pass, raster_uv);
 }
 
-fn sample_pass_l1_(uv_in: vec2f) -> vec4f {
-    return textureSample(pass_tex_Upsample_41, pass_samp_Upsample_41, uv_in);
+fn nf_math_closure_fragment_closure_sample_l1_texture(uv: vec2f) -> vec4f {
+    let raster_uv = vec2f(uv.x, 1.0 - uv.y);
+    return textureSample(pass_tex_Upsample_41, pass_samp_Upsample_41, raster_uv);
 }
 
 
@@ -110,12 +112,7 @@ fn sample_pass_l1_(uv_in: vec2f) -> vec4f {
  }
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    var math_closure_out: vec4f;
-    {
-        var output: vec4f;
-        output = mc_math_closure(in.uv);
-        math_closure_out = output;
-    }
+    let math_closure_out = nf_math_closure_fragment_closure(vec2f(in.uv.x, 1.0 - in.uv.y));
     // Final composite
     let _frag_out = math_closure_out;
     return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));

@@ -196,7 +196,7 @@ fn native_text_preserves_pixels_premultiplication_and_dual_output_domains() {
     .unwrap();
     shared.nodes.push(
         serde_json::from_value(json!({"id":"sample","type":"MathClosure",
-        "params":{"source":"output = samplePass(source, uv) * 0.0;"},
+        "params":{"source":"output = sample_source(uv) * 0.0;", "outputType":"color"},
         "inputs":[{"id":"source","name":"source","type":"texture"}],
         "outputs":[{"id":"output","type":"color"}]}))
         .unwrap(),

@@ -64,53 +64,53 @@ fn matcap_uv(n: vec3f, v: vec3f) -> vec2f {
     return clamp(uv, vec2f(0.0), vec2f(1.0));
 }
 
-fn mc_color(uv: vec2<f32>, uv_1: vec2<f32>, front_color: vec4<f32>, input3_: vec4<f32>) -> vec4<f32> {
-    var uv_2: vec2<f32>;
-    var uv_3: vec2<f32>;
+fn nf_color_fragment_closure(uv: vec2<f32>, sampleUV: vec2<f32>, front_color: vec4<f32>, input3_: vec4<f32>) -> vec4<f32> {
+    var uv_1: vec2<f32>;
+    var sampleUV_1: vec2<f32>;
     var front_color_1: vec4<f32>;
     var input3_1: vec4<f32>;
-    var output: vec4<f32> = vec4(0f);
+    var output: vec4<f32>;
 
-    uv_2 = uv;
-    uv_3 = uv_1;
+    uv_1 = uv;
+    sampleUV_1 = sampleUV;
     front_color_1 = front_color;
     input3_1 = input3_;
-    let _e11: vec2<f32> = uv_3;
-    if (_e11.y < 0f) {
+    let _e9: vec2<f32> = sampleUV_1;
+    if (_e9.y < 0f) {
         {
             output = vec4<f32>(1f, 0f, 0f, 1f);
         }
     } else {
-        let _e20: vec2<f32> = uv_3;
-        if (_e20.y > 0.5f) {
+        let _e18: vec2<f32> = sampleUV_1;
+        if (_e18.y > 0.5f) {
             {
                 output = vec4<f32>(0f, 1f, 0f, 1f);
             }
         } else {
             {
-                let _e29: vec4<f32> = front_color_1;
-                output = _e29;
+                let _e27: vec4<f32> = front_color_1;
+                output = _e27;
             }
         }
     }
-    let _e30: vec4<f32> = output;
-    return _e30;
+    let _e28: vec4<f32> = output;
+    return _e28;
 }
 
 
 // --- Extra WGSL declarations (generated) ---
-fn mc_rotation_y(uv: vec2<f32>, t: f32) -> vec3<f32> {
+fn nf_rotation_y_vertex_closure(uv: vec2<f32>, t: f32) -> vec3<f32> {
     var uv_1: vec2<f32>;
     var t_1: f32;
-    var output: vec3<f32> = vec3(0f);
+    var output: vec3<f32>;
 
     uv_1 = uv;
     t_1 = t;
-    let _e8: f32 = t_1;
-    let _e11: f32 = t_1;
-    output = vec3<f32>(90f, (fract((_e11 / 10f)) * 360f), 0f);
-    let _e19: vec3<f32> = output;
-    return _e19;
+    let _e6: f32 = t_1;
+    let _e9: f32 = t_1;
+    output = vec3<f32>(90f, (fract((_e9 / 10f)) * 360f), 0f);
+    let _e17: vec3<f32> = output;
+    return _e17;
 }
 
 
@@ -139,13 +139,7 @@ fn sys_apply_trs_xyz(p: vec3f, t: vec3f, r_deg: vec3f, s: vec3f) -> vec3f {
  ) -> VSOut {
  var out: VSOut;
 
-    var rotation_y_out: vec3f;
-    {
-        let t = (graph_inputs.node_FloatInput_53_b820f720).x;
-        var output: vec3f;
-        output = mc_rotation_y(uv, t);
-        rotation_y_out = output;
-    }
+    let rotation_y_out = nf_rotation_y_vertex_closure(vec2f(uv.x, 1.0 - uv.y), (graph_inputs.node_FloatInput_53_b820f720).x);
  let _unused_geo_size = params.geo_size;
  let _unused_geo_translate = params.geo_translate;
  let _unused_geo_scale = params.geo_scale;
@@ -184,15 +178,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         img_samp_GroupInstance_62_Matcap_65,
         matcap_uv(in.normal, normalize(params.camera_position.xyz - in.world_pos)),
     );
-    var color_out: vec4f;
-    {
-        let uv = vec2f(in.uv.x, 1.0 - in.uv.y);
-        let front_color = matcap;
-        let input3 = vec4f((graph_inputs.node_GroupInstance_62_ColorInput_68_0f64f50a).rgb * (graph_inputs.node_GroupInstance_62_ColorInput_68_0f64f50a).a, (graph_inputs.node_GroupInstance_62_ColorInput_68_0f64f50a).a);
-        var output: vec4f;
-        output = mc_color(in.uv, uv, front_color, input3);
-        color_out = output;
-    }
+    let color_out = nf_color_fragment_closure(vec2f(in.uv.x, 1.0 - in.uv.y), vec2f(in.uv.x, 1.0 - in.uv.y), matcap, vec4f((graph_inputs.node_GroupInstance_62_ColorInput_68_0f64f50a).rgb * (graph_inputs.node_GroupInstance_62_ColorInput_68_0f64f50a).a, (graph_inputs.node_GroupInstance_62_ColorInput_68_0f64f50a).a));
     // Final composite
     let _frag_out = color_out;
     return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));

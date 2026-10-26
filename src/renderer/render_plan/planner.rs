@@ -1156,8 +1156,8 @@ mod tests {
                 {
                     "id": "sample",
                     "type": "MathClosure",
-                    "params": { "source": "output = samplePass(texture, uv);" },
-                    "inputs": [{ "id": "texture", "type": "texture" }],
+                    "params": { "source": "output = sample_texture(uv);", "outputType": "color" },
+                    "inputs": [{ "id": "texture", "name": "texture", "type": "texture" }],
                     "outputs": [{ "id": "output", "type": "color" }]
                 },
                 {
@@ -2280,8 +2280,8 @@ mod tests {
                 {
                     "id": "child_sample",
                     "type": "MathClosure",
-                    "params": { "source": "output = samplePass(texture, uv);" },
-                    "inputs": [{ "id": "texture", "type": "texture" }],
+                    "params": { "source": "output = sample_texture(uv);", "outputType": "color" },
+                    "inputs": [{ "id": "texture", "name": "texture", "type": "texture" }],
                     "outputs": [{ "id": "output", "type": "color" }]
                 },
                 {

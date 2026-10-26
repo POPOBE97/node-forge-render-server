@@ -316,23 +316,6 @@ impl ValueType {
         }
     }
 
-    /// Panics on array types — not supported in the naga GLSL pipeline.
-    pub fn glsl(self) -> &'static str {
-        match self {
-            ValueType::F32 => "float",
-            ValueType::I32 => "int",
-            ValueType::U32 => "uint",
-            ValueType::Bool => "bool",
-            ValueType::Texture2D => "sampler2D",
-            ValueType::Mat4 => "mat4",
-            ValueType::Vec2 => "vec2",
-            ValueType::Vec3 => "vec3",
-            ValueType::Vec4 => "vec4",
-            _ if self.is_array() => panic!("array types are not supported in GLSL path"),
-            _ => unreachable!(),
-        }
-    }
-
     /// Returns the WGSL type name as an owned `String`, supporting all types including arrays.
     pub fn wgsl_type_string(self) -> String {
         match self {

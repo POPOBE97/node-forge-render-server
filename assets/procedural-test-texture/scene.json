@@ -1017,6 +1017,18 @@
           }
         }
       ],
+      "layout": {
+        "inputPosition": {
+          "x": -240,
+          "y": 0
+        },
+        "outputPosition": {
+          "x": 2160,
+          "y": 0
+        },
+        "inputWidth": 160,
+        "outputWidth": 160
+      },
       "nodes": [
         {
           "id": "chart.blur.horizontal.material",
@@ -1687,6 +1699,18 @@
           }
         }
       ],
+      "layout": {
+        "inputPosition": {
+          "x": 40,
+          "y": -560
+        },
+        "outputPosition": {
+          "x": 1240,
+          "y": -560
+        },
+        "inputWidth": 160,
+        "outputWidth": 160
+      },
       "nodes": [
         {
           "id": "chart.text.font.regular",
@@ -2220,6 +2244,18 @@
           }
         }
       ],
+      "layout": {
+        "inputPosition": {
+          "x": -220,
+          "y": 0
+        },
+        "outputPosition": {
+          "x": 3660,
+          "y": 0
+        },
+        "inputWidth": 160,
+        "outputWidth": 160
+      },
       "nodes": [
         {
           "id": "chart.text.stroke025",
@@ -3120,6 +3156,18 @@
           }
         }
       ],
+      "layout": {
+        "inputPosition": {
+          "x": -220,
+          "y": 0
+        },
+        "outputPosition": {
+          "x": 3300,
+          "y": 0
+        },
+        "inputWidth": 160,
+        "outputWidth": 160
+      },
       "nodes": [
         {
           "id": "chart.text.sample32",

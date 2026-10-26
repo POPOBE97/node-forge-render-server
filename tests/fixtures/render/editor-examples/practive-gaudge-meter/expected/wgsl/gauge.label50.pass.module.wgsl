@@ -36,10 +36,8 @@ var<uniform> params: Params;
 struct GraphInputs {
     // Node: gauge.clock.seconds
     gauge_clock_seconds: vec4f,
-    // Node: gauge.glass.tint.core
-    gauge_glass_tint_core: vec4f,
-    // Node: gauge.glass.tint.rim
-    gauge_glass_tint_rim: vec4f,
+    // Node: gauge.glass.tint
+    gauge_glass_tint: vec4f,
 };
 
 @group(0) @binding(2)
@@ -359,18 +357,6 @@ fn glass_adjust_color(color: vec4f, saturation: f32, brightness: f32) -> vec4f {
     return vec4f(adjusted_brightness, alpha);
 }
 
-fn glass_process_color(
-    color: vec4f,
-    luminance_values: vec4f,
-    luminance_amount: f32,
-    saturation: f32,
-    brightness: f32,
-) -> vec4f {
-    var c = glass_luminance_curve_lab(color, luminance_values, luminance_amount);
-    c = vec4f(glass_adjust_color(c, saturation, brightness).rgb, c.a);
-    return c;
-}
-
 fn glass_smooth5_map(t_in: f32) -> f32 {
     // Symmetry avoids catastrophic cancellation in finite-difference normals.
     let t = clamp(0.5 + t_in * 0.5, 0.0, 1.0);
@@ -496,23 +482,6 @@ fn glass_blend_reflect_light(dst: vec4f, lighten: f32, blend_mode: i32) -> vec4f
     }
 }
 
-fn glass_dynamic_add(color: vec3f) -> f32 {
-    // var white_dis = distance(vec3f(1.0), color);
-    // white_dis = smoothstep(0.2, 1.0, white_dis);
-    // white_dis = mix(0.5, 1.0, white_dis);
-    // let lumin = glass_luma(color);
-    // return mix(0.5, white_dis, lumin);
-    return 1.0;
-}
-
-fn glass_add_light(color: vec3f, light_color: vec3f, light_strength: f32) -> vec3f {
-    // var white_dis = distance(vec3f(1.0), color);
-    // white_dis = smoothstep(0.2, 1.0, white_dis);
-    // white_dis = mix(0.3, 1.0, white_dis);
-    // return color + light_color * (light_strength * white_dis);
-    return color + light_color * light_strength;
-}
-
 fn glass_calculate_lighting(normal: vec3f, light_dir: vec3f, intensity: f32, angle_range: f32) -> f32 {
     let normalized_light_dir = normalize(light_dir);
     let dot_product = dot(normal, normalized_light_dir);
@@ -526,67 +495,79 @@ fn glass_sample_screen_uv(screen_px: vec2f, resolution: vec2f) -> vec2f {
     return vec2f(screen_px.x, resolution.y - screen_px.y) / resolution;
 }
 
-fn glass_texture_map(
-    tex: texture_2d<f32>,
-    samp: sampler,
-    sample_uv: vec2f,
-    add_foreground: bool,
-    reflect_lighten_opacity: f32,
-    reflect_lighten_blend_mode: i32,
-    fg_tex: texture_2d<f32>,
-    fg_samp: sampler,
-    frag_uv: vec2f,
-) -> vec4f {
-    var col = textureSample(tex, samp, sample_uv);
-
-    if (add_foreground) {
-        let lighten = glass_get_lighten(fg_tex, fg_samp, frag_uv);
-        let curve_value = mix(
-            vec4f(0.0/3.0 + 0.0, 1.0/3.0 + 0.0, 2.0/3.0 + 0.0, 3.0/3.0 + 0.0),
-            vec4f(0.0/3.0 + 0.2, 1.0/3.0 + 0.2, 2.0/3.0 + 0.2, 3.0/3.0 + 0.2),
-            lighten
-        );
-        col = glass_luminance_curve_lab(col, curve_value, 1.0);
-        // col = glass_blend_reflect_light(col, lighten * reflect_lighten_opacity, reflect_lighten_blend_mode);
-    }
-
-    return col;
-}
-
-fn mc_math_closure(uv: vec2<f32>, phase: f32, localPx: vec2<f32>) -> vec2<f32> {
+fn nf_math_closure_fragment_closure(uv: vec2<f32>, phase: f32, localPx: vec2<f32>) -> vec2<f32> {
     var uv_1: vec2<f32>;
     var phase_1: f32;
     var localPx_1: vec2<f32>;
-    var output: vec2<f32> = vec2(0f);
-    var s: f32;
-    var cellIndex: f32;
+    var output: vec2<f32>;
+    var value: f32;
     var local: f32;
+    var local_1: f32;
+    var digits: f32;
+    var left: f32;
+    var cell: f32;
+    var place: f32;
     var digit: f32;
+    var local_2: vec2<f32>;
 
     uv_1 = uv;
     phase_1 = phase;
     localPx_1 = localPx;
     let _e10: f32 = phase_1;
-    s = floor(_e10);
-    let _e14: vec2<f32> = localPx_1;
-    let _e18: vec2<f32> = localPx_1;
-    cellIndex = step(150f, _e18.x);
-    let _e22: f32 = cellIndex;
-    if (_e22 < 0.5f) {
-        let _e25: f32 = s;
-        let _e28: f32 = s;
-        local = floor((_e28 / 10f));
+    let _e17: f32 = phase_1;
+    value = floor(clamp(_e17, 0f, 100f));
+    let _e23: f32 = value;
+    if (_e23 >= 100f) {
+        local_1 = 3f;
     } else {
-        let _e34: f32 = s;
-        local = (_e34 - (floor((_e34 / 10f)) * 10f));
+        let _e27: f32 = value;
+        if (_e27 >= 10f) {
+            local = 2f;
+        } else {
+            local = 1f;
+        }
+        let _e33: f32 = local;
+        local_1 = _e33;
     }
-    let _e41: f32 = local;
-    digit = _e41;
-    let _e43: f32 = cellIndex;
-    let _e47: f32 = digit;
-    output = vec2<f32>((_e43 * 150f), (-(_e47) * 225f));
-    let _e53: vec2<f32> = output;
-    return _e53;
+    let _e35: f32 = local_1;
+    digits = _e35;
+    let _e38: f32 = digits;
+    left = ((450f - (_e38 * 150f)) * 0.5f);
+    let _e45: vec2<f32> = localPx_1;
+    let _e47: f32 = left;
+    let _e51: vec2<f32> = localPx_1;
+    let _e53: f32 = left;
+    cell = floor(((_e51.x - _e53) / 150f));
+    let _e60: f32 = digits;
+    let _e61: f32 = cell;
+    let _e66: f32 = digits;
+    let _e67: f32 = cell;
+    place = pow(10f, ((_e66 - _e67) - 1f));
+    let _e73: f32 = value;
+    let _e74: f32 = place;
+    let _e76: f32 = value;
+    let _e77: f32 = place;
+    let _e81: f32 = value;
+    let _e82: f32 = place;
+    let _e84: f32 = value;
+    let _e85: f32 = place;
+    let _e87: f32 = floor((_e84 / _e85));
+    digit = (_e87 - (floor((_e87 / 10f)) * 10f));
+    let _e94: f32 = cell;
+    let _e97: f32 = cell;
+    let _e98: f32 = digits;
+    if ((_e94 < 0f) || (_e97 >= _e98)) {
+        local_2 = vec2(100000f);
+    } else {
+        let _e103: f32 = left;
+        let _e104: f32 = cell;
+        let _e108: f32 = digit;
+        local_2 = vec2<f32>((_e103 + (_e104 * 150f)), (-(_e108) * 225f));
+    }
+    let _e114: vec2<f32> = local_2;
+    output = _e114;
+    let _e115: vec2<f32> = output;
+    return _e115;
 }
 
 
@@ -789,20 +770,7 @@ fn nf_sdf_coverage(distance: f32) -> f32 {
  }
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    var math_closure_out: vec2f;
-    {
-        let phase = (graph_inputs.gauge_clock_seconds).x;
-        let localPx = in.local_px.xy;
-        var output: vec2f;
-        output = mc_math_closure(in.uv, phase, localPx);
-        math_closure_out = output;
-    }
-    // Lerp gauge.label50.tint.mix.result
-    let lerp = mix(
-        (graph_inputs.gauge_glass_tint_core).x,
-        (graph_inputs.gauge_glass_tint_rim).x,
-        smoothstep(-2.8, -0.65, nf_text_sdf(img_tex_gauge_label50_sdf, in.local_px.xy - (math_closure_out))),
-    );
+    let math_closure_out = nf_math_closure_fragment_closure(vec2f(in.uv.x, 1.0 - in.uv.y), (graph_inputs.gauge_clock_seconds).x, in.local_px.xy);
     // Sdf2DBevel gauge.label50.bevel.normal finite differences
     let _2d_sdf_bevel_normal_sdf_px = nf_text_sdf(
         img_tex_gauge_label50_sdf,
@@ -820,10 +788,10 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         img_tex_gauge_label50_sdf,
         (in.local_px.xy + vec2f(0.0, -(max(abs(1.5), 0.001)))) - (math_closure_out),
     );
-    let _2d_sdf_bevel_normal_depth_px = sdf2d_bevel_smooth7(_2d_sdf_bevel_normal_sdf_px, 5.2, 0.45);
-    let _2d_sdf_bevel_normal_depth_nx = sdf2d_bevel_smooth7(_2d_sdf_bevel_normal_sdf_nx, 5.2, 0.45);
-    let _2d_sdf_bevel_normal_depth_py = sdf2d_bevel_smooth7(_2d_sdf_bevel_normal_sdf_py, 5.2, 0.45);
-    let _2d_sdf_bevel_normal_depth_ny = sdf2d_bevel_smooth7(_2d_sdf_bevel_normal_sdf_ny, 5.2, 0.45);
+    let _2d_sdf_bevel_normal_depth_px = sdf2d_bevel_smooth7(_2d_sdf_bevel_normal_sdf_px, 3.5, 0.45);
+    let _2d_sdf_bevel_normal_depth_nx = sdf2d_bevel_smooth7(_2d_sdf_bevel_normal_sdf_nx, 3.5, 0.45);
+    let _2d_sdf_bevel_normal_depth_py = sdf2d_bevel_smooth7(_2d_sdf_bevel_normal_sdf_py, 3.5, 0.45);
+    let _2d_sdf_bevel_normal_depth_ny = sdf2d_bevel_smooth7(_2d_sdf_bevel_normal_sdf_ny, 3.5, 0.45);
     let _2d_sdf_bevel_normal_normal = sdf2d_bevel_normal(
         _2d_sdf_bevel_normal_depth_px,
         _2d_sdf_bevel_normal_depth_nx,
@@ -844,7 +812,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      let screen_uv = glass_sample_screen_uv(screen_px, params.target_size);
 
      // --- Shape SDF ---
-     let edge = f32(5.199999809);
+     let edge = f32(7.800000191);
      let edge_pow = f32(2.0);
      let radius_px = (vec3f(0.0, 0.0, 54.0)).z;
      let safe_edge = max(edge, 1e-6);
@@ -860,8 +828,8 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      let glass_tangent = (qx * sy.y - qy * sx.y) / safe_det;
      let glass_bitangent = (qy * sx.x - qx * sy.x) / safe_det;
      let geometric = normalize(cross(glass_tangent, glass_bitangent));
-     let normal = normalize(cross(glass_bitangent, geometric) * local_normal.x * -0.850000024
-         + cross(geometric, glass_tangent) * local_normal.y * -0.850000024
+     let normal = normalize(cross(glass_bitangent, geometric) * local_normal.x * -1.0
+         + cross(geometric, glass_tangent) * local_normal.y * -1.0
          + cross(glass_tangent, glass_bitangent) * local_normal.z);
      let light_normal = normal;
      var final_alpha = clamp(0.5 - shape_distance / max(fwidth(shape_distance), 0.0001), 0.0, 1.0);
@@ -872,26 +840,24 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      // --- Refraction ---
      let uv_display_px = (local_px - half_size_px) * f32(1.0) + half_size_px;
      let incident_ray = normalize(vec3f(0.0, 0.0, -1.0));
-     let refractive_index = f32(1.519999981);
+     let refractive_index = f32(1.5);
      let refract_dir = refract(incident_ray, normal, 1.0 / max(refractive_index, 1e-6));
-     let refract_thickness = mix((f32(16.0) - edge) * 2.0, f32(16.0) * 2.0, clamp(normalized_sdf, 0.0, 1.0));
+     let refract_thickness = mix((f32(8.0) - edge) * 2.0, f32(8.0) * 2.0, clamp(normalized_sdf, 0.0, 1.0));
      let refract_local_px = uv_display_px + refract_dir.xy * refract_thickness;
      let refract_uv = glass_sample_screen_uv(screen_px + glass_tangent.xy * (uv_display_px.x - local_px.x) + glass_bitangent.xy * (uv_display_px.y - local_px.y) + refract_dir.xy * refract_thickness, params.target_size);
-     let refraction = glass_texture_map(pass_tex_gauge_glass_background, pass_samp_gauge_glass_background, refract_uv, false, 1.0, 0, pass_tex_gauge_glass_background, pass_samp_gauge_glass_background, screen_uv);
+     let refraction = textureSample(pass_tex_gauge_glass_background, pass_samp_gauge_glass_background, refract_uv);
 
      // --- Reflection ---
      let reflect_dir = reflect(incident_ray, normal);
-     let reflect_local_px = uv_display_px + reflect_dir.xy * mix(0.0, f32(6.0), 1.0 - clamp(normalized_sdf, 0.0, 1.0));
-     let reflect_uv = glass_sample_screen_uv(screen_px + glass_tangent.xy * (uv_display_px.x - local_px.x) + glass_bitangent.xy * (uv_display_px.y - local_px.y) + reflect_dir.xy * mix(0.0, f32(6.0), 1.0 - clamp(normalized_sdf, 0.0, 1.0)), params.target_size);
-     let reflection = glass_texture_map(pass_tex_gauge_glass_background, pass_samp_gauge_glass_background, reflect_uv, false, 1.0, 0, pass_tex_gauge_glass_background, pass_samp_gauge_glass_background, screen_uv);
+     let reflect_local_px = uv_display_px + reflect_dir.xy * mix(0.0, f32(0.0), 1.0 - clamp(normalized_sdf, 0.0, 1.0));
+     let reflect_uv = glass_sample_screen_uv(screen_px + glass_tangent.xy * (uv_display_px.x - local_px.x) + glass_bitangent.xy * (uv_display_px.y - local_px.y) + reflect_dir.xy * mix(0.0, f32(0.0), 1.0 - clamp(normalized_sdf, 0.0, 1.0)), params.target_size);
+     let reflection = textureSample(pass_tex_gauge_glass_background, pass_samp_gauge_glass_background, reflect_uv);
 
      // --- Mix refraction + reflection ---
-     var glass_mat = mix(refraction, reflection, clamp(1.0 + dot(normal, incident_ray) * 0.949999988, 0.0, 1.0));
-    glass_mat = glass_luminance_curve_lab(glass_mat, vec4f(0.0, 0.0, 0.0, 0.0), 0.0);
-    //  glass_mat = vec4f(glass_add_light(glass_mat.rgb, reflection.rgb, (1.0 - light_normalized_sdf) * 0.0), glass_mat.a);
+     var glass_mat = mix(refraction, reflection, clamp(1.0 + dot(normal, incident_ray) * 0.150000006, 0.0, 1.0));
 
      // --- Background color tinting ---
-     var glass_color = glass_texture_map(pass_tex_gauge_glass_background, pass_samp_gauge_glass_background, screen_uv, false, 1.0, 0, pass_tex_gauge_glass_background, pass_samp_gauge_glass_background, screen_uv);
+     var glass_color = textureSample(pass_tex_gauge_glass_background, pass_samp_gauge_glass_background, screen_uv);
      glass_color = glass_adjust_color(glass_color, 1.0, 0.0);
      glass_color = vec4f(mix(glass_color.rgb, vec3f(1.0), 0.0), glass_color.a);
      let glass_color_luma = clamp(glass_luma(glass_color.rgb), 0.0, 1.0);
@@ -916,27 +882,32 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      }
 
      // --- Apply inner glass color ---
-     glass_color_ratio = mix(glass_color_ratio, vec4f(0.0, 0.460000008, 0.5, 1.0).rgb, vec4f(0.0, 0.460000008, 0.5, 1.0).a);
+     glass_color_ratio = mix(glass_color_ratio, vec4f((graph_inputs.gauge_glass_tint).rgb * (graph_inputs.gauge_glass_tint).a, (graph_inputs.gauge_glass_tint).a).rgb, vec4f((graph_inputs.gauge_glass_tint).rgb * (graph_inputs.gauge_glass_tint).a, (graph_inputs.gauge_glass_tint).a).a);
 
      // --- Apply color ratio + inner color ---
      glass_mat = vec4f(glass_mat.rgb * mix(vec3f(1.0), glass_color_ratio, 1.0), glass_mat.a);
-     glass_mat = vec4f(mix(glass_mat.rgb, glass_color_ratio, lerp * color_ratio), glass_mat.a);
-     glass_mat = vec4f(glass_mat.rgb + vec3f(pow(smoothstep(1.0, 0.0, 1.0 - in.uv.y), 2.0) * 0.0), glass_mat.a);
-
-     // --- Directional lighting ---
-     let lighting1 = glass_calculate_lighting(light_normal, vec3f(-0.5, 0.860000014, 0.649999976), 0.094999999, 0.319999993);
-     let lighting2 = glass_calculate_lighting(light_normal, vec3f(-0.5, 0.860000014, 0.649999976) * vec3f(-1.0, -1.0, 1.0), 0.025, 0.319999993);
-     let light_ratio = glass_dynamic_add(glass_mat.rgb);
-     glass_mat = vec4f(glass_mat.rgb + lighting1 + lighting2, glass_mat.a);
+     glass_mat = vec4f(mix(glass_mat.rgb, glass_color_ratio, 0.100000001 * color_ratio), glass_mat.a);
+     // --- Combine all light sources and the authored curve before one OKLab remap ---
+     let lighting1 = glass_calculate_lighting(light_normal, vec3f(-0.400000006, 0.850000024, 0.200000003), 2.0, 0.419999987);
+     let lighting2 = glass_calculate_lighting(light_normal, vec3f(-0.400000006, 0.850000024, 0.200000003) * vec3f(-1.0, -1.0, 1.0), 1.0, 0.419999987);
+     let bottom_lighting = pow(smoothstep(1.0, 0.0, 1.0 - in.uv.y), 2.0) * 0.02;
+     let lighting = lighting1 + lighting2 + 0.0 + bottom_lighting;
+     if (lighting != 0.0 || 1.0 != 0.0) {
+         let identity_curve = vec4f(0.0, 1.0 / 3.0, 2.0 / 3.0, 1.0);
+         let curve = mix(identity_curve, vec4f(0.0, 0.334190398, 0.659346938, 1.065835714), 1.0) + vec4f(0.2 * lighting);
+         // Material RGB is premultiplied only at the end; illumination must not change alpha.
+         let lit = glass_luminance_curve_lab(vec4f(glass_mat.rgb, 1.0), curve, 1.0);
+         glass_mat = vec4f(lit.rgb, glass_mat.a);
+     }
 
      // --- Final adjustments ---
-     glass_mat = vec4f(pow(glass_mat.rgb, vec3f(1.100000024)), glass_mat.a);
+     glass_mat = vec4f(pow(glass_mat.rgb, vec3f(1.0)), glass_mat.a);
 
      // --- Apply unshade factor ---
-     glass_mat = vec4f(mix(glass_mat.rgb, vec4f(0.0, 0.460000008, 0.5, 1.0).rgb, 0.0), glass_mat.a);
+     glass_mat = vec4f(mix(glass_mat.rgb, vec4f((graph_inputs.gauge_glass_tint).rgb * (graph_inputs.gauge_glass_tint).a, (graph_inputs.gauge_glass_tint).a).rgb, 0.0), glass_mat.a);
 
      // --- Apply overall alpha ---
-     glass_mat = vec4f(glass_mat.rgb, glass_mat.a * final_alpha * 0.959999979);
+     glass_mat = vec4f(glass_mat.rgb, glass_mat.a * final_alpha * 0.939999998);
 
      // --- Premultiply alpha ---
      glass_mat = vec4f(glass_mat.rgb * glass_mat.a, glass_mat.a);

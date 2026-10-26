@@ -631,51 +631,26 @@ where
     let out_var =
         super::readable_node_temp_name(ctx, "fs", node, _out_port.unwrap_or("color"), "out");
 
-    let has_fg_light = fg_blur.is_some();
-    let (fg_tex, fg_samp) = if let Some((_, tex, samp)) = fg_blur.clone() {
-        (tex, samp)
-    } else if let Some((_, tex, samp)) = bg.clone() {
-        (tex, samp)
+    let light_map_expr = if let Some((_, tex, samp)) = fg_blur {
+        format!("glass_get_lighten({tex}, {samp}, screen_uv)")
     } else {
-        (
-            "pass_tex__missing".to_string(),
-            "pass_samp__missing".to_string(),
-        )
+        "0.0".into()
     };
-    let add_foreground = if has_fg_light { "true" } else { "false" };
 
     let bg_color_expr = if let Some((_, tex, samp)) = bg_color.clone().or(bg.clone()) {
-        format!(
-            "glass_texture_map({tex}, {samp}, screen_uv, {add_foreground}, {opacity}, {blend_mode}, {fg_tex}, {fg_samp}, screen_uv)",
-            opacity = u_reflect_lighten_opacity.expr,
-            blend_mode = u_reflect_lighten_blend_mode.expr,
-            fg_tex = fg_tex,
-            fg_samp = fg_samp,
-        )
+        format!("textureSample({tex}, {samp}, screen_uv)")
     } else {
         "vec4f(0.0)".to_string()
     };
 
     let refraction_expr = if let Some((_, tex, samp)) = refract.or(bg.clone()) {
-        format!(
-            "glass_texture_map({tex}, {samp}, refract_uv, {add_foreground}, {opacity}, {blend_mode}, {fg_tex}, {fg_samp}, screen_uv)",
-            opacity = u_reflect_lighten_opacity.expr,
-            blend_mode = u_reflect_lighten_blend_mode.expr,
-            fg_tex = fg_tex,
-            fg_samp = fg_samp,
-        )
+        format!("textureSample({tex}, {samp}, refract_uv)")
     } else {
         "vec4f(0.0)".to_string()
     };
 
     let reflection_expr = if let Some((_, tex, samp)) = reflect.or(bg.clone()) {
-        format!(
-            "glass_texture_map({tex}, {samp}, reflect_uv, {add_foreground}, {opacity}, {blend_mode}, {fg_tex}, {fg_samp}, screen_uv)",
-            opacity = u_reflect_lighten_opacity.expr,
-            blend_mode = u_reflect_lighten_blend_mode.expr,
-            fg_tex = fg_tex,
-            fg_samp = fg_samp,
-        )
+        format!("textureSample({tex}, {samp}, reflect_uv)")
     } else {
         "vec4f(0.0)".to_string()
     };
@@ -695,9 +670,7 @@ where
         ("reflect_screen_px", if has_external_shape {
             "screen_px + glass_tangent.xy * (uv_display_px.x - local_px.x) + glass_bitangent.xy * (uv_display_px.y - local_px.y) + reflect_dir.xy * mix(0.0, f32({{uShapeReflectOffsetPx}}), 1.0 - clamp(normalized_sdf, 0.0, 1.0))".replace("{{uShapeReflectOffsetPx}}", &u_shape_reflect_offset_px.expr)
         } else { "geo_origin_px + reflect_local_px".into() }),
-        ("lighting_add", if has_external_shape {
-            "glass_mat = vec4f(glass_mat.rgb + lighting1 + lighting2, glass_mat.a);".into()
-        } else { "glass_mat += lighting1 + lighting2;".into() }),
+        ("light_map", light_map_expr),
         ("uShapeEdgePx", u_shape_edge_px.expr.clone()),
         ("uShapeEdgePow", u_shape_edge_pow.expr.clone()),
         ("radius_expr", radius_expr),

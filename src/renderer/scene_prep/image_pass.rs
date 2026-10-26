@@ -315,10 +315,10 @@ pub(crate) fn expand_image_passes(scene: &mut SceneDSL) -> Result<usize> {
         scene.nodes.push(Node {
             id: sample_id.clone(),
             node_type: "MathClosure".to_string(),
-            params: HashMap::from([(
-                "source".to_string(),
-                serde_json::json!("output = samplePass(image, uv);"),
-            )]),
+            params: HashMap::from([
+                ("source".to_string(), serde_json::json!("output = sample_image(uv);")),
+                ("outputType".to_string(), serde_json::json!("color")),
+            ]),
             inputs: vec![NodePort {
                 id: "image".to_string(),
                 name: Some("image".to_string()),

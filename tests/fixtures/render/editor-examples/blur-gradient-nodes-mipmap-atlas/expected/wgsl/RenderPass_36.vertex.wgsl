@@ -52,38 +52,39 @@ var pass_samp_PassTexture_37: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---
-fn mc_math_closure(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>) -> vec2<f32> {
+fn nf_math_closure_fragment_265643bc_closure(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>) -> vec2<f32> {
     var uv_1: vec2<f32>;
     var xy_1: vec2<f32>;
     var size_1: vec2<f32>;
-    var output: vec2<f32> = vec2(0f);
+    var output: vec2<f32>;
 
     uv_1 = uv;
     xy_1 = xy;
     size_1 = size;
-    let _e9: vec2<f32> = xy_1;
-    let _e10: vec2<f32> = size_1;
-    output = (_e9 / _e10);
-    let _e12: vec2<f32> = output;
-    return _e12;
+    let _e7: vec2<f32> = xy_1;
+    let _e8: vec2<f32> = size_1;
+    output = (_e7 / _e8);
+    let _e10: vec2<f32> = output;
+    return _e10;
 }
 
-fn mc_math_closure_d21bfdb4_(uv: vec2<f32>, sampleUV: vec2<f32>) -> vec4<f32> {
-    var uv_1: vec2<f32>;
+fn nf_math_closure_fragment_closure(uv_2: vec2<f32>, sampleUV: vec2<f32>) -> vec4<f32> {
+    var uv_3: vec2<f32>;
     var sampleUV_1: vec2<f32>;
-    var output: vec4<f32> = vec4(0f);
+    var output: vec4<f32>;
 
-    uv_1 = uv;
+    uv_3 = uv_2;
     sampleUV_1 = sampleUV;
-    let _e8: vec2<f32> = sampleUV_1;
-    let _e9: vec4<f32> = sample_pass_texture(_e8);
-    output = vec4<f32>(_e9);
-    let _e11: vec4<f32> = output;
-    return _e11;
+    let _e6: vec2<f32> = sampleUV_1;
+    let _e7: vec4<f32> = nf_math_closure_fragment_closure_sample_texture_texture(_e6);
+    output = vec4<f32>(_e7);
+    let _e9: vec4<f32> = output;
+    return _e9;
 }
 
-fn sample_pass_texture(uv_in: vec2f) -> vec4f {
-    return textureSample(pass_tex_PassTexture_37, pass_samp_PassTexture_37, uv_in);
+fn nf_math_closure_fragment_closure_sample_texture_texture(uv: vec2f) -> vec4f {
+    let raster_uv = vec2f(uv.x, 1.0 - uv.y);
+    return textureSample(pass_tex_PassTexture_37, pass_samp_PassTexture_37, raster_uv);
 }
 
 

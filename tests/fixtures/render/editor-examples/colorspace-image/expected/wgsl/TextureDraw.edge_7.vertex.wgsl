@@ -54,20 +54,21 @@ var img_samp_ImageTexture_9: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---
-fn mc_math_closure(uv: vec2<f32>) -> vec4<f32> {
-    var uv_1: vec2<f32>;
-    var output: vec4<f32> = vec4(0f);
+fn nf_math_closure_fragment_closure(uv_2: vec2<f32>) -> vec4<f32> {
+    var uv_3: vec2<f32>;
+    var output: vec4<f32>;
 
-    uv_1 = uv;
-    let _e6: vec2<f32> = uv_1;
-    let _e7: vec4<f32> = sample_pass_image(_e6);
-    output = _e7;
-    let _e8: vec4<f32> = output;
-    return _e8;
+    uv_3 = uv_2;
+    let _e4: vec2<f32> = uv_3;
+    let _e5: vec4<f32> = nf_math_closure_fragment_closure_sample_image_texture(_e4);
+    output = _e5;
+    let _e6: vec4<f32> = output;
+    return _e6;
 }
 
-fn sample_pass_image(uv_in: vec2f) -> vec4f {
-    return textureSample(img_tex_ImageTexture_9, img_samp_ImageTexture_9, uv_in);
+fn nf_math_closure_fragment_closure_sample_image_texture(uv: vec2f) -> vec4f {
+    let raster_uv = vec2f(uv.x, 1.0 - uv.y);
+    return textureSample(img_tex_ImageTexture_9, img_samp_ImageTexture_9, raster_uv);
 }
 
 

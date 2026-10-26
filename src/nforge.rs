@@ -609,10 +609,10 @@ fn read_scene(connection: &Connection) -> Result<(SceneDSL, AssetStore, DebugArt
 /// Load an authenticated, self-contained archive snapshot without a plaintext file.
 /// The caller owns outer authentication and must supply a checkpointed SQLite snapshot.
 pub fn load_bytes(bytes: &[u8]) -> Result<LoadedNforge> {
-    if bytes.len() < 100 || bytes.len() > 256 * 1024 * 1024
-        || !bytes.starts_with(b"SQLite format 3\0") {
-        bail!("invalid or oversized .nforge memory snapshot");
+    if bytes.len() < 100 || !bytes.starts_with(b"SQLite format 3\0") {
+        bail!("invalid .nforge memory snapshot");
     }
+    let length = i64::try_from(bytes.len()).context("SQLite snapshot length is not representable")?;
     // Match the Web playback reader: WAL-mode headers on standalone checkpointed
     // snapshots must be normalized in the private SQLite allocation, never on disk.
     let connection = Connection::open_in_memory()?;
@@ -625,8 +625,8 @@ pub fn load_bytes(bytes: &[u8]) -> Result<LoadedNforge> {
             *memory.add(19) = 1;
         }
         let rc = rusqlite::ffi::sqlite3_deserialize(
-            connection.handle(), c"main".as_ptr(), memory, bytes.len() as i64,
-            bytes.len() as i64,
+            connection.handle(), c"main".as_ptr(), memory, length,
+            length,
             rusqlite::ffi::SQLITE_DESERIALIZE_FREEONCLOSE | rusqlite::ffi::SQLITE_DESERIALIZE_READONLY,
         );
         if rc != rusqlite::ffi::SQLITE_OK {

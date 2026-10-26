@@ -36,10 +36,8 @@ var<uniform> params: Params;
 struct GraphInputs {
     // Node: gauge.clock.seconds
     gauge_clock_seconds: vec4f,
-    // Node: gauge.glass.tint.core
-    gauge_glass_tint_core: vec4f,
-    // Node: gauge.glass.tint.rim
-    gauge_glass_tint_rim: vec4f,
+    // Node: gauge.glass.tint
+    gauge_glass_tint: vec4f,
 };
 
 @group(0) @binding(2)
@@ -359,18 +357,6 @@ fn glass_adjust_color(color: vec4f, saturation: f32, brightness: f32) -> vec4f {
     return vec4f(adjusted_brightness, alpha);
 }
 
-fn glass_process_color(
-    color: vec4f,
-    luminance_values: vec4f,
-    luminance_amount: f32,
-    saturation: f32,
-    brightness: f32,
-) -> vec4f {
-    var c = glass_luminance_curve_lab(color, luminance_values, luminance_amount);
-    c = vec4f(glass_adjust_color(c, saturation, brightness).rgb, c.a);
-    return c;
-}
-
 fn glass_smooth5_map(t_in: f32) -> f32 {
     // Symmetry avoids catastrophic cancellation in finite-difference normals.
     let t = clamp(0.5 + t_in * 0.5, 0.0, 1.0);
@@ -496,23 +482,6 @@ fn glass_blend_reflect_light(dst: vec4f, lighten: f32, blend_mode: i32) -> vec4f
     }
 }
 
-fn glass_dynamic_add(color: vec3f) -> f32 {
-    // var white_dis = distance(vec3f(1.0), color);
-    // white_dis = smoothstep(0.2, 1.0, white_dis);
-    // white_dis = mix(0.5, 1.0, white_dis);
-    // let lumin = glass_luma(color);
-    // return mix(0.5, white_dis, lumin);
-    return 1.0;
-}
-
-fn glass_add_light(color: vec3f, light_color: vec3f, light_strength: f32) -> vec3f {
-    // var white_dis = distance(vec3f(1.0), color);
-    // white_dis = smoothstep(0.2, 1.0, white_dis);
-    // white_dis = mix(0.3, 1.0, white_dis);
-    // return color + light_color * (light_strength * white_dis);
-    return color + light_color * light_strength;
-}
-
 fn glass_calculate_lighting(normal: vec3f, light_dir: vec3f, intensity: f32, angle_range: f32) -> f32 {
     let normalized_light_dir = normalize(light_dir);
     let dot_product = dot(normal, normalized_light_dir);
@@ -526,67 +495,79 @@ fn glass_sample_screen_uv(screen_px: vec2f, resolution: vec2f) -> vec2f {
     return vec2f(screen_px.x, resolution.y - screen_px.y) / resolution;
 }
 
-fn glass_texture_map(
-    tex: texture_2d<f32>,
-    samp: sampler,
-    sample_uv: vec2f,
-    add_foreground: bool,
-    reflect_lighten_opacity: f32,
-    reflect_lighten_blend_mode: i32,
-    fg_tex: texture_2d<f32>,
-    fg_samp: sampler,
-    frag_uv: vec2f,
-) -> vec4f {
-    var col = textureSample(tex, samp, sample_uv);
-
-    if (add_foreground) {
-        let lighten = glass_get_lighten(fg_tex, fg_samp, frag_uv);
-        let curve_value = mix(
-            vec4f(0.0/3.0 + 0.0, 1.0/3.0 + 0.0, 2.0/3.0 + 0.0, 3.0/3.0 + 0.0),
-            vec4f(0.0/3.0 + 0.2, 1.0/3.0 + 0.2, 2.0/3.0 + 0.2, 3.0/3.0 + 0.2),
-            lighten
-        );
-        col = glass_luminance_curve_lab(col, curve_value, 1.0);
-        // col = glass_blend_reflect_light(col, lighten * reflect_lighten_opacity, reflect_lighten_blend_mode);
-    }
-
-    return col;
-}
-
-fn mc_math_closure(uv: vec2<f32>, phase: f32, localPx: vec2<f32>) -> vec2<f32> {
+fn nf_math_closure_fragment_closure(uv: vec2<f32>, phase: f32, localPx: vec2<f32>) -> vec2<f32> {
     var uv_1: vec2<f32>;
     var phase_1: f32;
     var localPx_1: vec2<f32>;
-    var output: vec2<f32> = vec2(0f);
-    var s: f32;
-    var cellIndex: f32;
+    var output: vec2<f32>;
+    var value: f32;
     var local: f32;
+    var local_1: f32;
+    var digits: f32;
+    var left: f32;
+    var cell: f32;
+    var place: f32;
     var digit: f32;
+    var local_2: vec2<f32>;
 
     uv_1 = uv;
     phase_1 = phase;
     localPx_1 = localPx;
     let _e10: f32 = phase_1;
-    s = floor(_e10);
-    let _e14: vec2<f32> = localPx_1;
-    let _e18: vec2<f32> = localPx_1;
-    cellIndex = step(150f, _e18.x);
-    let _e22: f32 = cellIndex;
-    if (_e22 < 0.5f) {
-        let _e25: f32 = s;
-        let _e28: f32 = s;
-        local = floor((_e28 / 10f));
+    let _e17: f32 = phase_1;
+    value = floor(clamp(_e17, 0f, 100f));
+    let _e23: f32 = value;
+    if (_e23 >= 100f) {
+        local_1 = 3f;
     } else {
-        let _e34: f32 = s;
-        local = (_e34 - (floor((_e34 / 10f)) * 10f));
+        let _e27: f32 = value;
+        if (_e27 >= 10f) {
+            local = 2f;
+        } else {
+            local = 1f;
+        }
+        let _e33: f32 = local;
+        local_1 = _e33;
     }
-    let _e41: f32 = local;
-    digit = _e41;
-    let _e43: f32 = cellIndex;
-    let _e47: f32 = digit;
-    output = vec2<f32>((_e43 * 150f), (-(_e47) * 225f));
-    let _e53: vec2<f32> = output;
-    return _e53;
+    let _e35: f32 = local_1;
+    digits = _e35;
+    let _e38: f32 = digits;
+    left = ((450f - (_e38 * 150f)) * 0.5f);
+    let _e45: vec2<f32> = localPx_1;
+    let _e47: f32 = left;
+    let _e51: vec2<f32> = localPx_1;
+    let _e53: f32 = left;
+    cell = floor(((_e51.x - _e53) / 150f));
+    let _e60: f32 = digits;
+    let _e61: f32 = cell;
+    let _e66: f32 = digits;
+    let _e67: f32 = cell;
+    place = pow(10f, ((_e66 - _e67) - 1f));
+    let _e73: f32 = value;
+    let _e74: f32 = place;
+    let _e76: f32 = value;
+    let _e77: f32 = place;
+    let _e81: f32 = value;
+    let _e82: f32 = place;
+    let _e84: f32 = value;
+    let _e85: f32 = place;
+    let _e87: f32 = floor((_e84 / _e85));
+    digit = (_e87 - (floor((_e87 / 10f)) * 10f));
+    let _e94: f32 = cell;
+    let _e97: f32 = cell;
+    let _e98: f32 = digits;
+    if ((_e94 < 0f) || (_e97 >= _e98)) {
+        local_2 = vec2(100000f);
+    } else {
+        let _e103: f32 = left;
+        let _e104: f32 = cell;
+        let _e108: f32 = digit;
+        local_2 = vec2<f32>((_e103 + (_e104 * 150f)), (-(_e108) * 225f));
+    }
+    let _e114: vec2<f32> = local_2;
+    output = _e114;
+    let _e115: vec2<f32> = output;
+    return _e115;
 }
 
 

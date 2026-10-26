@@ -109,7 +109,7 @@ fn shader_material_GroupInstance_52_ShaderMaterial_PttPrompt(in: ShaderMaterialI
  let hardware = clamp(hardware_weight, 0.0, 1.0);
  let mask = mix(mix(hold, continuous_color.a, continuous), hardware_color.a, hardware);
  let coverage = clamp(mask * prompt_color.a * prompt_opacity, 0.0, 1.0);
- return vec4f(prompt_color.rgb * 1.5 * coverage, coverage);
+ return vec4f(prompt_color.rgb * coverage, coverage);
 }
 
 

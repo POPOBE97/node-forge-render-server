@@ -42,38 +42,6 @@ pub enum GlslShaderStage {
     Compute,
 }
 
-pub fn glsl_to_wgsl(source: &str, stage: GlslShaderStage) -> Result<String> {
-    let shader_stage = match stage {
-        GlslShaderStage::Vertex => naga::ShaderStage::Vertex,
-        GlslShaderStage::Fragment => naga::ShaderStage::Fragment,
-        GlslShaderStage::Compute => naga::ShaderStage::Compute,
-    };
-
-    let mut parser = naga::front::glsl::Frontend::default();
-    let options = naga::front::glsl::Options {
-        stage: shader_stage,
-        defines: Default::default(),
-    };
-
-    let module = parser
-        .parse(&options, source)
-        .map_err(|e| anyhow!("GLSL parse failed: {e:?}"))?;
-
-    let info = naga::valid::Validator::new(
-        naga::valid::ValidationFlags::all(),
-        naga::valid::Capabilities::all(),
-    )
-    .validate(&module)
-    .map_err(|e| anyhow!("GLSL validation failed: {e:?}"))?;
-
-    naga::back::wgsl::write_string(
-        &module,
-        &info,
-        naga::back::wgsl::WriterFlags::EXPLICIT_TYPES,
-    )
-    .map_err(|e| anyhow!("WGSL writer failed: {e:?}"))
-}
-
 /// Format a naga parse error with source context for better error messages.
 ///
 /// # Arguments

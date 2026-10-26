@@ -2702,10 +2702,10 @@ mod tests {
                 Node {
                     id: "tint_sample".to_string(),
                     node_type: "MathClosure".to_string(),
-                    params: HashMap::from([(
-                        "source".to_string(),
-                        serde_json::json!("output = samplePass(l0, uv);"),
-                    )]),
+                    params: HashMap::from([
+                        ("source".to_string(), serde_json::json!("output = sample_l0(uv);")),
+                        ("outputType".to_string(), serde_json::json!("color")),
+                    ]),
                     inputs: vec![crate::dsl::NodePort {
                         id: "l0".to_string(),
                         name: Some("l0".to_string()),

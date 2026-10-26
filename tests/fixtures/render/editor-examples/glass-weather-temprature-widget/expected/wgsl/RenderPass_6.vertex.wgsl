@@ -85,7 +85,38 @@ fn aspect_correct_uv_fill(uv: vec2f, img_dim: vec2f, geo_dim: vec2f) -> vec2f {
     return (uv - vec2f(0.5)) * s + vec2f(0.5);
 }
 
-fn mc_math_closure(uv: vec2<f32>, n: vec3<f32>, i: vec3<f32>, xy: vec2<f32>, size: vec2<f32>, ior: f32, depth: f32) -> vec2<f32> {
+fn nf_math_closure_fragment_2eafeedf_closure(uv: vec2<f32>, n: vec3<f32>) -> f32 {
+    var uv_1: vec2<f32>;
+    var n_1: vec3<f32>;
+    var output: f32;
+
+    uv_1 = uv;
+    n_1 = n;
+    let _e10: vec3<f32> = n_1;
+    output = dot(_e10, vec3<f32>(0f, 0f, 1f));
+    let _e16: f32 = output;
+    return _e16;
+}
+
+fn nf_math_closure_fragment_30810be0_closure(uv: vec2<f32>, c: vec4<f32>, f: f32) -> vec4<f32> {
+    var uv_1: vec2<f32>;
+    var c_1: vec4<f32>;
+    var f_1: f32;
+    var output: vec4<f32>;
+
+    uv_1 = uv;
+    c_1 = c;
+    f_1 = f;
+    let _e7: vec4<f32> = c_1;
+    let _e8: vec3<f32> = _e7.xyz;
+    let _e9: vec4<f32> = c_1;
+    let _e11: f32 = f_1;
+    output = vec4<f32>(_e8.x, _e8.y, _e8.z, (_e9.w * _e11));
+    let _e17: vec4<f32> = output;
+    return _e17;
+}
+
+fn nf_math_closure_fragment_3da3ebdf_closure(uv: vec2<f32>, n: vec3<f32>, i: vec3<f32>, xy: vec2<f32>, size: vec2<f32>, ior: f32, depth: f32) -> vec2<f32> {
     var uv_1: vec2<f32>;
     var n_1: vec3<f32>;
     var i_1: vec3<f32>;
@@ -93,7 +124,7 @@ fn mc_math_closure(uv: vec2<f32>, n: vec3<f32>, i: vec3<f32>, xy: vec2<f32>, siz
     var size_1: vec2<f32>;
     var ior_1: f32;
     var depth_1: f32;
-    var output: vec2<f32> = vec2(0f);
+    var output: vec2<f32>;
     var o: vec3<f32>;
     var offset: vec2<f32>;
 
@@ -104,132 +135,196 @@ fn mc_math_closure(uv: vec2<f32>, n: vec3<f32>, i: vec3<f32>, xy: vec2<f32>, siz
     size_1 = size;
     ior_1 = ior;
     depth_1 = depth;
-    let _e20: vec3<f32> = i_1;
-    let _e21: vec3<f32> = n_1;
-    let _e22: f32 = ior_1;
-    o = refract(_e20, _e21, _e22);
-    let _e25: vec2<f32> = xy_1;
-    let _e26: vec3<f32> = o;
-    let _e28: f32 = depth_1;
-    offset = (_e25 + (_e26.xy * _e28));
-    let _e32: vec2<f32> = offset;
-    let _e34: vec2<f32> = size_1;
-    output = (_e32.xy / _e34);
-    let _e36: vec2<f32> = output;
-    return _e36;
+    let _e18: vec3<f32> = i_1;
+    let _e19: vec3<f32> = n_1;
+    let _e20: f32 = ior_1;
+    o = refract(_e18, _e19, _e20);
+    let _e23: vec2<f32> = xy_1;
+    let _e24: vec3<f32> = o;
+    let _e26: f32 = depth_1;
+    offset = (_e23 + (_e24.xy * _e26));
+    let _e30: vec2<f32> = offset;
+    let _e32: vec2<f32> = size_1;
+    output = (_e30.xy / _e32);
+    let _e34: vec2<f32> = output;
+    return _e34;
 }
 
-fn mc_math_closure_007d46ef(uv: vec2<f32>, c_edge: vec4<f32>) -> vec4<f32> {
+fn nf_math_closure_fragment_3f7508e0_closure(uv: vec2<f32>, x: f32) -> f32 {
     var uv_1: vec2<f32>;
-    var c_edge_1: vec4<f32>;
-    var output: vec4<f32> = vec4(0f);
+    var x_1: f32;
+    var output: f32;
 
     uv_1 = uv;
-    c_edge_1 = c_edge;
-    let _e8: vec4<f32> = c_edge_1;
-    c_edge_1.w = (_e8.w * 0.05f);
-    let _e12: vec4<f32> = c_edge_1;
-    output = _e12;
-    let _e13: vec4<f32> = output;
-    return _e13;
+    x_1 = x;
+    let _e6: f32 = x_1;
+    output = (1f - _e6);
+    let _e8: f32 = output;
+    return _e8;
 }
 
-fn mc_math_closure_179346ef(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>) -> vec2<f32> {
-    var uv_1: vec2<f32>;
-    var xy_1: vec2<f32>;
-    var size_1: vec2<f32>;
-    var output: vec2<f32> = vec2(0f);
-
-    uv_1 = uv;
-    xy_1 = xy;
-    size_1 = size;
-    let _e9: vec2<f32> = xy_1;
-    let _e10: vec2<f32> = size_1;
-    output = (_e9 / _e10);
-    let _e12: vec2<f32> = output;
-    return _e12;
-}
-
-fn mc_math_closure_351f4b6e(uv: vec2<f32>, c: vec4<f32>) -> vec4<f32> {
+fn nf_math_closure_fragment_7582d587_closure(uv: vec2<f32>, c: vec4<f32>) -> vec4<f32> {
     var uv_1: vec2<f32>;
     var c_1: vec4<f32>;
-    var output: vec4<f32> = vec4(0f);
+    var output: vec4<f32>;
 
     uv_1 = uv;
     c_1 = c;
     output = vec4(0f);
-    let _e9: vec4<f32> = c_1;
-    if (_e9.w > 0f) {
+    let _e7: vec4<f32> = c_1;
+    if (_e7.w > 0f) {
         {
+            let _e11: vec4<f32> = c_1;
             let _e13: vec4<f32> = c_1;
-            let _e15: vec4<f32> = c_1;
-            let _e18: vec3<f32> = (_e13.xyz / vec3(_e15.w));
-            let _e19: vec4<f32> = c_1;
-            output = vec4<f32>(_e18.x, _e18.y, _e18.z, _e19.w);
+            let _e16: vec3<f32> = (_e11.xyz / vec3(_e13.w));
+            let _e17: vec4<f32> = c_1;
+            output = vec4<f32>(_e16.x, _e16.y, _e16.z, _e17.w);
         }
     }
-    let _e25: vec4<f32> = output;
-    return _e25;
+    let _e23: vec4<f32> = output;
+    return _e23;
 }
 
-fn mc_math_closure_4214e9c9_(uv: vec2<f32>, uv_1: vec2<f32>) -> vec4<f32> {
-    var uv_2: vec2<f32>;
+fn nf_math_closure_fragment_825b1180_closure(uv_2: vec2<f32>, sampleUV: vec2<f32>) -> vec4<f32> {
     var uv_3: vec2<f32>;
-    var output: vec4<f32> = vec4(0f);
+    var sampleUV_1: vec2<f32>;
+    var output: vec4<f32>;
 
-    uv_2 = uv;
-    uv_3 = uv_1;
-    let _e8: vec2<f32> = uv_3;
-    let _e9: vec4<f32> = sample_pass_texture(_e8);
-    output = _e9;
-    let _e10: vec4<f32> = output;
-    return _e10;
+    uv_3 = uv_2;
+    sampleUV_1 = sampleUV;
+    let _e6: vec2<f32> = sampleUV_1;
+    let _e7: vec4<f32> = nf_math_closure_fragment_825b1180_closure_sample_texture_texture(_e6);
+    output = _e7;
+    let _e8: vec4<f32> = output;
+    return _e8;
 }
 
-fn mc_math_closure_50134b6e(uv: vec2<f32>, n: vec3<f32>, i: vec3<f32>) -> f32 {
+fn nf_math_closure_fragment_825b1180_closure_sample_texture_texture(uv: vec2f) -> vec4f {
+    let raster_uv = vec2f(uv.x, 1.0 - uv.y);
+    return textureSample(pass_tex_PassTexture_86, pass_samp_PassTexture_86, raster_uv);
+}
+
+fn nf_math_closure_fragment_9076d587_closure(uv: vec2<f32>, n: vec3<f32>, i: vec3<f32>) -> f32 {
     var uv_1: vec2<f32>;
     var n_1: vec3<f32>;
     var i_1: vec3<f32>;
-    var output: f32 = 0f;
+    var output: f32;
     var r: f32;
 
     uv_1 = uv;
     n_1 = n;
     i_1 = i;
-    let _e10: vec3<f32> = n_1;
-    n_1 = normalize(_e10);
-    let _e13: vec3<f32> = n_1;
-    let _e15: vec3<f32> = i_1;
-    let _e17: vec3<f32> = n_1;
-    let _e19: vec3<f32> = i_1;
-    let _e23: vec3<f32> = n_1;
-    let _e25: vec3<f32> = i_1;
-    let _e27: vec3<f32> = n_1;
-    let _e29: vec3<f32> = i_1;
-    let _e34: vec3<f32> = n_1;
-    let _e36: vec3<f32> = i_1;
-    let _e38: vec2<f32> = -(_e36.xy);
-    let _e39: vec3<f32> = i_1;
-    let _e44: vec3<f32> = n_1;
-    let _e46: vec3<f32> = i_1;
-    let _e48: vec2<f32> = -(_e46.xy);
-    let _e49: vec3<f32> = i_1;
-    let _e56: vec3<f32> = n_1;
-    let _e58: vec3<f32> = i_1;
-    let _e60: vec2<f32> = -(_e58.xy);
-    let _e61: vec3<f32> = i_1;
-    let _e66: vec3<f32> = n_1;
-    let _e68: vec3<f32> = i_1;
-    let _e70: vec2<f32> = -(_e68.xy);
-    let _e71: vec3<f32> = i_1;
-    r = (max(0f, dot(_e27.xyz, _e29.xyz)) + max(0f, dot(_e66.xyz, vec3<f32>(_e70.x, _e70.y, _e71.z))));
-    let _e80: f32 = r;
-    output = (_e80 * 0.7f);
-    let _e83: f32 = output;
-    return _e83;
+    let _e8: vec3<f32> = n_1;
+    n_1 = normalize(_e8);
+    let _e11: vec3<f32> = n_1;
+    let _e13: vec3<f32> = i_1;
+    let _e15: vec3<f32> = n_1;
+    let _e17: vec3<f32> = i_1;
+    let _e21: vec3<f32> = n_1;
+    let _e23: vec3<f32> = i_1;
+    let _e25: vec3<f32> = n_1;
+    let _e27: vec3<f32> = i_1;
+    let _e32: vec3<f32> = n_1;
+    let _e34: vec3<f32> = i_1;
+    let _e36: vec2<f32> = -(_e34.xy);
+    let _e37: vec3<f32> = i_1;
+    let _e42: vec3<f32> = n_1;
+    let _e44: vec3<f32> = i_1;
+    let _e46: vec2<f32> = -(_e44.xy);
+    let _e47: vec3<f32> = i_1;
+    let _e54: vec3<f32> = n_1;
+    let _e56: vec3<f32> = i_1;
+    let _e58: vec2<f32> = -(_e56.xy);
+    let _e59: vec3<f32> = i_1;
+    let _e64: vec3<f32> = n_1;
+    let _e66: vec3<f32> = i_1;
+    let _e68: vec2<f32> = -(_e66.xy);
+    let _e69: vec3<f32> = i_1;
+    r = (max(0f, dot(_e25.xyz, _e27.xyz)) + max(0f, dot(_e64.xyz, vec3<f32>(_e68.x, _e68.y, _e69.z))));
+    let _e78: f32 = r;
+    output = (_e78 * 0.7f);
+    let _e81: f32 = output;
+    return _e81;
 }
 
-fn mc_math_closure_668046ef(uv: vec2<f32>, c_edge: vec4<f32>, e: f32, c_ui: vec4<f32>, f: f32, l: f32, selection: f32) -> vec4<f32> {
+fn nf_math_closure_fragment_ad9a0be0_closure(uv: vec2<f32>, sampleUV: vec2<f32>, scale: f32) -> vec2<f32> {
+    var uv_1: vec2<f32>;
+    var sampleUV_1: vec2<f32>;
+    var scale_1: f32;
+    var output: vec2<f32>;
+
+    uv_1 = uv;
+    sampleUV_1 = sampleUV;
+    scale_1 = scale;
+    let _e7: vec2<f32> = sampleUV_1;
+    let _e11: f32 = scale_1;
+    output = (((_e7 - vec2(0.5f)) * _e11) + vec2(0.5f));
+    let _e16: vec2<f32> = output;
+    return _e16;
+}
+
+fn nf_math_closure_fragment_b2bbd787_closure(uv: vec2<f32>, t: f32, c: vec4<f32>, thumb: f32) -> vec4<f32> {
+    var uv_1: vec2<f32>;
+    var t_1: f32;
+    var c_1: vec4<f32>;
+    var thumb_1: f32;
+    var output: vec4<f32>;
+    var r: vec4<f32>;
+
+    uv_1 = uv;
+    t_1 = t;
+    c_1 = c;
+    thumb_1 = thumb;
+    let _e9: vec4<f32> = c_1;
+    let _e10: f32 = t_1;
+    r = (_e9 * _e10);
+    let _e17: vec4<f32> = r;
+    let _e20: f32 = thumb_1;
+    r = mix(_e17, vec4(1f), vec4(_e20));
+    let _e23: vec4<f32> = r;
+    output = _e23;
+    let _e24: vec4<f32> = output;
+    return _e24;
+}
+
+fn nf_math_closure_fragment_c06c08e0_closure(uv: vec2<f32>, c_edge: vec4<f32>) -> vec4<f32> {
+    var uv_1: vec2<f32>;
+    var c_edge_1: vec4<f32>;
+    var output: vec4<f32>;
+
+    uv_1 = uv;
+    c_edge_1 = c_edge;
+    let _e6: vec4<f32> = c_edge_1;
+    c_edge_1.w = (_e6.w * 0.05f);
+    let _e10: vec4<f32> = c_edge_1;
+    output = _e10;
+    let _e11: vec4<f32> = output;
+    return _e11;
+}
+
+fn nf_math_closure_fragment_c280d587_closure(uv: vec2<f32>, c: vec4<f32>) -> vec4<f32> {
+    var uv_1: vec2<f32>;
+    var c_1: vec4<f32>;
+    var output: vec4<f32>;
+
+    uv_1 = uv;
+    c_1 = c;
+    output = vec4(0f);
+    let _e7: vec4<f32> = c_1;
+    if (_e7.w > 0f) {
+        {
+            let _e11: vec4<f32> = c_1;
+            let _e13: vec4<f32> = c_1;
+            let _e16: vec3<f32> = (_e11.xyz / vec3(_e13.w));
+            let _e17: vec4<f32> = c_1;
+            output = vec4<f32>(_e16.x, _e16.y, _e16.z, _e17.w);
+        }
+    }
+    let _e23: vec4<f32> = output;
+    return _e23;
+}
+
+fn nf_math_closure_fragment_closure(uv: vec2<f32>, c_edge: vec4<f32>, e: f32, c_ui: vec4<f32>, f: f32, l: f32, selection: f32) -> vec4<f32> {
     var uv_1: vec2<f32>;
     var c_edge_1: vec4<f32>;
     var e_1: f32;
@@ -237,7 +332,7 @@ fn mc_math_closure_668046ef(uv: vec2<f32>, c_edge: vec4<f32>, e: f32, c_ui: vec4
     var f_1: f32;
     var l_1: f32;
     var selection_1: f32;
-    var output: vec4<f32> = vec4(0f);
+    var output: vec4<f32>;
     var edge_color: vec4<f32>;
     var alpha_r: f32;
     var color_r: vec3<f32>;
@@ -250,201 +345,107 @@ fn mc_math_closure_668046ef(uv: vec2<f32>, c_edge: vec4<f32>, e: f32, c_ui: vec4
     f_1 = f;
     l_1 = l;
     selection_1 = selection;
+    let _e15: vec4<f32> = c_edge_1;
+    let _e16: vec3<f32> = _e15.xyz;
     let _e17: vec4<f32> = c_edge_1;
-    let _e18: vec3<f32> = _e17.xyz;
-    let _e19: vec4<f32> = c_edge_1;
-    let _e21: f32 = e_1;
-    let _e23: f32 = f_1;
-    edge_color = vec4<f32>(_e18.x, _e18.y, _e18.z, ((_e19.w * _e21) * _e23));
-    let _e31: vec4<f32> = edge_color;
-    let _e34: f32 = l_1;
-    let _e35: f32 = f_1;
-    let _e40: f32 = selection_1;
-    let _e41: f32 = f_1;
-    let _e46: f32 = e_1;
-    edge_color.w = (_e31.w + (((0.15f + ((_e34 * _e35) * 0.6f)) + ((_e40 * _e41) * 0.2f)) * _e46));
+    let _e19: f32 = e_1;
+    let _e21: f32 = f_1;
+    edge_color = vec4<f32>(_e16.x, _e16.y, _e16.z, ((_e17.w * _e19) * _e21));
+    let _e29: vec4<f32> = edge_color;
+    let _e32: f32 = l_1;
+    let _e33: f32 = f_1;
+    let _e38: f32 = selection_1;
+    let _e39: f32 = f_1;
+    let _e44: f32 = e_1;
+    edge_color.w = (_e29.w + (((0.15f + ((_e32 * _e33) * 0.6f)) + ((_e38 * _e39) * 0.2f)) * _e44));
+    let _e47: vec4<f32> = edge_color;
     let _e49: vec4<f32> = edge_color;
-    let _e51: vec4<f32> = edge_color;
-    let _e55: f32 = l_1;
-    let _e56: f32 = f_1;
-    let _e58: f32 = selection_1;
-    let _e59: f32 = f_1;
-    let _e62: vec4<f32> = edge_color;
-    let _e66: f32 = l_1;
-    let _e67: f32 = f_1;
-    let _e69: f32 = selection_1;
-    let _e70: f32 = f_1;
-    let _e74: vec3<f32> = mix(_e62.xyz, vec3(1f), vec3(((_e66 * _e67) + (_e69 * _e70))));
-    edge_color.x = _e74.x;
-    edge_color.y = _e74.y;
-    edge_color.z = _e74.z;
-    let _e81: vec4<f32> = edge_color;
-    let _e83: vec4<f32> = c_ui_1;
-    let _e86: vec4<f32> = edge_color;
-    alpha_r = (_e81.w + (_e83.w * (1f - _e86.w)));
+    let _e53: f32 = l_1;
+    let _e54: f32 = f_1;
+    let _e56: f32 = selection_1;
+    let _e57: f32 = f_1;
+    let _e60: vec4<f32> = edge_color;
+    let _e64: f32 = l_1;
+    let _e65: f32 = f_1;
+    let _e67: f32 = selection_1;
+    let _e68: f32 = f_1;
+    let _e72: vec3<f32> = mix(_e60.xyz, vec3(1f), vec3(((_e64 * _e65) + (_e67 * _e68))));
+    edge_color.x = _e72.x;
+    edge_color.y = _e72.y;
+    edge_color.z = _e72.z;
+    let _e79: vec4<f32> = edge_color;
+    let _e81: vec4<f32> = c_ui_1;
+    let _e84: vec4<f32> = edge_color;
+    alpha_r = (_e79.w + (_e81.w * (1f - _e84.w)));
+    let _e90: vec4<f32> = edge_color;
     let _e92: vec4<f32> = edge_color;
-    let _e94: vec4<f32> = edge_color;
+    let _e95: vec4<f32> = c_ui_1;
     let _e97: vec4<f32> = c_ui_1;
-    let _e99: vec4<f32> = c_ui_1;
-    let _e103: vec4<f32> = edge_color;
-    let _e108: f32 = alpha_r;
-    color_r = (((_e92.xyz * _e94.w) + ((_e97.xyz * _e99.w) * (1f - _e103.w))) / vec3(_e108));
-    let _e112: vec3<f32> = color_r;
-    let _e113: f32 = alpha_r;
-    r = vec4<f32>(_e112.x, _e112.y, _e112.z, _e113);
-    let _e119: vec4<f32> = r;
-    output = _e119;
-    let _e120: vec4<f32> = output;
-    return _e120;
+    let _e101: vec4<f32> = edge_color;
+    let _e106: f32 = alpha_r;
+    color_r = (((_e90.xyz * _e92.w) + ((_e95.xyz * _e97.w) * (1f - _e101.w))) / vec3(_e106));
+    let _e110: vec3<f32> = color_r;
+    let _e111: f32 = alpha_r;
+    r = vec4<f32>(_e110.x, _e110.y, _e110.z, _e111);
+    let _e117: vec4<f32> = r;
+    output = _e117;
+    let _e118: vec4<f32> = output;
+    return _e118;
 }
 
-fn mc_math_closure_6ebf2cef(uv: vec2<f32>, n: vec3<f32>) -> f32 {
+fn nf_math_closure_fragment_d78208e0_closure(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>) -> vec2<f32> {
     var uv_1: vec2<f32>;
-    var n_1: vec3<f32>;
-    var output: f32 = 0f;
+    var xy_1: vec2<f32>;
+    var size_1: vec2<f32>;
+    var output: vec2<f32>;
 
     uv_1 = uv;
-    n_1 = n;
-    let _e12: vec3<f32> = n_1;
-    output = dot(_e12, vec3<f32>(0f, 0f, 1f));
-    let _e18: f32 = output;
-    return _e18;
-}
-
-fn mc_math_closure_709149ef(uv: vec2<f32>, c: vec4<f32>, f: f32) -> vec4<f32> {
-    var uv_1: vec2<f32>;
-    var c_1: vec4<f32>;
-    var f_1: f32;
-    var output: vec4<f32> = vec4(0f);
-
-    uv_1 = uv;
-    c_1 = c;
-    f_1 = f;
-    let _e9: vec4<f32> = c_1;
-    let _e10: vec3<f32> = _e9.xyz;
-    let _e11: vec4<f32> = c_1;
-    let _e13: f32 = f_1;
-    output = vec4<f32>(_e10.x, _e10.y, _e10.z, (_e11.w * _e13));
-    let _e19: vec4<f32> = output;
-    return _e19;
-}
-
-fn mc_math_closure_72584d6e(uv: vec2<f32>, t: f32, c: vec4<f32>, thumb: f32) -> vec4<f32> {
-    var uv_1: vec2<f32>;
-    var t_1: f32;
-    var c_1: vec4<f32>;
-    var thumb_1: f32;
-    var output: vec4<f32> = vec4(0f);
-    var r: vec4<f32>;
-
-    uv_1 = uv;
-    t_1 = t;
-    c_1 = c;
-    thumb_1 = thumb;
-    let _e11: vec4<f32> = c_1;
-    let _e12: f32 = t_1;
-    r = (_e11 * _e12);
-    let _e19: vec4<f32> = r;
-    let _e22: f32 = thumb_1;
-    r = mix(_e19, vec4(1f), vec4(_e22));
-    let _e25: vec4<f32> = r;
-    output = _e25;
-    let _e26: vec4<f32> = output;
-    return _e26;
-}
-
-fn mc_math_closure_7f8546ef(uv: vec2<f32>, x: f32) -> f32 {
-    var uv_1: vec2<f32>;
-    var x_1: f32;
-    var output: f32 = 0f;
-
-    uv_1 = uv;
-    x_1 = x;
-    let _e8: f32 = x_1;
-    output = (1f - _e8);
-    let _e10: f32 = output;
+    xy_1 = xy;
+    size_1 = size;
+    let _e7: vec2<f32> = xy_1;
+    let _e8: vec2<f32> = size_1;
+    output = (_e7 / _e8);
+    let _e10: vec2<f32> = output;
     return _e10;
 }
 
-fn mc_math_closure_821d4b6e(uv: vec2<f32>, c: vec4<f32>) -> vec4<f32> {
-    var uv_1: vec2<f32>;
-    var c_1: vec4<f32>;
-    var output: vec4<f32> = vec4(0f);
-
-    uv_1 = uv;
-    c_1 = c;
-    output = vec4(0f);
-    let _e9: vec4<f32> = c_1;
-    if (_e9.w > 0f) {
-        {
-            let _e13: vec4<f32> = c_1;
-            let _e15: vec4<f32> = c_1;
-            let _e18: vec3<f32> = (_e13.xyz / vec3(_e15.w));
-            let _e19: vec4<f32> = c_1;
-            output = vec4<f32>(_e18.x, _e18.y, _e18.z, _e19.w);
-        }
-    }
-    let _e25: vec4<f32> = output;
-    return _e25;
-}
-
-fn mc_math_closure_a6514d6e(uv: vec2<f32>, sdf: f32) -> f32 {
+fn nf_math_closure_fragment_e6b4d787_closure(uv: vec2<f32>, sdf: f32) -> f32 {
     var uv_1: vec2<f32>;
     var sdf_1: f32;
-    var output: f32 = 0f;
+    var output: f32;
     var r: f32;
 
     uv_1 = uv;
     sdf_1 = sdf;
-    let _e7: f32 = sdf_1;
-    let _e11: f32 = sdf_1;
-    r = max((_e11 + 22f), 0f);
-    let _e17: f32 = r;
-    r = (_e17 / 42f);
+    let _e5: f32 = sdf_1;
+    let _e9: f32 = sdf_1;
+    r = max((_e9 + 22f), 0f);
+    let _e15: f32 = r;
+    r = (_e15 / 42f);
+    let _e18: f32 = r;
     let _e20: f32 = r;
     let _e22: f32 = r;
     let _e24: f32 = r;
-    let _e26: f32 = r;
-    output = f32(exp((-(_e24) * _e26)));
-    let _e30: f32 = output;
-    return _e30;
+    output = f32(exp((-(_e22) * _e24)));
+    let _e28: f32 = output;
+    return _e28;
 }
 
-fn mc_math_closure_b4274b6e(uv: vec2<f32>, t: f32, size: vec2<f32>) -> vec2<f32> {
+fn nf_math_closure_fragment_f48ad587_closure(uv: vec2<f32>, t: f32, size: vec2<f32>) -> vec2<f32> {
     var uv_1: vec2<f32>;
     var t_1: f32;
     var size_1: vec2<f32>;
-    var output: vec2<f32> = vec2(0f);
+    var output: vec2<f32>;
 
     uv_1 = uv;
     t_1 = t;
     size_1 = size;
-    let _e9: vec2<f32> = size_1;
-    let _e11: f32 = t_1;
-    let _e13: vec2<f32> = size_1;
-    output = vec2<f32>((_e9.x * _e11), (_e13.y / 2f));
-    let _e18: vec2<f32> = output;
-    return _e18;
-}
-
-fn mc_math_closure_edaa49ef(uv: vec2<f32>, uv_1: vec2<f32>, scale: f32) -> vec2<f32> {
-    var uv_2: vec2<f32>;
-    var uv_3: vec2<f32>;
-    var scale_1: f32;
-    var output: vec2<f32> = vec2(0f);
-
-    uv_2 = uv;
-    uv_3 = uv_1;
-    scale_1 = scale;
-    let _e9: vec2<f32> = uv_3;
-    let _e13: f32 = scale_1;
-    output = (((_e9 - vec2(0.5f)) * _e13) + vec2(0.5f));
-    let _e18: vec2<f32> = output;
-    return _e18;
-}
-
-fn sample_pass_texture(uv_in: vec2f) -> vec4f {
-    return textureSample(pass_tex_PassTexture_86, pass_samp_PassTexture_86, uv_in);
+    let _e7: vec2<f32> = size_1;
+    let _e9: f32 = t_1;
+    let _e11: vec2<f32> = size_1;
+    output = vec2<f32>((_e7.x * _e9), (_e11.y / 2f));
+    let _e16: vec2<f32> = output;
+    return _e16;
 }
 
 

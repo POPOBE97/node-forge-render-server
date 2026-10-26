@@ -36,27 +36,27 @@ var<uniform> params: Params;
 var<storage, read> baked_data_parse: array<vec4f>;
 
 // --- Extra WGSL declarations (generated) ---
-fn mc_math_closure(uv: vec2<f32>, input1_: vec2<f32>, input2_: vec2<f32>, input3_: f32) -> vec4<f32> {
+fn nf_math_closure_fragment_closure(uv: vec2<f32>, input1_: vec2<f32>, input2_: vec2<f32>, input3_: f32) -> vec4<f32> {
     var uv_1: vec2<f32>;
     var input1_1: vec2<f32>;
     var input2_1: vec2<f32>;
     var input3_1: f32;
-    var output: vec4<f32> = vec4(0f);
+    var output: vec4<f32>;
 
     uv_1 = uv;
     input1_1 = input1_;
     input2_1 = input2_;
     input3_1 = input3_;
-    let _e11: vec2<f32> = input1_1;
-    let _e12: vec2<f32> = input2_1;
-    let _e13: vec2<f32> = (_e11 / _e12);
-    let _e14: f32 = input3_1;
-    let _e17: f32 = input3_1;
-    let _e23: f32 = input3_1;
-    let _e26: f32 = input3_1;
-    output = vec4<f32>(_e13.x, _e13.y, abs((fract((_e26 / 2f)) - 0.5f)), 1f);
-    let _e37: vec4<f32> = output;
-    return _e37;
+    let _e9: vec2<f32> = input1_1;
+    let _e10: vec2<f32> = input2_1;
+    let _e11: vec2<f32> = (_e9 / _e10);
+    let _e12: f32 = input3_1;
+    let _e15: f32 = input3_1;
+    let _e21: f32 = input3_1;
+    let _e24: f32 = input3_1;
+    output = vec4<f32>(_e11.x, _e11.y, abs((fract((_e24 / 2f)) - 0.5f)), 1f);
+    let _e35: vec4<f32> = output;
+    return _e35;
 }
 
 
@@ -93,15 +93,7 @@ fn mc_math_closure(uv: vec2<f32>, input1_: vec2<f32>, input2_: vec2<f32>, input3
  }
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    var math_closure_out: vec4f;
-    {
-        let input1 = in.local_px.xy;
-        let input2 = in.geo_size_px;
-        let input3 = params.time;
-        var output: vec4f;
-        output = mc_math_closure(in.uv, input1, input2, input3);
-        math_closure_out = output;
-    }
+    let math_closure_out = nf_math_closure_fragment_closure(vec2f(in.uv.x, 1.0 - in.uv.y), in.local_px.xy, in.geo_size_px, params.time);
     // Final composite
     let _frag_out = math_closure_out;
     return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));

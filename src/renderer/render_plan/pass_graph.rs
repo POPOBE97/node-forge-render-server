@@ -671,9 +671,9 @@ mod tests {
                     params: HashMap::from([(
                         "source".to_string(),
                         json!(
-                            "vec4 c0 = samplePass(l0, vUv);\nvec4 c1 = samplePass(l1, vUv);\noutput = c0 + c1;"
+                            "vec4 c0 = sample_l0(uv);\nvec4 c1 = sample_l1(uv);\noutput = c0 + c1;"
                         ),
-                    )]),
+                    ), ("outputType".to_string(), json!("color"))]),
                     inputs: vec![
                         NodePort {
                             id: "dynamic_l0".to_string(),
@@ -763,11 +763,11 @@ mod tests {
         let sampled = sampled_pass_node_ids_from_roots(&scene, &nodes_by_id, &roots)?;
         assert!(
             sampled.contains("p0"),
-            "expected p0 sampled by blur->MathClosure(samplePass), got: {sampled:?}"
+            "expected p0 sampled by blur->MathClosure(texture sampling), got: {sampled:?}"
         );
         assert!(
             sampled.contains("p1"),
-            "expected p1 sampled by blur->MathClosure(samplePass), got: {sampled:?}"
+            "expected p1 sampled by blur->MathClosure(texture sampling), got: {sampled:?}"
         );
         assert!(
             !sampled.contains("blur"),

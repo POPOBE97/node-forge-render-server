@@ -97,14 +97,14 @@ fn lc_luminance_curve_rgb__LuminanceCurve_1(color: vec4f, factors: vec4f, mix_fa
     return vec4f(mixed * color.a, color.a);
 }
 
-fn mc_math_closure(uv: vec2<f32>) -> vec4<f32> {
+fn nf_math_closure_fragment_closure(uv: vec2<f32>) -> vec4<f32> {
     var uv_1: vec2<f32>;
-    var output: vec4<f32> = vec4(0f);
+    var output: vec4<f32>;
 
     uv_1 = uv;
     output = vec4<f32>(0f, 0.33333334f, 0.6666667f, 1f);
-    let _e14: vec4<f32> = output;
-    return _e14;
+    let _e12: vec4<f32> = output;
+    return _e12;
 }
 
 
