@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use node_forge_render_server::{
-    dsl::SceneDSL,
+    dsl::{SceneDSL, materialize_scene_node_labels_from_raw_json},
     renderer::{
         node_compiler::math_closure::compile_math_closure,
         types::{MaterialCompileContext, TypedExpr, ValueType},
@@ -121,6 +121,56 @@ fn math_closure_rejects_missing_contract_instead_of_guessing() {
         &mut MaterialCompileContext::default(), &mut HashMap::new(), |_, _, _, _| unreachable!(),
         GlslShaderStage::Fragment).unwrap_err();
     assert!(error.to_string().contains("missing outputType"));
+}
+
+#[test]
+fn math_closure_display_labels_preserve_function_links_in_both_stages() {
+    // Live scene loading materializes labels in params. Numeric and non-ASCII labels
+    // can introduce underscores that Naga normalizes during WGSL emission.
+    let labels = ["06 大刻度 · 极坐标位置", "06", "大刻度", "!!!"];
+    let nodes: Vec<_> = labels.iter().enumerate().map(|(index, label)| json!({
+        "id": format!("gauge.position.{index}"),
+        "type": "MathClosure",
+        "label": label,
+        "params": {
+            "source": "float a = radians(angle - float(index) * 30.0);\nfloat theta = 150.0 + angle - float(index) * 30.0;\nvec2 v = base.xy - vec2(1575.0, -90.0);\nvec2 p = vec2(1575.0, -90.0) + vec2(cos(a) * v.x - sin(a) * v.y, sin(a) * v.x + cos(a) * v.y);\noutput = theta < 132.0 || theta > 168.0 ? vec3(100000.0, 100000.0, 0.0) : vec3(p, base.z);",
+            "outputType": "vector3"
+        },
+        "inputs": [
+            { "id": "angle", "name": "angle", "type": "float" },
+            { "id": "base", "name": "base", "type": "vector3" },
+            { "id": "index", "name": "index", "type": "int" }
+        ],
+        "outputs": [{ "id": "output", "type": "vector3" }]
+    })).collect();
+    let raw_scene = json!({
+        "version": "6.0", "workingColorSpace": "linear-srgb",
+        "metadata": { "name": "MathClosure display labels" },
+        "nodes": nodes, "connections": []
+    });
+    let mut scene: SceneDSL = serde_json::from_value(raw_scene.clone()).unwrap();
+    materialize_scene_node_labels_from_raw_json(&mut scene, &raw_scene);
+    let mut context = MaterialCompileContext::default();
+    for stage in [GlslShaderStage::Vertex, GlslShaderStage::Fragment] {
+        for node in &scene.nodes {
+            compile_math_closure(
+                &scene, &HashMap::new(), node, Some("output"),
+                &mut context, &mut HashMap::new(), |_, _, _, _| unreachable!(), stage,
+            ).unwrap_or_else(|err| panic!("{stage:?}, {}: {err:#}", node.id));
+        }
+    }
+    // Labels that normalize identically must still get distinct helper names.
+    assert_eq!(context.extra_wgsl_decls.len(), labels.len() * 2);
+    let wgsl = format!(
+        "{}\nstruct Input {{ uv: vec2f }}\nfn check(uv: vec2f, in: Input) {{\n{}\n}}",
+        context.extra_wgsl_decls.values().cloned().collect::<Vec<_>>().join("\n"),
+        context.inline_stmts.join("\n"),
+    );
+    let module = naga::front::wgsl::parse_str(&wgsl)
+        .unwrap_or_else(|err| panic!("{}", err.emit_to_string(&wgsl)));
+    naga::valid::Validator::new(
+        naga::valid::ValidationFlags::all(), naga::valid::Capabilities::all(),
+    ).validate(&module).unwrap();
 }
 
 #[test]

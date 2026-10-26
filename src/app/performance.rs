@@ -22,6 +22,10 @@ const HISTORY: usize = 240;
 const REFRESH: Duration = Duration::from_millis(250);
 const OPEN_ID: &str = "render-performance-open";
 
+#[path = "performance_table.rs"]
+mod table;
+use table::Column;
+
 #[cfg(test)]
 #[path = "performance_tests.rs"]
 mod ui_tests;
@@ -346,19 +350,25 @@ fn contents_inner(ui: &mut egui::Ui, state: &mut WindowState) {
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         tool_window::heading(ui, "Frame cost & pacing");
         ui.add_space(4.0);
-        egui::ScrollArea::horizontal().id_salt("frame-cost-scroll").show(ui, |ui| {
-        egui::Grid::new("frame-cost").striped(true).min_row_height(tool_window::ROW_HEIGHT).spacing([12.0, 0.0]).min_col_width(44.0).show(ui, |ui| {
-            for label in ["Scope", "P50", "P95", "P99", "Max", "Over budget", "Samples"] { ui.strong(label); }
-            ui.end_row();
-            for (label, series) in [("CPU encode + submit", &data.cpu), ("GPU scene span", &data.gpu), ("Redraw interval", &data.cadence)] {
-                ui.label(label);
-                for q in [0.5, 0.95, 0.99, 1.0] { ui.monospace(ms(series.percentile(q))); }
-                ui.monospace(format!("{} / {}", series.over_budget(budget), series.0.len()));
-                ui.monospace(series.0.len().to_string());
-                ui.end_row();
-            }
-        });
-        });
+        let frame_rows = [("CPU encode + submit", &data.cpu), ("GPU scene span", &data.gpu), ("Redraw interval", &data.cadence)]
+            .map(|(label, series)| [
+                label.to_owned(),
+                ms(series.percentile(0.5)),
+                ms(series.percentile(0.95)),
+                ms(series.percentile(0.99)),
+                ms(series.percentile(1.0)),
+                format!("{} / {}", series.over_budget(budget), series.0.len()),
+                series.0.len().to_string(),
+            ]);
+        table::show(ui, "frame-cost", [
+            Column::text("Scope", 184.0),
+            Column::metric("P50", 84.0),
+            Column::metric("P95", 84.0),
+            Column::metric("P99", 84.0),
+            Column::metric("Max", 84.0),
+            Column::metric("Over budget", 106.0),
+            Column::metric("Samples", 78.0),
+        ], &frame_rows);
         if let Some(p95) = data.gpu.percentile(0.95) {
             ui.add(egui::ProgressBar::new((p95 / budget) as f32).text(format!(
                 "GPU P95: {:.0}% of {:.2} ms budget (not GPU utilization)", p95 / budget * 100.0, budget)));
@@ -366,16 +376,15 @@ fn contents_inner(ui: &mut egui::Ui, state: &mut WindowState) {
         tool_window::caption(ui, "Redraw interval measures scene submissions during continuous playback; it is not display FPS or input latency. Idle gaps are excluded.");
         plot(ui, &data.gpu, budget);
         tool_window::section(ui, "CPU update breakdown");
-        egui::Grid::new("cpu-phases").striped(true).min_row_height(tool_window::ROW_HEIGHT).spacing([20.0, 0.0]).show(ui, |ui| {
-            for label in ["UI update scope", "P50", "P95"] { ui.strong(label); }
-            ui.end_row();
-            for (label, series) in ["Total app update", "Scene ingest / rebuild", "Animation + derivation", "Render + analysis scopes", "Canvas UI", "Finalize"].into_iter().zip(&data.phases) {
-                ui.label(label);
-                ui.monospace(ms(series.percentile(0.5)));
-                ui.monospace(ms(series.percentile(0.95)));
-                ui.end_row();
-            }
-        });
+        let phase_rows: Vec<_> = ["Total app update", "Scene ingest / rebuild", "Animation + derivation", "Render + analysis scopes", "Canvas UI", "Finalize"]
+            .into_iter().zip(&data.phases)
+            .map(|(label, series)| [label.to_owned(), ms(series.percentile(0.5)), ms(series.percentile(0.95))])
+            .collect();
+        table::show(ui, "cpu-phases", [
+            Column::text("UI update scope", 220.0),
+            Column::metric("P50", 100.0),
+            Column::metric("P95", 100.0),
+        ], &phase_rows);
         if let Some(profile) = &data.latest_cpu {
             ui.label(format!("Latest scene: encode {:.3} ms · submit {:.3} ms · CPU call {:.3} ms",
                 profile.frame_cpu_encode_ms, profile.submit_cpu_ms, profile.frame_wall_ms));
@@ -396,20 +405,20 @@ fn contents_inner(ui: &mut egui::Ui, state: &mut WindowState) {
             let groups: u64 = passes.iter().map(|p| u64::from(p.workgroup_count)).sum();
             ui.label(format!("{} passes · {draws} draws · {} dispatches · {vertices} vertex/index elements × instances · {groups} workgroups",
                 passes.len(), passes.len() - draws));
-            egui::ScrollArea::horizontal().id_salt("gpu-passes-scroll").show(ui, |ui| {
-            egui::Grid::new("performance-passes").striped(true).min_row_height(tool_window::ROW_HEIGHT).spacing([16.0, 0.0]).show(ui, |ui| {
-                for label in ["Pass", "Kind", "GPU", "CPU encode", "Budget"] { ui.strong(label); }
-                ui.end_row();
-                for pass in passes {
-                    ui.label(&pass.pass_name);
-                    ui.label(pass.pipeline_kind.as_str());
-                    ui.monospace(ms(pass.gpu_duration_ms));
-                    ui.monospace(format!("{:.3} ms", pass.cpu_encode_ms));
-                    ui.monospace(pass.gpu_duration_ms.map(|v| format!("{:.1}%", v / budget * 100.0)).unwrap_or_else(|| "—".into()));
-                    ui.end_row();
-                }
-            });
-            });
+            let pass_rows: Vec<_> = passes.into_iter().map(|pass| [
+                pass.pass_name.clone(),
+                pass.pipeline_kind.as_str().to_owned(),
+                ms(pass.gpu_duration_ms),
+                format!("{:.3} ms", pass.cpu_encode_ms),
+                pass.gpu_duration_ms.map(|v| format!("{:.1}%", v / budget * 100.0)).unwrap_or_else(|| "—".into()),
+            ]).collect();
+            table::show(ui, "performance-passes", [
+                Column::text("Pass", 300.0),
+                Column::text("Kind", 84.0),
+                Column::metric("GPU", 92.0),
+                Column::metric("CPU encode", 112.0),
+                Column::metric("Budget", 84.0),
+            ], &pass_rows);
         }
         tool_window::caption(ui, "Each row uses CPU and GPU data from the same submission. Passes can overlap: their sum is not the scene span. Preview capture adds overhead; analysis scopes, matrix cells and egui are outside these queries.");
         tool_window::section(ui, "Resources & Metal");

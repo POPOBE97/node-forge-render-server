@@ -139,6 +139,10 @@ pub(super) fn readable_symbol_base(node: &Node, out_port: &str) -> String {
         raw
     };
     let mut base = readable_wgsl_ident(raw);
+    if base == "_" {
+        // Labels without ASCII words still need a meaningful shader identifier.
+        base = readable_wgsl_ident(&node.node_type);
+    }
     let port = readable_wgsl_ident(out_port);
     if !matches!(port.as_str(), "result" | "value" | "output" | "color") {
         base.push('_');

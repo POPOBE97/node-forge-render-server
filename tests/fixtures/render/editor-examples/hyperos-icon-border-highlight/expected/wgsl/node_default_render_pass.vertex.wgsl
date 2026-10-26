@@ -118,8 +118,8 @@ fn calculate_lighting(normal: vec3f, light_dir: vec3f, reflect_angle: f32, inten
 // ---- LuminanceCurve LAB helper (generated) ----
 // LuminanceCurve (LAB) — helper template
 //
-// Embedded at compile time via template_loader. No markers — this file is the
-// raw WGSL helper body that gets registered in `extra_wgsl_decls`.
+// Loaded via template_loader; OKLab RGB boundaries are specialized for the
+// scene's working color space before registration in `extra_wgsl_decls`.
 //
 // Algorithm:
 //   - Convert premultiplied RGB to linear RGB (divide by alpha).

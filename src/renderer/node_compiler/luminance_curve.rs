@@ -19,6 +19,7 @@ use std::collections::HashMap;
 
 use super::super::types::{MaterialCompileContext, TypedExpr, ValueType};
 use super::super::utils::{fmt_f32, to_vec4_color};
+use crate::color::WorkingColorSpace;
 use crate::dsl::{Node, SceneDSL, incoming_connection};
 
 const LUMINANCE_CURVE_LAB_LIB_KEY: &str = "luminance_curve_lab_lib";
@@ -47,6 +48,7 @@ fn override_path(node: &Node) -> Option<std::path::PathBuf> {
 /// in the same compiled shader without symbol collision.
 fn build_lc_lib(
     node: &Node,
+    working: WorkingColorSpace,
     template_name: &str,
     base_fn_name: &str,
     base_lib_key: &str,
@@ -55,6 +57,7 @@ fn build_lc_lib(
     let path = override_path(node);
     let template =
         super::template_loader::load_template_with_override(path.as_deref(), template_name);
+    let template = super::template_loader::specialize_oklab_template(&template, working);
 
     if path.is_some() {
         let suffix = sanitize_id_suffix(&node.id);
@@ -75,9 +78,14 @@ fn build_lc_lib(
     }
 }
 
-fn ensure_luminance_curve_lab_lib(ctx: &mut MaterialCompileContext, node: &Node) -> String {
+fn ensure_luminance_curve_lab_lib(
+    ctx: &mut MaterialCompileContext,
+    node: &Node,
+    working: WorkingColorSpace,
+) -> String {
     let (lib_key, fn_name, block) = build_lc_lib(
         node,
+        working,
         "luminance_curve_lab.wgsl",
         LUMINANCE_CURVE_LAB_FN,
         LUMINANCE_CURVE_LAB_LIB_KEY,
@@ -87,9 +95,14 @@ fn ensure_luminance_curve_lab_lib(ctx: &mut MaterialCompileContext, node: &Node)
     fn_name
 }
 
-fn ensure_luminance_curve_rgb_lib(ctx: &mut MaterialCompileContext, node: &Node) -> String {
+fn ensure_luminance_curve_rgb_lib(
+    ctx: &mut MaterialCompileContext,
+    node: &Node,
+    working: WorkingColorSpace,
+) -> String {
     let (lib_key, fn_name, block) = build_lc_lib(
         node,
+        working,
         "luminance_curve_rgb.wgsl",
         LUMINANCE_CURVE_RGB_FN,
         LUMINANCE_CURVE_RGB_LIB_KEY,
@@ -212,9 +225,9 @@ where
         .and_then(|v| v.as_str())
         .unwrap_or("lab");
     let fn_name = match mode {
-        "rgb" => ensure_luminance_curve_rgb_lib(ctx, node),
+        "rgb" => ensure_luminance_curve_rgb_lib(ctx, node, scene.working_color_space),
         // Default and "lab" both map to the LAB variant.
-        _ => ensure_luminance_curve_lab_lib(ctx, node),
+        _ => ensure_luminance_curve_lab_lib(ctx, node, scene.working_color_space),
     };
 
     let uses_time = color_vec4.uses_time || values.uses_time || amount.uses_time;

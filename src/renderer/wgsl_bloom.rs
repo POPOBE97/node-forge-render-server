@@ -3,22 +3,16 @@ use crate::renderer::{types::WgslShaderBundle, wgsl::build_fullscreen_textured_b
 pub const BLOOM_MAX_MIPS: u32 = 6;
 
 pub(crate) fn bloom_extract_fragment_body(
-    threshold: f32,
-    smooth_width_px: f32,
+    threshold_expr: &str,
+    smooth_width_px_expr: &str,
     strength: f32,
     saturation: f32,
     tint_expr: &str,
     source_texture: &str,
     source_sampler: &str,
 ) -> String {
-    let threshold = threshold.clamp(0.0, 1.0);
-    let smooth_width_px = smooth_width_px.max(0.0);
     let strength = strength.clamp(0.0, 1.0);
     let saturation = saturation.clamp(0.0, 1.0);
-
-    let smooth_width_luma = (smooth_width_px / 255.0).max(1e-6);
-    let edge0 = (threshold - smooth_width_luma).clamp(0.0, 1.0);
-    let edge1 = (threshold + smooth_width_luma).clamp(0.0, 1.0);
 
     format!(
         r#"
@@ -26,7 +20,11 @@ let src = textureSample({source_texture}, {source_sampler}, in.uv);
 let tint_value = {tint_expr};
 let tint = vec4f(tint_value.rgb, clamp(tint_value.a, 0.0, 1.0));
 let lum = dot(src.rgb, vec3f(0.2126, 0.7152, 0.0722));
-let mask = smoothstep({edge0:.8}, {edge1:.8}, lum);
+let threshold = clamp({threshold_expr}, 0.0, 1.0);
+let smooth_width_luma = max(({smooth_width_px_expr}) / 255.0, 0.000001);
+let edge0 = clamp(threshold - smooth_width_luma, 0.0, 1.0);
+let edge1 = clamp(threshold + smooth_width_luma, 0.0, 1.0);
+let mask = smoothstep(edge0, edge1, lum);
 let extracted = src.rgb * mask * {strength:.8};
 let gray = dot(extracted, vec3f(0.2126, 0.7152, 0.0722));
 let sat_rgb = mix(vec3f(gray), extracted, {saturation:.8});
@@ -51,8 +49,8 @@ pub fn build_bloom_extract_bundle(
         tint[0], tint[1], tint[2], tint[3]
     );
     let body = bloom_extract_fragment_body(
-        threshold,
-        smooth_width_px,
+        &format!("{:.8}", threshold.clamp(0.0, 1.0)),
+        &format!("{:.8}", smooth_width_px.max(0.0)),
         strength,
         saturation,
         &tint_expr,

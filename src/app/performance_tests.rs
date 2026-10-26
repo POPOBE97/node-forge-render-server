@@ -312,7 +312,6 @@ fn performance_window_controls_fit_and_passes_sort_by_gpu_cost() {
             "60 Hz",
             "Freeze view",
             "Reset samples",
-            "Samples",
         ] {
             let rect = label(&output, text);
             assert!(
@@ -334,6 +333,29 @@ fn performance_window_controls_fit_and_passes_sort_by_gpu_cost() {
             }
         }
         assert_eq!(trends, 1, "the full GPU trend must be painted");
+        // Wide tables retain their column spacing in a compact window. A
+        // horizontal gesture must reveal the final column without moving rows.
+        let mut output = output;
+        if size[0] == 600.0 {
+            let row_y = label(&output, "GPU scene span").center().y;
+            for _ in 0..12 {
+                output = harness.detail(&perf, vec![
+                    Event::PointerMoved(egui::pos2(350.0, row_y)),
+                    Event::MouseWheel {
+                        unit: egui::MouseWheelUnit::Point,
+                        phase: egui::TouchPhase::Move,
+                        delta: egui::vec2(-70.0, 0.0),
+                        modifiers: Default::default(),
+                    },
+                ]);
+            }
+            for _ in 0..30 {
+                output = harness.detail(&perf, vec![]);
+            }
+            assert_eq!(label(&output, "GPU scene span").center().y, row_y);
+        }
+        let (_, samples, clip) = labels(&output).into_iter().find(|(text, _, _)| text == "Samples").unwrap();
+        assert!(clip.contains_rect(samples), "last metric must be reachable at {size:?}");
         // Scroll down using the same wheel input as the native window.
         let mut scrolled = output;
         for _ in 0..20 {
@@ -373,6 +395,55 @@ fn performance_window_controls_fit_and_passes_sort_by_gpu_cost() {
 }
 
 #[test]
+fn performance_tables_hover_guides_track_both_labels_and_clear_on_exit() {
+    use crate::ui::design_tokens;
+
+    let mut harness = Harness::new(900.0, 1600.0);
+    let perf = populated();
+    let mut output = harness.detail(&perf, vec![]);
+    for _ in 0..3 {
+        output = harness.detail(&perf, vec![]);
+    }
+    for (row_name, column_name) in [
+        ("GPU scene span", "P95"),
+        ("Canvas UI", "P95"),
+        ("Blur.horizontal.pass", "CPU encode"),
+    ] {
+        let row = label(&output, row_name);
+        let header = labels(&output).into_iter()
+            .filter(|(text, rect, _)| text == column_name && rect.bottom() < row.top())
+            .max_by(|a, b| a.1.top().total_cmp(&b.1.top())).unwrap().1;
+        let target = egui::pos2(header.center().x, row.center().y);
+        output = harness.detail(&perf, vec![Event::PointerMoved(target)]);
+        let fills: Vec<_> = output.shapes.iter().filter_map(|shape| match &shape.shape {
+            egui::Shape::Rect(rect) if rect.fill == design_tokens::RESOURCE_ACCENT.gamma_multiply(0.20)
+                || rect.fill == design_tokens::RESOURCE_ACCENT.gamma_multiply(0.38) => Some(rect.rect),
+            _ => None,
+        }).collect();
+        assert_eq!(fills.len(), 3, "only the hovered table has two guides and a focused cell");
+        for point in [target, target - egui::vec2(80.0, 0.0), target - egui::vec2(0.0, 28.0)] {
+            assert!(fills.iter().any(|rect| rect.contains(point)), "guide missing at {point:?}");
+        }
+        for point in [target + egui::vec2(120.0, 0.0), target + egui::vec2(0.0, 28.0), row.center(), header.center()] {
+            assert!(!fills.iter().any(|rect| rect.contains(point)), "guide must stop at the cell and leave labels unfilled");
+        }
+        for shape in &output.shapes {
+            if let egui::Shape::Text(text) = &shape.shape
+                && (shape.shape.visual_bounding_rect().contains(row.center())
+                    || shape.shape.visual_bounding_rect().contains(header.center()))
+            {
+                assert_eq!(text.galley.job.sections[0].format.color, design_tokens::white(95));
+            }
+        }
+    }
+    output = harness.detail(&perf, vec![Event::PointerGone]);
+    assert!(!output.shapes.iter().any(|shape| matches!(&shape.shape,
+        egui::Shape::Rect(rect) if rect.fill == design_tokens::RESOURCE_ACCENT.gamma_multiply(0.20)
+            || rect.fill == design_tokens::RESOURCE_ACCENT.gamma_multiply(0.38)
+    )), "hover guides must clear when the pointer leaves the window");
+}
+
+#[test]
 #[ignore = "requires a native GPU; renders offscreen PNGs without a desktop"]
 fn performance_offscreen_metal_snapshots() {
     let gpu = HeadlessRenderer::new(HeadlessRendererConfig {
@@ -382,21 +453,22 @@ fn performance_offscreen_metal_snapshots() {
     .expect("native headless GPU");
     let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tmp/performance-ui");
     std::fs::create_dir_all(&out).unwrap();
-    for (name, size, scroll) in [
-        ("overview", [900.0, 720.0], false),
-        ("resources", [900.0, 720.0], true),
-        ("compact", [600.0, 420.0], false),
-        ("compact-resources", [600.0, 420.0], true),
+    for (name, size, scroll, hover) in [
+        ("overview", [900.0, 720.0], false, false),
+        ("overview-hover", [900.0, 720.0], false, true),
+        ("resources", [900.0, 720.0], true, false),
+        ("resources-hover", [900.0, 720.0], true, true),
+        ("compact", [600.0, 420.0], false, false),
+        ("compact-resources", [600.0, 420.0], true, false),
     ] {
         let mut harness = Harness::new(size[0], size[1]);
         let perf = populated();
-        let mut output = harness.detail(&perf, vec![]);
         for _ in 0..5 {
-            output = harness.detail(&perf, vec![]);
+            harness.detail(&perf, vec![]);
         }
         if scroll {
             for _ in 0..20 {
-                output = harness.detail(
+                harness.detail(
                     &perf,
                     vec![
                         Event::PointerMoved(egui::pos2(400.0, 400.0)),
@@ -410,8 +482,14 @@ fn performance_offscreen_metal_snapshots() {
                 );
             }
             for _ in 0..30 {
-                output = harness.detail(&perf, vec![]);
+                harness.detail(&perf, vec![]);
             }
+        }
+        let mut output = harness.detail(&perf, vec![Event::PointerGone]);
+        if hover {
+            let (row, column) = if scroll { ("Blur.horizontal.pass", "CPU encode") } else { ("GPU scene span", "P95") };
+            let target = egui::pos2(label(&output, column).center().x, label(&output, row).center().y);
+            output = harness.detail(&perf, vec![Event::PointerMoved(target)]);
         }
         render_png(&gpu, &harness, output, &out.join(format!("{name}.png")));
     }

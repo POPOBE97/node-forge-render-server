@@ -11,7 +11,7 @@ use rust_wgpu_fiber::{
 };
 
 use crate::{
-    dsl::Node,
+    dsl::{Node, parse_f32},
     renderer::{
         camera::resolve_effective_camera_for_pass_node,
         graph_uniforms::{choose_graph_binding_kind, pack_graph_values},
@@ -68,9 +68,10 @@ pub(crate) fn assemble_bloom(
     let base_w = base_resolution[0].max(1) as f32;
     let base_h = base_resolution[1].max(1) as f32;
 
-    let threshold = cpu_num_f32(scene, &nodes_by_id, layer_node, "threshold", 0.5)?.clamp(0.0, 1.0);
-    let smoothness =
-        cpu_num_f32(scene, &nodes_by_id, layer_node, "smoothness", 0.5)?.clamp(0.0, 1.0);
+    // Connected extraction controls are GPU expressions, updated through graph uniforms.
+    // These literals are only fallbacks for unconnected ports.
+    let threshold = parse_f32(&layer_node.params, "threshold").unwrap_or(0.5).clamp(0.0, 1.0);
+    let smoothness = parse_f32(&layer_node.params, "smoothness").unwrap_or(0.5).clamp(0.0, 1.0);
     let strength = cpu_num_f32(scene, &nodes_by_id, layer_node, "strength", 1.0)?.clamp(0.0, 1.0);
     let saturation =
         cpu_num_f32(scene, &nodes_by_id, layer_node, "saturation", 1.0)?.clamp(0.0, 1.0);

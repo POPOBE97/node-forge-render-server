@@ -319,6 +319,7 @@ fn is_render_plan_rebuild_sink(node_type: &str, port_id: &str) -> bool {
         (node_type, port_id),
         ("Rect2DGeometry", "size")
             | ("Rect2DGeometry", "position")
+            | ("InstancedGeometryStart", "count")
             | ("RenderPass", "camera")
             | ("GuassianBlurPass", "camera")
             | ("GradientBlur", "camera")
@@ -756,6 +757,45 @@ mod tests {
             assets_removed: None,
         };
         assert!(!delta_updates_only_uniform_values(&cache, &delta));
+    }
+
+    #[test]
+    fn instance_count_delta_requires_render_plan_rebuild() {
+        for indirect in [false, true] {
+            let mut scene = base_scene();
+            scene.nodes[0] = node("FloatInput_1", "IntInput", json!({"value": 12}));
+            scene.nodes.push(node("instances", "InstancedGeometryStart", json!({})));
+            scene.connections.push(Connection {
+                id: "count".to_string(),
+                from: Endpoint {
+                    node_id: if indirect { "MathAdd_1" } else { "FloatInput_1" }.to_string(),
+                    port_id: if indirect { "result" } else { "value" }.to_string(),
+                },
+                to: Endpoint {
+                    node_id: "instances".to_string(),
+                    port_id: "count".to_string(),
+                },
+            });
+            let cache = SceneCache::from_scene_update(&scene);
+            let delta = SceneDelta {
+                version: scene.version.clone(),
+                nodes: SceneDeltaNodes {
+                    added: Vec::new(),
+                    updated: vec![node("FloatInput_1", "IntInput", json!({"value": 19}))],
+                    removed: Vec::new(),
+                },
+                connections: SceneDeltaConnections {
+                    added: Vec::new(), updated: Vec::new(), removed: Vec::new(),
+                },
+                outputs: None,
+                groups: None,
+                state_machine: None,
+                debug_artifacts: None,
+                assets_added: None,
+                assets_removed: None,
+            };
+            assert!(!delta_updates_only_uniform_values(&cache, &delta));
+        }
     }
 
     #[test]

@@ -768,10 +768,15 @@ fn collect_ignored_input_value_node_ids_for_pass_bindings(
         }
     }
 
-    // Text layout/coverage is CPU-built. A value shared with a GPU uniform must
-    // still invalidate the text plan when it changes.
+    // Text layout and instance counts are CPU-built. Values shared with GPU
+    // uniforms must still invalidate these render-plan dependencies.
     let mut pending: Vec<String> = scene.nodes.iter().filter(|node| node.node_type == "TextPass")
         .map(|node| node.id.clone()).collect();
+    pending.extend(scene.connections.iter().filter(|edge| {
+        edge.to.port_id == "count"
+            && nodes_by_id.get(&edge.to.node_id)
+                .is_some_and(|node| node.node_type == "InstancedGeometryStart")
+    }).map(|edge| edge.from.node_id.clone()));
     let mut visited = BTreeSet::new();
     while let Some(id) = pending.pop() {
         if !visited.insert(id.clone()) { continue; }
@@ -1717,8 +1722,27 @@ mod tests {
         })).unwrap());
         let h4 = compute_pipeline_signature_for_pass_bindings(&scene, &[pass.clone()]);
         scene.nodes[0].params.insert("value".into(), json!(20.0));
-        let h5 = compute_pipeline_signature_for_pass_bindings(&scene, &[pass]);
+        let h5 = compute_pipeline_signature_for_pass_bindings(&scene, &[pass.clone()]);
         assert_ne!(h4, h5, "GPU-shared input used by text layout must rebuild");
+
+        scene.nodes[0] = make_node("fast", "IntInput", json!({"value": 12}));
+        scene.nodes.push(make_node("instances", "InstancedGeometryStart", json!({})));
+        scene.nodes.push(make_node("count-add", "MathAdd", json!({"b": 0})));
+        for indirect in [false, true] {
+            scene.connections = serde_json::from_value(json!([
+                {"id":"count-source", "from":{"nodeId":"fast","portId":"value"},
+                 "to":{"nodeId":"count-add","portId":"a"}},
+                {"id":"instance-count",
+                 "from":{"nodeId":if indirect {"count-add"} else {"fast"},
+                         "portId":if indirect {"result"} else {"value"}},
+                 "to":{"nodeId":"instances","portId":"count"}}
+            ])).unwrap();
+            scene.nodes[0].params.insert("value".into(), json!(12));
+            let before = compute_pipeline_signature_for_pass_bindings(&scene, &[pass.clone()]);
+            scene.nodes[0].params.insert("value".into(), json!(19));
+            let after = compute_pipeline_signature_for_pass_bindings(&scene, &[pass.clone()]);
+            assert_ne!(before, after, "GPU-shared instance count must rebuild");
+        }
     }
 
     #[test]

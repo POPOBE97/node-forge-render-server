@@ -309,7 +309,7 @@ fn glass_luminance_curve_lab(color: vec4f, factors: vec4f, mix_factor: f32) -> v
         return color;
     }
 
-    let rgb = color.rgb / color.a;
+    let rgb = (mat3x3f(vec3f(1.2249402, -0.042056955, -0.019637555), vec3f(-0.22494018, 1.042057, -0.07863604), vec3f(0.0, 0.0, 1.0982736)) * color.rgb / color.a);
     let lms = vec3f(
         0.4122214708 * rgb.r + 0.5363325363 * rgb.g + 0.0514459929 * rgb.b,
         0.2119034982 * rgb.r + 0.6806995451 * rgb.g + 0.1073969566 * rgb.b,
@@ -344,7 +344,7 @@ fn glass_luminance_curve_lab(color: vec4f, factors: vec4f, mix_factor: f32) -> v
         -1.2684380046 * mapped_lms.x + 2.6097574011 * mapped_lms.y - 0.3413193965 * mapped_lms.z,
         -0.0041960863 * mapped_lms.x - 0.7034186147 * mapped_lms.y + 1.7076147010 * mapped_lms.z,
     );
-    mapped_rgb = max(vec3f(0.0), mapped_rgb);
+    mapped_rgb = max(vec3f(0.0), (mat3x3f(vec3f(0.82246196, 0.0331942, 0.01708263), vec3f(0.17753804, 0.9668058, 0.07239744), vec3f(0.0, 0.0, 0.9105199)) * mapped_rgb));
 
     return vec4f(mapped_rgb * color.a, color.a);
 }

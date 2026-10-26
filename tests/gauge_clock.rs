@@ -94,7 +94,7 @@ fn gauge_advances_by_six_blends_oklab_from_80_to_90_and_holds_at_100() {
         let dial_offset = (value - 85.0).max(0.0) * 1.2;
         let pointer_angle = dial_offset;
         assert!((uniforms["gauge.clock.angle"]["value"].as_f64().unwrap() - value * 3.0 - dial_offset).abs() < 1e-5,
-            "dial marks must retain the continuous upper-range offset");
+            "dial marks must use the integer progress and its upper-range offset");
         let radians = pointer_angle.to_radians();
         let pointer_x = 1575.0 + radians.cos() * (469.5 - 1575.0) - radians.sin() * (552.0 + 90.0);
         let pointer_y = -90.0 + radians.sin() * (469.5 - 1575.0) + radians.cos() * (552.0 + 90.0);
@@ -151,18 +151,22 @@ fn gauge_advances_by_six_blends_oklab_from_80_to_90_and_holds_at_100() {
     assert_eq!(player.current_state_id(), Some("gauge.sweep.continuous"));
     assert_eq!(player.diagnostic_snapshot()["uniforms"]["gauge.clock.seconds"]["value"], 0.0);
     previous = 0.0;
-    let mut background_before: Option<[f32; 3]> = None;
+    let mut held_value = 0.0;
+    let mut held_uniforms = player.diagnostic_snapshot()["uniforms"].clone();
+    let mut held_pixels: Option<Vec<f32>> = None;
     for (time, value, angle, pointer_angle) in [
-        (0.99 / 36.0, 0.0, 2.97, -27.03), (1.01 / 36.0, 1.0, 3.03, -32.97),
-        (0.125, 4.0, 13.5, -28.5), (9.25 / 36.0, 9.0, 27.75, -32.25),
-        (36.25 / 36.0, 36.0, 108.75, -29.25), (72.25 / 36.0, 72.0, 216.75, -29.25),
-        (79.75 / 36.0, 79.0, 239.25, -30.75), (80.25 / 36.0, 80.0, 240.75, -29.25),
-        (83.95 / 36.0, 83.0, 251.85, -30.15), (84.15 / 36.0, 84.0, 252.45, -29.55),
-        (256.05 / 108.0, 85.0, 256.05, -31.95), (257.1 / 108.0, 85.0, 257.1, -30.9),
-        (263.358 / 108.0, 86.0, 263.358, -24.642), (263.442 / 108.0, 87.0, 263.442, -30.558),
-        (274.95 / 108.0, 89.0, 274.95, -25.05), (277.05 / 108.0, 90.0, 277.05, -22.95),
-        (293.85 / 108.0, 94.0, 293.85, -18.15),
-        (298.68 / 108.0, 95.0, 298.68, -19.32),
+        (0.99 / 36.0, 0.0, 0.0, -30.0), (1.01 / 36.0, 0.0, 0.0, -30.0),
+        (1.99 / 36.0, 0.0, 0.0, -30.0), (2.01 / 36.0, 2.0, 6.0, -30.0),
+        (0.125, 4.0, 12.0, -30.0), (9.25 / 36.0, 8.0, 24.0, -30.0),
+        (36.25 / 36.0, 36.0, 108.0, -30.0), (72.25 / 36.0, 72.0, 216.0, -30.0),
+        (79.75 / 36.0, 78.0, 234.0, -30.0), (80.25 / 36.0, 80.0, 240.0, -30.0),
+        (83.05 / 36.0, 82.0, 246.0, -30.0), (83.95 / 36.0, 82.0, 246.0, -30.0),
+        (84.15 / 36.0, 84.0, 252.0, -30.0),
+        (256.05 / 108.0, 84.0, 252.0, -30.0), (257.1 / 108.0, 84.0, 252.0, -30.0),
+        (263.358 / 108.0, 86.0, 259.2, -28.8), (263.442 / 108.0, 86.0, 259.2, -28.8),
+        (274.95 / 108.0, 88.0, 267.6, -26.4), (277.05 / 108.0, 90.0, 276.0, -24.0),
+        (293.85 / 108.0, 94.0, 292.8, -19.2),
+        (298.68 / 108.0, 94.0, 292.8, -19.2),
         (3.0, 100.0, 318.0, -12.0), (10.0, 100.0, 318.0, -12.0),
     ] {
         let frame = player.advance(time - previous).unwrap();
@@ -171,38 +175,39 @@ fn gauge_advances_by_six_blends_oklab_from_80_to_90_and_holds_at_100() {
         let uniforms = &snapshot["uniforms"];
         assert_eq!(uniforms["gauge.clock.seconds"]["value"].as_f64().unwrap(), value);
         assert!((uniforms["gauge.clock.angle"]["value"].as_f64().unwrap() - angle).abs() < 1e-4,
-            "6x sweep must retain a constant angular speed through the upper range");
+            "dial marks must floor progress to whole ticks");
         assert!((uniforms["gauge.pointer.rotation"]["z"].as_f64().unwrap() - pointer_angle).abs() < 1e-4,
-            "pointer must follow the nearest tick and reset at half a tick of overshoot");
+            "pointer must use floored progress without an oscillating tick phase");
+        assert_palette(uniforms, value);
         let tick_index = (uniforms["gauge.clock.angle"]["value"].as_f64().unwrap()
             - uniforms["gauge.pointer.rotation"]["z"].as_f64().unwrap() - 30.0) / 6.0;
         assert!((tick_index - tick_index.round()).abs() < 1e-5,
-            "pointer must stay aligned with a small tick throughout each cycle");
-        let travel = (time * 108.0).min(318.0);
-        let position = if travel <= 255.0 { travel / 3.0 } else { 85.0 + (travel - 255.0) / 4.2 };
-        let overshoot = uniforms["gauge.pointer.rotation"]["z"].as_f64().unwrap()
-            + 30.0 - (position - 85.0).max(0.0) * 1.2;
-        assert!(overshoot.abs() <= 3.0 + 1e-5, "pointer must stay within half a tick of the baseline");
-        assert_palette(uniforms, position);
-        if value == 83.0 || value == 84.0 {
+            "every held position must align to a whole tick, never a half tick");
+        if value == held_value {
+            assert_eq!(uniforms, &held_uniforms,
+                "marks, pointer, digits and palette must all hold within the same tick");
+        }
+        held_value = value;
+        held_uniforms = uniforms.clone();
+        if value == 82.0 {
             let (_, _, pixels) = player.capture_linear_rgba().unwrap();
-            let i = (((height - 1 - 100) * width + 900) * 4) as usize;
-            let background = [pixels[i], pixels[i + 1], pixels[i + 2]];
-            if let Some(before) = background_before {
-                assert!((0..3).all(|c| (background[c] - before[c]).abs() < 0.001),
-                    "ceramic background must blend continuously, without a palette switch: {before:?} -> {background:?}");
+            if let Some(before) = &held_pixels {
+                // Allow small half-float rendering differences, but no visible movement.
+                let max_delta = pixels.iter().zip(before)
+                    .map(|(a, b)| (a - b).abs()).fold(0.0_f32, f32::max);
+                assert!(max_delta < 0.005, "rendered output must hold within one tick: {max_delta}");
             }
-            background_before = Some(background);
+            held_pixels = Some(pixels);
         }
         if value == 94.0 {
             let x = uniforms["gauge.pointer.position"]["x"].as_f64().unwrap();
             let y = uniforms["gauge.pointer.position"]["y"].as_f64().unwrap();
             let (_, _, pixels) = player.capture_linear_rgba().unwrap();
             let cyan = lamp_cyan(&pixels, width, height, (x.round() as u32, y.round() as u32));
-            assert!(cyan.abs() < 0.25, "continuous sweep must also occlude the lamp outside major windows: {cyan}");
+            assert!(cyan.abs() < 0.25, "floored progress must also occlude the lamp outside major windows: {cyan}");
             if let Ok(directory) = std::env::var("GAUGE_CLOCK_CAPTURE_DIR") {
                 player.shader_space().save_texture_exr(player.scene_output_texture_name().as_str(),
-                    std::path::Path::new(&directory).join("frame-sweep-94.25.exr")).unwrap();
+                    std::path::Path::new(&directory).join("frame-floor-94.exr")).unwrap();
             }
         }
         previous = time;

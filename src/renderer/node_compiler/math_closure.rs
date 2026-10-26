@@ -3,7 +3,7 @@
 use crate::dsl::{Node, NodePort, SceneDSL, incoming_connection};
 use crate::renderer::pass_source::{TextureSourceRef, resolve_texture_source_ref};
 use crate::renderer::types::{ImageTextureRef, MaterialCompileContext, TypedExpr, ValueType};
-use crate::renderer::utils::coerce_to_type;
+use crate::renderer::utils::{coerce_to_type, readable_wgsl_ident};
 use crate::renderer::validation::GlslShaderStage;
 use anyhow::{Context, Result, anyhow, bail};
 use node_forge_math_closure::{Port, Request};
@@ -104,11 +104,13 @@ where
         GlslShaderStage::Fragment => "fragment",
         GlslShaderStage::Compute => "compute",
     };
-    let base = format!(
+    // Normalize the complete name before allocating it. Numeric labels can start
+    // with '_', which would otherwise be collapsed by Naga after allocation.
+    let base = readable_wgsl_ident(&format!(
         "nf_{}_{}",
         super::readable_symbol_base(node, "output"),
         stage_name
-    );
+    ));
     let namespace = ctx.allocate_local_name(&format!("fn:{stage_name}:{}", node.id), &base);
     let function_name = format!("{namespace}_closure");
     let compiled = node_forge_math_closure::compile(&Request {

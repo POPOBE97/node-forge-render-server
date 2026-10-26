@@ -23,6 +23,9 @@ fn graph_input_preferred_name(node: &Node) -> String {
         .unwrap_or(node.id.as_str());
     let name = readable_wgsl_ident(raw);
     match name.as_str() {
+        // Labels with no ASCII words (for example Chinese or emoji) collapse to
+        // `_`, which WGSL reserves for phony assignments, not struct fields.
+        "_" => graph_field_name(&node.id),
         "float_input"
         | "int_input"
         | "bool_input"
@@ -634,6 +637,47 @@ mod fragcoord_tests {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+
+    #[test]
+    fn graph_inputs_with_non_ascii_labels_emit_valid_wgsl() {
+        let mut ctx = MaterialCompileContext::default();
+        let mut expressions = Vec::new();
+        for (index, label) in ["刻度数量", "指针拖尾数量（不含主指针）", "🔴"].iter().enumerate() {
+            let node = Node {
+                id: format!("gauge.count.{index}"),
+                node_type: "IntInput".to_string(),
+                params: HashMap::from([
+                    ("label".to_string(), serde_json::json!(label)),
+                    ("value".to_string(), serde_json::json!(16)),
+                ]),
+                inputs: Vec::new(),
+                input_bindings: Vec::new(),
+                outputs: Vec::new(),
+                wgsl_override: None,
+            };
+            expressions.push(compile_float_or_int_input(&node, None, &mut ctx).unwrap().expr);
+        }
+        let schema = crate::renderer::graph_uniforms::build_graph_schema_with_field_names(
+            &ctx.graph_input_kinds,
+            &ctx.graph_input_field_names,
+        );
+        let declarations = crate::renderer::wgsl::graph_inputs_wgsl_decl(
+            &schema,
+            crate::renderer::types::GraphBindingKind::Uniform,
+        );
+        let source = format!(
+            "{declarations}\n@compute @workgroup_size(1) fn main() {{ _ = {}; }}",
+            expressions.join(" + ")
+        );
+        let module = naga::front::wgsl::parse_str(&source)
+            .unwrap_or_else(|error| panic!("{}", error.emit_to_string(&source)));
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        )
+        .validate(&module)
+        .unwrap();
+    }
 
     #[test]
     fn test_color_input_default() {

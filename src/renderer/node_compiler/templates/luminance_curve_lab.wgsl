@@ -1,7 +1,7 @@
 // LuminanceCurve (LAB) — helper template
 //
-// Embedded at compile time via template_loader. No markers — this file is the
-// raw WGSL helper body that gets registered in `extra_wgsl_decls`.
+// Loaded via template_loader; OKLab RGB boundaries are specialized for the
+// scene's working color space before registration in `extra_wgsl_decls`.
 //
 // Algorithm:
 //   - Convert premultiplied RGB to linear RGB (divide by alpha).
@@ -22,7 +22,7 @@ fn lc_luminance_curve_lab(color: vec4f, factors: vec4f, mix_factor: f32) -> vec4
         return color;
     }
 
-    let rgb = color.rgb / color.a;
+    let rgb = {{oklab_input_rgb}};
     let lms = vec3f(
         0.4122214708 * rgb.r + 0.5363325363 * rgb.g + 0.0514459929 * rgb.b,
         0.2119034982 * rgb.r + 0.6806995451 * rgb.g + 0.1073969566 * rgb.b,
@@ -52,7 +52,7 @@ fn lc_luminance_curve_lab(color: vec4f, factors: vec4f, mix_factor: f32) -> vec4
         -1.2684380046 * mapped_lms.x + 2.6097574011 * mapped_lms.y - 0.3413193965 * mapped_lms.z,
         -0.0041960863 * mapped_lms.x - 0.7034186147 * mapped_lms.y + 1.7076147010 * mapped_lms.z,
     );
-    mapped_rgb = max(vec3f(0.0), mapped_rgb);
+    mapped_rgb = max(vec3f(0.0), {{oklab_output_rgb}});
 
     return vec4f(mapped_rgb * color.a, color.a);
 }

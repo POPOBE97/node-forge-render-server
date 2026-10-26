@@ -147,6 +147,26 @@ pub fn load_template(name: &str) -> String {
     content
 }
 
+/// OKLab's matrices operate on linear sRGB. Specialize both boundaries for the
+/// scene's working primaries; never clamp the intermediate sRGB values, since
+/// Display P3 colors can lie outside that gamut. The caller's final clamp stays
+/// in working space. An sRGB scene retains the original shader expressions.
+pub(super) fn specialize_oklab_template(
+    template: &str,
+    working: crate::color::WorkingColorSpace,
+) -> String {
+    use crate::color::WorkingColorSpace::Srgb;
+    template
+        .replace(
+            "{{oklab_input_rgb}}",
+            &working.wgsl_transform(Srgb, "color.rgb / color.a"),
+        )
+        .replace(
+            "{{oklab_output_rgb}}",
+            &Srgb.wgsl_transform(working, "mapped_rgb"),
+        )
+}
+
 /// Load a node-specific WGSL override file if `override_abs_path` points to
 /// a readable file; otherwise fall back to the bundled `template_name`.
 ///

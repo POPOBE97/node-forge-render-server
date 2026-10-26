@@ -693,9 +693,32 @@ pub fn build_bloom_extract_material_bundle(
         }
     };
 
+    let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
+    let mut compile_scalar = |port: &str, fallback: f32| -> Result<String> {
+        if let Some(connection) = incoming_connection(scene, bloom_node_id, port) {
+            let value = compile_material_expr(
+                scene,
+                nodes_by_id,
+                &connection.from.node_id,
+                Some(&connection.from.port_id),
+                &mut material_ctx,
+                &mut cache,
+            )?;
+            Ok(coerce_to_type(value, ValueType::F32)?.expr)
+        } else {
+            Ok(fmt_f32_utils(fallback))
+        }
+    };
+    let threshold_expr = compile_scalar("threshold", threshold)?;
+    let smooth_width_px_expr = if incoming_connection(scene, bloom_node_id, "smoothness").is_some() {
+        let smoothness_expr = compile_scalar("smoothness", 0.5)?;
+        format!("(1.0 - clamp({smoothness_expr}, 0.0, 1.0)) * 40.0")
+    } else {
+        fmt_f32_utils(smooth_width_px.max(0.0))
+    };
+
     let tint_expr = if let Some(tint_connection) = incoming_connection(scene, bloom_node_id, "tint")
     {
-        let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
         let tint = compile_material_expr(
             scene,
             nodes_by_id,
@@ -713,8 +736,8 @@ pub fn build_bloom_extract_material_bundle(
     };
 
     let extract_body = bloom_extract_fragment_body(
-        threshold,
-        smooth_width_px,
+        &threshold_expr,
+        &smooth_width_px_expr,
         strength,
         saturation,
         &tint_expr,
@@ -2666,7 +2689,7 @@ mod tests {
     }
 
     #[test]
-    fn bloom_tint_compiles_texture_resource_expression() {
+    fn bloom_extract_compiles_texture_tint_and_dynamic_cutoff() {
         let node = |id: &str, node_type: &str| Node {
             id: id.to_string(),
             node_type: node_type.to_string(),
@@ -2700,6 +2723,33 @@ mod tests {
                 node("source", "RenderPass"),
                 node("tint_source", "RenderPass"),
                 Node {
+                    params: HashMap::from([("value".to_string(), serde_json::json!(0.15))]),
+                    ..node("cutoff", "FloatInput")
+                },
+                Node {
+                    params: HashMap::from([("value".to_string(), serde_json::json!(0.7))]),
+                    ..node("softness", "FloatInput")
+                },
+                Node {
+                    params: HashMap::from([
+                        ("source".to_string(), serde_json::json!("output = cutoff * 2.0;")),
+                        ("outputType".to_string(), serde_json::json!("float")),
+                    ]),
+                    inputs: vec![crate::dsl::NodePort {
+                        id: "cutoff".to_string(),
+                        name: Some("cutoff".to_string()),
+                        port_type: Some("float".to_string()),
+                        array_length: None,
+                    }],
+                    outputs: vec![crate::dsl::NodePort {
+                        id: "output".to_string(),
+                        name: Some("output".to_string()),
+                        port_type: Some("float".to_string()),
+                        array_length: None,
+                    }],
+                    ..node("dynamic_cutoff", "MathClosure")
+                },
+                Node {
                     id: "tint_sample".to_string(),
                     node_type: "MathClosure".to_string(),
                     params: HashMap::from([
@@ -2727,6 +2777,9 @@ mod tests {
                 connection("source-bloom", "source", "texture", "bloom", "texture"),
                 connection("tint-sample", "tint_source", "texture", "tint_sample", "l0"),
                 connection("sample-bloom", "tint_sample", "output", "bloom", "tint"),
+                connection("cutoff-expression", "cutoff", "value", "dynamic_cutoff", "cutoff"),
+                connection("cutoff-bloom", "dynamic_cutoff", "output", "bloom", "threshold"),
+                connection("softness-bloom", "softness", "value", "bloom", "smoothness"),
             ],
             outputs: None,
             groups: Vec::new(),
@@ -2757,6 +2810,11 @@ mod tests {
         assert_eq!(bundle.pass_textures.len(), 2);
         assert!(bundle.module.contains("pass_tex_tint_source"));
         assert!(bundle.module.contains("let tint_value ="));
+        let schema = bundle.graph_schema.as_ref().expect("dynamic Bloom graph inputs");
+        assert!(schema.fields.iter().any(|field| field.node_id == "cutoff"));
+        assert!(schema.fields.iter().any(|field| field.node_id == "softness"));
+        assert!(bundle.module.contains("graph_inputs.cutoff"));
+        assert!(bundle.module.contains("graph_inputs.softness"));
         validate_wgsl(&bundle.module).expect("Bloom extract WGSL should validate");
     }
 

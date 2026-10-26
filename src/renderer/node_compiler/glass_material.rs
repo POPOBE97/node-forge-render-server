@@ -15,6 +15,7 @@ use anyhow::{Result, bail};
 use std::collections::HashMap;
 
 use super::super::types::{ImageTextureRef, MaterialCompileContext, TypedExpr, ValueType};
+use crate::color::WorkingColorSpace;
 use crate::dsl::{Node, SceneDSL, incoming_connection, parse_f32};
 use crate::renderer::pass_source::{TextureSourceRef, resolve_texture_source_ref};
 use crate::renderer::utils::fmt_f32;
@@ -239,12 +240,13 @@ fn glass_override_path(node: &Node) -> Option<std::path::PathBuf> {
         .and_then(super::template_loader::resolve_override_path)
 }
 
-fn glass_template_parts(node: &Node) -> (String, String) {
+fn glass_template_parts(node: &Node, working: WorkingColorSpace) -> (String, String) {
     let path = glass_override_path(node);
     let full = super::template_loader::load_template_with_override(
         path.as_deref(),
         "glass_material_fragment.wgsl",
     );
+    let full = super::template_loader::specialize_oklab_template(&full, working);
     let split_pos = full
         .find(GLASS_TEMPLATE_SPLIT)
         .expect("template missing // {{BODY}} marker");
@@ -283,7 +285,11 @@ fn glass_lib_key_for(node: &Node) -> String {
     }
 }
 
-fn ensure_glass_wgsl_lib(ctx: &mut MaterialCompileContext, node: &Node) {
+fn ensure_glass_wgsl_lib(
+    ctx: &mut MaterialCompileContext,
+    node: &Node,
+    working: WorkingColorSpace,
+) {
     super::sdf_nodes::ensure_default_sdf2d_wgsl_lib(ctx);
 
     let lib_key = glass_lib_key_for(node);
@@ -291,7 +297,7 @@ fn ensure_glass_wgsl_lib(ctx: &mut MaterialCompileContext, node: &Node) {
         return;
     }
 
-    let (helpers, _) = glass_template_parts(node);
+    let (helpers, _) = glass_template_parts(node, working);
     let header = if node.wgsl_override.is_some() {
         format!(
             "\n// ---- GlassMaterial helpers (generated, override for {}) ----\n\n",
@@ -321,7 +327,7 @@ where
         &mut HashMap<(String, String), TypedExpr>,
     ) -> Result<TypedExpr>,
 {
-    ensure_glass_wgsl_lib(ctx, node);
+    ensure_glass_wgsl_lib(ctx, node, scene.working_color_space);
 
     let mut input_expr = |port_id: &str, fallback: TypedExpr| -> Result<TypedExpr> {
         if let Some(conn) = incoming_connection(scene, &node.id, port_id) {
@@ -746,7 +752,7 @@ where
         vars.push(("sdf_samp_var", sdf_samp_var));
     }
 
-    let (_, body_template) = glass_template_parts(node);
+    let (_, body_template) = glass_template_parts(node, scene.working_color_space);
     let stmt = substitute_template(&body_template, &vars);
 
     ctx.inline_stmts.push(stmt);
