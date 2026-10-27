@@ -786,6 +786,7 @@ fn run_case(case: &Case) {
             let anim_samples = evenly_spaced_samples(0.0, 10.0, ANIM_FRAME_COUNT)
                 .unwrap_or_else(|e| panic!("case {}: invalid animation schedule: {e}", case.name));
             let mut existing_baseline_indices: Vec<usize> = Vec::new();
+            let mut mismatched_frames = Vec::new();
 
             for sample in &anim_samples {
                 let frame_idx = sample.frame_index;
@@ -830,27 +831,38 @@ fn run_case(case: &Case) {
                     expected_dir.join(format!("baseline_{frame_idx}.{output_ext}"));
                 if baseline_frame.exists() {
                     existing_baseline_indices.push(frame_idx);
-                    if output_is_hdr {
-                        compare_exr_baseline(
-                            &baseline_frame,
-                            &frame_path,
-                            case.name,
-                            &format!("frame_{frame_idx}"),
-                        );
-                    } else {
-                        let expected = load_rgba8(&baseline_frame);
-                        let actual = load_rgba8(&frame_path);
-                        compare_rgba8_baseline(
-                            &expected,
-                            &actual,
-                            case.name,
-                            &format!("frame_{frame_idx}"),
-                            &baseline_frame,
-                            &frame_path,
-                        );
+                    // Keep rendering after a mismatch so every animation sample is
+                    // available for review. The case still fails below.
+                    let comparison = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        if output_is_hdr {
+                            compare_exr_baseline(
+                                &baseline_frame,
+                                &frame_path,
+                                case.name,
+                                &format!("frame_{frame_idx}"),
+                            );
+                        } else {
+                            let expected = load_rgba8(&baseline_frame);
+                            let actual = load_rgba8(&frame_path);
+                            compare_rgba8_baseline(
+                                &expected,
+                                &actual,
+                                case.name,
+                                &format!("frame_{frame_idx}"),
+                                &baseline_frame,
+                                &frame_path,
+                            );
+                        }
+                    }));
+                    if comparison.is_err() {
+                        mismatched_frames.push(frame_idx);
                     }
                 }
             }
+
+            assert!(mismatched_frames.is_empty(),
+                "case {}: animation baseline mismatch in frames {:?}; all samples saved to {}",
+                case.name, mismatched_frames, out_dir.display());
 
             // Guardrail: if this animated case is expected to have baselines, missing
             // animation frame baselines should fail in normal mode.

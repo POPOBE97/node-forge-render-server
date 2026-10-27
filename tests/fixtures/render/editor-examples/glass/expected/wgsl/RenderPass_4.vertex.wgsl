@@ -38,6 +38,16 @@ struct GraphInputs {
     node_Vector3Input_67_698d8c66: vec4f,
     // Node: Vector4Input_82
     node_Vector4Input_82_911287d3: vec4f,
+    // Node: dp.GlassMaterial_40.uShapeEdgePx
+    node_dp_GlassMaterial_40_uShapeEdgePx_7ef736e3: vec4f,
+    // Node: dp.GlassMaterial_40.uShapeReflectOffsetPx
+    node_dp_GlassMaterial_40_uShapeReflectOffsetPx_9ba0d7e0: vec4f,
+    // Node: dp.GlassMaterial_40.uShapeThicknessPx
+    node_dp_GlassMaterial_40_uShapeThicknessPx_d385d2a6: vec4f,
+    // Node: dp.Rect2DGeometry_3.radius
+    node_dp_Rect2DGeometry_3_radius_c119ca88: vec4f,
+    // Node: dp.Rect2DGeometry_3.size
+    node_dp_Rect2DGeometry_3_size_7230bc1a: vec4f,
 };
 
 @group(0) @binding(2)
@@ -589,19 +599,23 @@ fn sdf2d_smooth_round_rect(point: vec2f, center: vec2f, radius: f32, axis_mix: v
  let inst_m = mat4x4f(i0, i1, i2, i3);
  let geo_sx = length(inst_m[0].xy);
  let geo_sy = length(inst_m[1].xy);
- let geo_size_px = params.geo_size * vec2f(geo_sx, geo_sy);
+ let rect_size_px_base = vec2f((graph_inputs.node_dp_Rect2DGeometry_3_size_7230bc1a).x, (graph_inputs.node_dp_Rect2DGeometry_3_size_7230bc1a).y);
+ let rect_center_px = params.center;
+ let rect_dyn = vec4f(rect_center_px, rect_size_px_base);
+ let geo_size_px = rect_dyn.zw * vec2f(geo_sx, geo_sy);
  out.geo_size_px = geo_size_px;
  out.local_px = vec3f(uv * geo_size_px, 0.0);
 
- var p_local = (inst_m * vec4f(position, 1.0)).xyz;
+ let p_rect_local_px = vec3f(position.xy * rect_dyn.zw, position.z);
+ var p_local = (inst_m * vec4f(p_rect_local_px, 1.0)).xyz;
 
- let delta_t = (vec3f(baked_data_parse[(instance_index) * 5u + 0u].xy, 0.0) + (graph_inputs.node_Vector3Input_67_698d8c66).xyz);
+ let delta_t = (vec3f(baked_data_parse[(instance_index) * 8u + 0u].xy, 0.0) + (graph_inputs.node_Vector3Input_67_698d8c66).xyz);
  p_local = p_local + delta_t;
 
  // Geometry vertices are in local pixel units centered at (0,0).
  // Convert to target pixel coordinates with bottom-left origin.
  out.local_px = vec3f(out.local_px.xy, p_local.z);
- let p_px = params.center + p_local.xy;
+ let p_px = rect_dyn.xy + p_local.xy;
 
  out.position = params.camera * vec4f(p_px, p_local.z, 1.0);
 

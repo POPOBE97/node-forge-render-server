@@ -29,7 +29,8 @@ var<uniform> params: Params;
      @location(2) local_px: vec3f,
      // Geometry size in pixels after applying geometry/instance transforms.
      @location(3) geo_size_px: vec2f,
-  };
+     @location(4) @interpolate(flat) instance_index: u32,
+ };
 
 
 struct GraphInputs {
@@ -45,12 +46,26 @@ struct GraphInputs {
     node_FloatInput_89_1faae820: vec4f,
     // Node: Vector2Input_119
     node_Vector2Input_119_4e6d6989: vec4f,
-    // Node: Vector2Input_120
-    node_Vector2Input_120_72a16b89: vec4f,
     // Node: Vector3Input_105
     node_Vector3Input_105_12e9923b: vec4f,
     // Node: Vector3Input_80
     node_Vector3Input_80_82af6f66: vec4f,
+    // Node: dp.Sdf2DBevel_61.width
+    node_dp_Sdf2DBevel_61_width_5ca037c2: vec4f,
+    // Node: dp.Sdf2D_106.radius
+    node_dp_Sdf2D_106_radius_60a95d0c: vec4f,
+    // Node: dp.metric.MathClosure_115.falloffPx
+    node_dp_metric_MathClosure_115_falloffPx_3eb1865f: vec4f,
+    // Node: dp.metric.MathClosure_115.radiusPx
+    node_dp_metric_MathClosure_115_radiusPx_f64ebaba: vec4f,
+    // Node: dp.metric.Remap_112.edge1
+    node_dp_metric_Remap_112_edge1_ebceb5e2: vec4f,
+    // Node: dp.metric.Remap_113.edge0
+    node_dp_metric_Remap_113_edge0_7b11e137: vec4f,
+    // Node: dp.metric.Remap_113.edge1
+    node_dp_metric_Remap_113_edge1_c80fe137: vec4f,
+    // Node: dp.metric.Remap_64.edge1
+    node_dp_metric_Remap_64_edge1_9f67a4c6: vec4f,
 };
 
 @group(0) @binding(2)
@@ -409,26 +424,33 @@ fn nf_math_closure_fragment_d78208e0_closure(uv: vec2<f32>, xy: vec2<f32>, size:
     return _e10;
 }
 
-fn nf_math_closure_fragment_e6b4d787_closure(uv: vec2<f32>, sdf: f32) -> f32 {
+fn nf_math_closure_fragment_e6b4d787_closure(uv: vec2<f32>, sdf: f32, radiusPx: f32, falloffPx: f32) -> f32 {
     var uv_1: vec2<f32>;
     var sdf_1: f32;
+    var radiusPx_1: f32;
+    var falloffPx_1: f32;
     var output: f32;
     var r: f32;
 
     uv_1 = uv;
     sdf_1 = sdf;
-    let _e5: f32 = sdf_1;
+    radiusPx_1 = radiusPx;
+    falloffPx_1 = falloffPx;
     let _e9: f32 = sdf_1;
-    r = max((_e9 + 22f), 0f);
-    let _e15: f32 = r;
-    r = (_e15 / 42f);
-    let _e18: f32 = r;
-    let _e20: f32 = r;
+    let _e10: f32 = radiusPx_1;
+    let _e13: f32 = sdf_1;
+    let _e14: f32 = radiusPx_1;
+    r = max((_e13 + _e14), 0f);
+    let _e19: f32 = r;
+    let _e20: f32 = falloffPx_1;
+    r = (_e19 / _e20);
     let _e22: f32 = r;
     let _e24: f32 = r;
-    output = f32(exp((-(_e22) * _e24)));
-    let _e28: f32 = output;
-    return _e28;
+    let _e26: f32 = r;
+    let _e28: f32 = r;
+    output = f32(exp((-(_e26) * _e28)));
+    let _e32: f32 = output;
+    return _e32;
 }
 
 fn nf_math_closure_fragment_f48ad587_closure(uv: vec2<f32>, t: f32, size: vec2<f32>) -> vec2<f32> {
@@ -596,8 +618,11 @@ fn sdf2d_smooth_round_rect(point: vec2f, center: vec2f, radius: f32, axis_mix: v
  fn vs_main(
      @location(0) position: vec3f,
      @location(1) uv: vec2f,
+     @builtin(instance_index) instance_index: u32,
  ) -> VSOut {
  var out: VSOut;
+
+ out.instance_index = instance_index;
 
  let _unused_geo_size = params.geo_size;
  let _unused_geo_translate = params.geo_translate;
@@ -606,8 +631,8 @@ fn sdf2d_smooth_round_rect(point: vec2f, center: vec2f, radius: f32, axis_mix: v
  // UV passed as vertex attribute.
  out.uv = vec2f(uv.x, 1.0 - uv.y);
 
- let rect_size_px_base = (graph_inputs.node_Vector2Input_119_4e6d6989).xy;
- let rect_center_px = (graph_inputs.node_Vector2Input_120_72a16b89).xy;
+ let rect_size_px_base = vec2f((graph_inputs.node_Vector2Input_119_4e6d6989).x, (graph_inputs.node_Vector2Input_119_4e6d6989).y);
+ let rect_center_px = baked_data_parse[(instance_index) * 1u + 0u].xy;
  let rect_dyn = vec4f(rect_center_px, rect_size_px_base);
  out.geo_size_px = rect_dyn.zw;
  // Geometry-local pixel coordinate (GeoFragcoord).

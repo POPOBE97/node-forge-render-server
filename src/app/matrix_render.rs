@@ -980,6 +980,7 @@ mod tests {
     fn frame_value_scene() -> SceneDSL {
         SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "matrix-frame-values".to_string(),

@@ -36,6 +36,10 @@ var<uniform> params: Params;
 struct GraphInputs {
     // Node: Vector3Input_67
     node_Vector3Input_67_698d8c66: vec4f,
+    // Node: dp.Rect2DGeometry_3.radius
+    node_dp_Rect2DGeometry_3_radius_c119ca88: vec4f,
+    // Node: dp.Rect2DGeometry_3.size
+    node_dp_Rect2DGeometry_3_size_7230bc1a: vec4f,
 };
 
 @group(0) @binding(2)
@@ -576,19 +580,23 @@ fn sdf2d_smooth_round_rect(point: vec2f, center: vec2f, radius: f32, axis_mix: v
  let inst_m = mat4x4f(i0, i1, i2, i3);
  let geo_sx = length(inst_m[0].xy);
  let geo_sy = length(inst_m[1].xy);
- let geo_size_px = params.geo_size * vec2f(geo_sx, geo_sy);
+ let rect_size_px_base = vec2f((graph_inputs.node_dp_Rect2DGeometry_3_size_7230bc1a).x, (graph_inputs.node_dp_Rect2DGeometry_3_size_7230bc1a).y);
+ let rect_center_px = params.center;
+ let rect_dyn = vec4f(rect_center_px, rect_size_px_base);
+ let geo_size_px = rect_dyn.zw * vec2f(geo_sx, geo_sy);
  out.geo_size_px = geo_size_px;
  out.local_px = vec3f(uv * geo_size_px, 0.0);
 
- var p_local = (inst_m * vec4f(position, 1.0)).xyz;
+ let p_rect_local_px = vec3f(position.xy * rect_dyn.zw, position.z);
+ var p_local = (inst_m * vec4f(p_rect_local_px, 1.0)).xyz;
 
- let delta_t = (vec3f(baked_data_parse[(instance_index) * 5u + 0u].xy, 0.0) + (graph_inputs.node_Vector3Input_67_698d8c66).xyz);
+ let delta_t = (vec3f(baked_data_parse[(instance_index) * 8u + 0u].xy, 0.0) + (graph_inputs.node_Vector3Input_67_698d8c66).xyz);
  p_local = p_local + delta_t;
 
  // Geometry vertices are in local pixel units centered at (0,0).
  // Convert to target pixel coordinates with bottom-left origin.
  out.local_px = vec3f(out.local_px.xy, p_local.z);
- let p_px = params.center + p_local.xy;
+ let p_px = rect_dyn.xy + p_local.xy;
 
  out.position = params.camera * vec4f(p_px, p_local.z, 1.0);
 
@@ -613,7 +621,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      // --- Shape SDF ---
      let edge = f32(30.0);
      let edge_pow = f32(2.0);
-     let radius_px = f32(baked_data_parse[(in.instance_index) * 5u + 1u].x);
+     let radius_px = f32(baked_data_parse[(in.instance_index) * 8u + 1u].x);
      let safe_edge = max(edge, 1e-6);
      let box_sdf = hyperos_glass_shape_sdf(pos_from_center, half_size_px, radius_px, edge, edge_pow);
      let normalized_sdf = -box_sdf / safe_edge;
@@ -731,7 +739,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     let _rect_half_size_px = in.geo_size_px * 0.5;
     let _rect_point_px = abs(in.local_px.xy - _rect_half_size_px);
     let _rect_radius_limit_px = max(min(_rect_half_size_px.x, _rect_half_size_px.y), 0.0);
-    let _rect_radius_px = clamp(1.0, 0.0, _rect_radius_limit_px);
+    let _rect_radius_px = clamp((graph_inputs.node_dp_Rect2DGeometry_3_radius_c119ca88).x, 0.0, _rect_radius_limit_px);
     let _rect_smooth = clamp(1.0, 0.0, 1.0);
     let _rect_distance = sdf2d_smooth_round_rect(
         _rect_point_px,

@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use super::super::types::{MaterialCompileContext, TypedExpr, ValueType};
 use super::super::utils::{coerce_for_binary, coerce_to_type};
-use crate::dsl::{Node, SceneDSL, incoming_connection, parse_f32};
+use crate::dsl::{Node, SceneDSL, incoming_connection};
 
 fn wgsl_f32_literal(v: f32) -> String {
     if v.is_finite() {
@@ -17,6 +17,22 @@ fn wgsl_f32_literal(v: f32) -> String {
     } else {
         "0.0".to_string()
     }
+}
+
+pub(super) fn inline_numeric_expr(node: &Node, port: &str, dpi: f64) -> Result<Option<TypedExpr>> {
+    let Some(value) = node.params.get(port) else { return Ok(None) };
+    let value = crate::input_units::inline_value(node, port, value, dpi)?;
+    if let Some(value) = value.as_f64() {
+        return Ok(Some(TypedExpr::new(wgsl_f32_literal(value as f32), ValueType::F32)));
+    }
+    if let Some(values) = value.as_array() {
+        let ty = match values.len() { 2 => ValueType::Vec2, 3 => ValueType::Vec3, 4 => ValueType::Vec4,
+            _ => anyhow::bail!("invalid inline math vector {}.{port}", node.id) };
+        let parts = values.iter().map(|value| value.as_f64().map(|v| wgsl_f32_literal(v as f32))
+            .ok_or_else(|| anyhow::anyhow!("invalid inline math value {}.{port}", node.id))).collect::<Result<Vec<_>>>()?;
+        return Ok(Some(TypedExpr::new(format!("vec{}f({})", values.len(), parts.join(", ")), ty)));
+    }
+    anyhow::bail!("inline math input {}.{port} must be numeric", node.id)
 }
 
 /// Compile a MathAdd node to WGSL.
@@ -52,6 +68,8 @@ where
     for port_id in input_ports {
         if let Some(conn) = incoming_connection(scene, &node.id, port_id) {
             let expr = compile_fn(&conn.from.node_id, Some(&conn.from.port_id), ctx, cache)?;
+            resolved.push(expr);
+        } else if let Some(expr) = inline_numeric_expr(node, port_id, scene.dpi)? {
             resolved.push(expr);
         }
     }
@@ -110,6 +128,8 @@ where
         if let Some(conn) = incoming_connection(scene, &node.id, port_id) {
             let expr = compile_fn(&conn.from.node_id, Some(&conn.from.port_id), ctx, cache)?;
             resolved.push(expr);
+        } else if let Some(expr) = inline_numeric_expr(node, port_id, scene.dpi)? {
+            resolved.push(expr);
         }
     }
 
@@ -167,6 +187,8 @@ where
     for port_id in input_ports {
         if let Some(conn) = incoming_connection(scene, &node.id, port_id) {
             let expr = compile_fn(&conn.from.node_id, Some(&conn.from.port_id), ctx, cache)?;
+            resolved.push(expr);
+        } else if let Some(expr) = inline_numeric_expr(node, port_id, scene.dpi)? {
             resolved.push(expr);
         }
     }
@@ -228,6 +250,8 @@ where
         if let Some(conn) = incoming_connection(scene, &node.id, port_id) {
             let expr = compile_fn(&conn.from.node_id, Some(&conn.from.port_id), ctx, cache)?;
             resolved.push(expr);
+        } else if let Some(expr) = inline_numeric_expr(node, port_id, scene.dpi)? {
+            resolved.push(expr);
         }
     }
 
@@ -278,24 +302,27 @@ where
         anyhow::bail!("Lerp: unsupported output port '{port}'");
     }
 
-    let a_conn = incoming_connection(scene, &node.id, "a");
-    let b_conn = incoming_connection(scene, &node.id, "b");
-    let (Some(a_conn), Some(b_conn)) = (a_conn, b_conn) else {
+    let mut resolve = |port: &str| -> Result<Option<TypedExpr>> {
+        if let Some(conn) = incoming_connection(scene, &node.id, port) {
+            Ok(Some(compile_fn(&conn.from.node_id, Some(&conn.from.port_id), ctx, cache)?))
+        } else {
+            inline_numeric_expr(node, port, scene.dpi)
+        }
+    };
+    let (Some(a), Some(b)) = (resolve("a")?, resolve("b")?) else {
         return Ok(TypedExpr::new("0.0", ValueType::F32));
     };
-
-    let a = compile_fn(&a_conn.from.node_id, Some(&a_conn.from.port_id), ctx, cache)?;
-    let b = compile_fn(&b_conn.from.node_id, Some(&b_conn.from.port_id), ctx, cache)?;
     let (a, b, ty) = coerce_for_binary(a, b)?;
 
     let t = if let Some(t_conn) = incoming_connection(scene, &node.id, "t") {
         let t_expr = compile_fn(&t_conn.from.node_id, Some(&t_conn.from.port_id), ctx, cache)?;
         coerce_to_type(t_expr, ValueType::F32)?
     } else {
-        TypedExpr::new(
-            wgsl_f32_literal(parse_f32(&node.params, "t").unwrap_or(0.5)),
+        coerce_to_type(
+            inline_numeric_expr(node, "t", scene.dpi)?
+                .unwrap_or_else(|| TypedExpr::new("0.5", ValueType::F32)),
             ValueType::F32,
-        )
+        )?
     };
 
     let t = if matches!(ty, ValueType::Vec2 | ValueType::Vec3 | ValueType::Vec4) {
@@ -346,6 +373,8 @@ where
         if let Some(conn) = incoming_connection(scene, &node.id, port_id) {
             let expr = compile_fn(&conn.from.node_id, Some(&conn.from.port_id), ctx, cache)?;
             resolved.push(expr);
+        } else if let Some(expr) = inline_numeric_expr(node, port_id, scene.dpi)? {
+            resolved.push(expr);
         }
     }
 
@@ -389,14 +418,16 @@ where
         &mut HashMap<(String, String), TypedExpr>,
     ) -> Result<TypedExpr>,
 {
-    let a_conn = incoming_connection(scene, &node.id, "a");
-    let b_conn = incoming_connection(scene, &node.id, "b");
-    let (Some(a_conn), Some(b_conn)) = (a_conn, b_conn) else {
+    let mut resolve = |port: &str| -> Result<Option<TypedExpr>> {
+        if let Some(conn) = incoming_connection(scene, &node.id, port) {
+            Ok(Some(compile_fn(&conn.from.node_id, Some(&conn.from.port_id), ctx, cache)?))
+        } else {
+            inline_numeric_expr(node, port, scene.dpi)
+        }
+    };
+    let (Some(a), Some(b)) = (resolve("a")?, resolve("b")?) else {
         return Ok(TypedExpr::new("0.0", ValueType::F32));
     };
-
-    let a = compile_fn(&a_conn.from.node_id, Some(&a_conn.from.port_id), ctx, cache)?;
-    let b = compile_fn(&b_conn.from.node_id, Some(&b_conn.from.port_id), ctx, cache)?;
     let (a, b, ty) = coerce_for_binary(a, b)?;
 
     Ok(TypedExpr::with_time(
@@ -440,6 +471,8 @@ where
         if let Some(conn) = incoming_connection(scene, &node.id, port_id) {
             let expr = compile_fn(&conn.from.node_id, Some(&conn.from.port_id), ctx, cache)?;
             resolved.push(expr);
+        } else if let Some(expr) = inline_numeric_expr(node, port_id, scene.dpi)? {
+            resolved.push(expr);
         }
     }
 
@@ -476,6 +509,7 @@ mod tests {
     ) -> SceneDSL {
         SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "test".to_string(),

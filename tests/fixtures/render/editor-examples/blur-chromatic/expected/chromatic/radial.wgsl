@@ -33,6 +33,8 @@ struct VSOut {
 
 
 struct GraphInputs {
+    // Node: dp.mask.radialMask
+    dp_mask_radial_mask: vec4f,
     // Node: effect.center
     effect_center: vec4f,
 };
@@ -137,6 +139,6 @@ fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
     // Final composite
-    let _frag_out = cb_radial(pass_tex_sys_cb_chromatic_blur_input, pass_samp_sys_cb_chromatic_blur_input, vec2f(in.uv.x, 1.0 - in.uv.y), (graph_inputs.effect_center).xy, select(0.0, cb_mask(vec2f(in.uv.x, 1.0 - in.uv.y), (graph_inputs.effect_center).xy, params.geo_size, vec4f(640.0, 0.86, 1.7, 1.0)), true) * 0.4, 4);
+    let _frag_out = cb_radial(pass_tex_sys_cb_chromatic_blur_input, pass_samp_sys_cb_chromatic_blur_input, vec2f(in.uv.x, 1.0 - in.uv.y), (graph_inputs.effect_center).xy, select(0.0, cb_mask(vec2f(in.uv.x, 1.0 - in.uv.y), (graph_inputs.effect_center).xy, params.geo_size, (graph_inputs.dp_mask_radial_mask)), true) * 0.4, 8);
     return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

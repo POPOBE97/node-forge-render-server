@@ -264,7 +264,7 @@ fn run_case(gpu: &HeadlessRenderer, ws: &mut Socket, path: &Path, out: &Path) ->
         send(
             ws,
             "scene_delta",
-            json!({"version":"6.0", "workingColorSpace": "linear-srgb","baseRevision":999,"revision":2,"nodes":{"added":[],"updated":[],"removed":[]},"connections":{"added":[],"updated":[],"removed":[]}}),
+            json!({"version":"6.1", "workingColorSpace": "linear-srgb", "dpi": 3.0,"baseRevision":999,"revision":2,"nodes":{"added":[],"updated":[],"removed":[]},"connections":{"added":[],"updated":[],"removed":[]}}),
         )?;
         receive(ws, "scene_resync_request")?;
         let mut invalid = protocol_scene.clone();
@@ -311,7 +311,7 @@ fn run_case(gpu: &HeadlessRenderer, ws: &mut Socket, path: &Path, out: &Path) ->
             send(
                 ws,
                 "scene_delta",
-                json!({"version":"6.0", "workingColorSpace": "linear-srgb","baseRevision":1,"revision":2,"nodes":{"added":[],"updated":[edited],"removed":[]},"connections":{"added":[],"updated":[],"removed":[]}}),
+                json!({"version":"6.1", "workingColorSpace": "linear-srgb", "dpi": 3.0,"baseRevision":1,"revision":2,"nodes":{"added":[],"updated":[edited],"removed":[]},"connections":{"added":[],"updated":[],"removed":[]}}),
             )?;
             if receive(ws, "scene_applied")?["revision"] != 2 {
                 bail!("Uniform delta revision did not commit")

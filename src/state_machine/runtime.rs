@@ -29,6 +29,7 @@ use super::types::*;
 /// Opaque runtime for a single `StateMachine` definition.
 #[derive(Debug, Clone)]
 pub struct StateMachineRuntime {
+    pub(crate) dpi: f64,
     /// The compiled definition (immutable after construction).
     definition: StateMachine,
 
@@ -489,6 +490,7 @@ impl StateMachineRuntime {
             derived_values: HashMap::new(),
             derivation_snapshots: HashMap::new(),
             runtime_input: RuntimeInputSnapshot::default(),
+            dpi: 3.0,
             function_prepare_error,
             trigger_holds: TriggerHoldState::default(),
             finished: false,
@@ -1117,6 +1119,9 @@ impl StateMachineRuntime {
         params: &ExternalParams,
     ) -> Option<ConditionValue> {
         match source {
+            StateValueSource::FrameInput { frame_input_id } if frame_input_id == "scene.dpi" => {
+                Some(ConditionValue::Number(self.dpi))
+            }
             StateValueSource::FrameInput { frame_input_id }
                 if frame_input_id == "sceneElapsedTime" =>
             {
@@ -1199,6 +1204,7 @@ impl StateMachineRuntime {
             local_elapsed_time,
             mouse_position: self.runtime_input.mouse_position,
             scene_size: self.runtime_input.scene_size,
+            dpi: self.dpi,
             dt,
         };
         graph::evaluate_graph_with_motion_phase(
@@ -1256,6 +1262,7 @@ impl StateMachineRuntime {
             local_elapsed_time: self.state_local_times.get(state_id).copied().unwrap_or(0.0),
             mouse_position: self.runtime_input.mouse_position,
             scene_size: self.runtime_input.scene_size,
+            dpi: self.dpi,
             dt,
         };
         graph::evaluate_graph_with_motion_phase(

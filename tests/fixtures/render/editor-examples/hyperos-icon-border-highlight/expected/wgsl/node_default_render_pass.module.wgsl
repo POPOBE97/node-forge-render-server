@@ -36,7 +36,7 @@ struct GraphInputs {
     // Node: FloatInput_11
     float_input_11: vec4f,
     // Node: FloatInput_2
-    float_input_2: vec4f,
+    float_input_dp_dad897e5: vec4f,
     // Node: FloatInput_3
     float_input_3: vec4f,
     // Node: FloatInput_39
@@ -71,6 +71,12 @@ struct GraphInputs {
     vector3_input_12: vec4f,
     // Node: Vector3Input_46
     vector3_input_46: vec4f,
+    // Node: dp.Sdf2D_1.position
+    vector2_input_dp: vec4f,
+    // Node: dp.Sdf2D_1.radius
+    float_input_dp: vec4f,
+    // Node: dp.Sdf2D_1.size
+    dp_sdf2d_1_size: vec4f,
 };
 
 @group(0) @binding(2)
@@ -366,47 +372,47 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     );
     // Sdf2DBevel Sdf2DBevel_5.normal finite differences
     let _2d_sdf_bevel_normal_sdf_px = sdf2d_smooth_round_rect(
-        abs(((in.local_px.xy + vec2f(sdf2d_bevel_eps(), 0.0)) - vec2f(79.5, 79.5))),
-        (vec2f(159, 159) * 0.5),
-        36,
+        abs(((in.local_px.xy + vec2f(sdf2d_bevel_eps(), 0.0)) - vec2f((graph_inputs.vector2_input_dp).x, (graph_inputs.vector2_input_dp).y))),
+        ((graph_inputs.dp_sdf2d_1_size).xy * 0.5),
+        (graph_inputs.float_input_dp).x,
         vec2f(0.0, 0.0),
     ).x;
     let _2d_sdf_bevel_normal_sdf_nx = sdf2d_smooth_round_rect(
-        abs(((in.local_px.xy + vec2f(-(sdf2d_bevel_eps()), 0.0)) - vec2f(79.5, 79.5))),
-        (vec2f(159, 159) * 0.5),
-        36,
+        abs(((in.local_px.xy + vec2f(-(sdf2d_bevel_eps()), 0.0)) - vec2f((graph_inputs.vector2_input_dp).x, (graph_inputs.vector2_input_dp).y))),
+        ((graph_inputs.dp_sdf2d_1_size).xy * 0.5),
+        (graph_inputs.float_input_dp).x,
         vec2f(0.0, 0.0),
     ).x;
     let _2d_sdf_bevel_normal_sdf_py = sdf2d_smooth_round_rect(
-        abs(((in.local_px.xy + vec2f(0.0, sdf2d_bevel_eps())) - vec2f(79.5, 79.5))),
-        (vec2f(159, 159) * 0.5),
-        36,
+        abs(((in.local_px.xy + vec2f(0.0, sdf2d_bevel_eps())) - vec2f((graph_inputs.vector2_input_dp).x, (graph_inputs.vector2_input_dp).y))),
+        ((graph_inputs.dp_sdf2d_1_size).xy * 0.5),
+        (graph_inputs.float_input_dp).x,
         vec2f(0.0, 0.0),
     ).x;
     let _2d_sdf_bevel_normal_sdf_ny = sdf2d_smooth_round_rect(
-        abs(((in.local_px.xy + vec2f(0.0, -(sdf2d_bevel_eps()))) - vec2f(79.5, 79.5))),
-        (vec2f(159, 159) * 0.5),
-        36,
+        abs(((in.local_px.xy + vec2f(0.0, -(sdf2d_bevel_eps()))) - vec2f((graph_inputs.vector2_input_dp).x, (graph_inputs.vector2_input_dp).y))),
+        ((graph_inputs.dp_sdf2d_1_size).xy * 0.5),
+        (graph_inputs.float_input_dp).x,
         vec2f(0.0, 0.0),
     ).x;
     let _2d_sdf_bevel_normal_depth_px = sdf2d_bevel_smooth5(
         _2d_sdf_bevel_normal_sdf_px,
-        (graph_inputs.float_input_2).x,
+        (graph_inputs.float_input_dp_dad897e5).x,
         (graph_inputs.float_input_11).x,
     );
     let _2d_sdf_bevel_normal_depth_nx = sdf2d_bevel_smooth5(
         _2d_sdf_bevel_normal_sdf_nx,
-        (graph_inputs.float_input_2).x,
+        (graph_inputs.float_input_dp_dad897e5).x,
         (graph_inputs.float_input_11).x,
     );
     let _2d_sdf_bevel_normal_depth_py = sdf2d_bevel_smooth5(
         _2d_sdf_bevel_normal_sdf_py,
-        (graph_inputs.float_input_2).x,
+        (graph_inputs.float_input_dp_dad897e5).x,
         (graph_inputs.float_input_11).x,
     );
     let _2d_sdf_bevel_normal_depth_ny = sdf2d_bevel_smooth5(
         _2d_sdf_bevel_normal_sdf_ny,
-        (graph_inputs.float_input_2).x,
+        (graph_inputs.float_input_dp_dad897e5).x,
         (graph_inputs.float_input_11).x,
     );
     let _2d_sdf_bevel_normal_normal = sdf2d_bevel_normal(
@@ -431,21 +437,21 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     );
     // Sdf2DBevel Sdf2DBevel_5.depth
     let _2d_sdf_bevel_depth_sdf_depth = sdf2d_smooth_round_rect(
-        abs((in.local_px.xy - vec2f(79.5, 79.5))),
-        (vec2f(159, 159) * 0.5),
-        36,
+        abs((in.local_px.xy - vec2f((graph_inputs.vector2_input_dp).x, (graph_inputs.vector2_input_dp).y))),
+        ((graph_inputs.dp_sdf2d_1_size).xy * 0.5),
+        (graph_inputs.float_input_dp).x,
         vec2f(0.0, 0.0),
     ).x;
     let _2d_sdf_bevel_depth_depth = sdf2d_bevel_smooth5(
         _2d_sdf_bevel_depth_sdf_depth,
-        (graph_inputs.float_input_2).x,
+        (graph_inputs.float_input_dp_dad897e5).x,
         (graph_inputs.float_input_11).x,
     );
     // Sdf2DBevel Sdf2DBevel_7.depth
     let _2d_sdf_bevel_depth_sdf_depth_f1ab2a63 = (graph_inputs.float_input_3).x;
     let _2d_sdf_bevel_depth_depth_1d040fe9 = sdf2d_bevel_smooth5(
         _2d_sdf_bevel_depth_sdf_depth_f1ab2a63,
-        (graph_inputs.float_input_2).x,
+        (graph_inputs.float_input_dp_dad897e5).x,
         (graph_inputs.float_input_11).x,
     );
     // Final composite

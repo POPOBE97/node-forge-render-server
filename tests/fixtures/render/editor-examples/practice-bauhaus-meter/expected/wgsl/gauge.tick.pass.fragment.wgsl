@@ -637,10 +637,12 @@ fn sdf2d_smooth_round_rect(point: vec2f, center: vec2f, radius: f32, axis_mix: v
 
 
 // --- Extra WGSL declarations (generated) ---
-fn nf_math_closure_vertex_closure(uv: vec2<f32>, index: i32, angle: f32) -> vec3<f32> {
+fn nf_math_closure_vertex_closure(uv: vec2<f32>, index: i32, angle: f32, dialCenter: vec2<f32>, dialRadiusPx: f32) -> vec3<f32> {
     var uv_1: vec2<f32>;
     var index_1: i32;
     var angle_1: f32;
+    var dialCenter_1: vec2<f32>;
+    var dialRadiusPx_1: f32;
     var output: vec3<f32>;
     var theta: f32;
     var a: f32;
@@ -650,28 +652,32 @@ fn nf_math_closure_vertex_closure(uv: vec2<f32>, index: i32, angle: f32) -> vec3
     uv_1 = uv;
     index_1 = index;
     angle_1 = angle;
-    let _e8: i32 = index_1;
-    let _e10: i32 = index_1;
+    dialCenter_1 = dialCenter;
+    dialRadiusPx_1 = dialRadiusPx;
+    let _e12: i32 = index_1;
     let _e14: i32 = index_1;
-    let _e25: f32 = angle_1;
-    theta = ((150f - (((f32(_e8) + floor((f32(_e14) / 4f))) + 1f) * 6f)) + _e25);
-    let _e29: f32 = theta;
-    a = radians(_e29);
-    let _e37: f32 = a;
-    let _e40: f32 = a;
-    p = (vec2<f32>(1575f, -90f) + (vec2<f32>(cos(_e37), sin(_e40)) * 1350f));
-    let _e47: f32 = theta;
-    let _e50: f32 = theta;
-    if ((_e47 < 132f) || (_e50 > 168f)) {
+    let _e18: i32 = index_1;
+    let _e29: f32 = angle_1;
+    theta = ((150f - (((f32(_e12) + floor((f32(_e18) / 4f))) + 1f) * 6f)) + _e29);
+    let _e33: f32 = theta;
+    a = radians(_e33);
+    let _e36: vec2<f32> = dialCenter_1;
+    let _e38: f32 = a;
+    let _e41: f32 = a;
+    let _e44: f32 = dialRadiusPx_1;
+    p = (_e36 + (vec2<f32>(cos(_e38), sin(_e41)) * _e44));
+    let _e48: f32 = theta;
+    let _e51: f32 = theta;
+    if ((_e48 < 132f) || (_e51 > 168f)) {
         local = vec3<f32>(100000f, 100000f, 0f);
     } else {
-        let _e58: vec2<f32> = p;
-        local = vec3<f32>(_e58.x, _e58.y, 0f);
+        let _e59: vec2<f32> = p;
+        local = vec3<f32>(_e59.x, _e59.y, 0f);
     }
-    let _e64: vec3<f32> = local;
-    output = _e64;
-    let _e65: vec3<f32> = output;
-    return _e65;
+    let _e65: vec3<f32> = local;
+    output = _e65;
+    let _e66: vec3<f32> = output;
+    return _e66;
 }
 
 fn nf_math_closure_vertex_f3d1e576_closure(uv: vec2<f32>, index: i32, angle: f32) -> vec3<f32> {
@@ -710,54 +716,6 @@ fn sys_apply_trs_xyz(p: vec3f, t: vec3f, r_deg: vec3f, s: vec3f) -> vec3f {
     return p3 + t;
 }
 
- @vertex
- fn vs_main(
-     @location(0) position: vec3f,
-     @location(1) uv: vec2f,
-     @location(2) i0: vec4f,
-     @location(3) i1: vec4f,
-     @location(4) i2: vec4f,
-     @location(5) i3: vec4f,
-     @builtin(instance_index) instance_index: u32,
- ) -> VSOut {
- var out: VSOut;
-
-    let math_closure_out = nf_math_closure_vertex_closure(vec2f(uv.x, 1.0 - uv.y), i32(instance_index), (graph_inputs.node_gauge_clock_angle_d5c8a937).x);
-    let math_closure_out_80c6ab09 = nf_math_closure_vertex_f3d1e576_closure(vec2f(uv.x, 1.0 - uv.y), i32(instance_index), (graph_inputs.node_gauge_clock_angle_d5c8a937).x);
- out.instance_index = instance_index;
-
- let _unused_geo_size = params.geo_size;
- let _unused_geo_translate = params.geo_translate;
- let _unused_geo_scale = params.geo_scale;
-
- // UV passed as vertex attribute.
- out.uv = vec2f(uv.x, 1.0 - uv.y);
-
- let inst_m = mat4x4f(i0, i1, i2, i3);
- let geo_sx = length(inst_m[0].xy);
- let geo_sy = length(inst_m[1].xy);
- let geo_size_px = params.geo_size * vec2f(geo_sx, geo_sy);
- out.geo_size_px = geo_size_px;
- out.local_px = vec3f(uv * geo_size_px, 0.0);
-
- var p_local = (inst_m * vec4f(position, 1.0)).xyz;
-
- let delta_t = (sys_apply_trs_xyz(p_local, math_closure_out, math_closure_out_80c6ab09, vec3f(1.0, 1.0, 1.0)) - p_local);
- p_local = p_local + delta_t;
-
- // Geometry vertices are in local pixel units centered at (0,0).
- // Convert to target pixel coordinates with bottom-left origin.
- out.local_px = vec3f(out.local_px.xy, p_local.z);
- let p_px = params.center + p_local.xy;
-
- out.position = params.camera * vec4f(p_px, p_local.z, 1.0);
-
- out.world_pos = vec3f(p_px, p_local.z);
-
- // Pixel-centered like GLSL gl_FragCoord.xy.
- out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
- return out;
- }
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
     // Sdf2DBevel gauge.tick.bevel.normal finite differences

@@ -12,7 +12,7 @@ use serde_json::json;
 
 fn validate_closure(source: &str, output_type: &str, stage: GlslShaderStage, connected: bool) {
     let scene: SceneDSL = serde_json::from_value(json!({
-        "version": "6.0", "workingColorSpace": "linear-srgb",
+        "version": "6.1", "workingColorSpace": "linear-srgb", "dpi": 3.0,
         "metadata": { "name": "MathClosure boolean types" },
         "nodes": [{
             "id": "mask",
@@ -88,7 +88,7 @@ fn math_closure_boolean_output_preserves_type_in_both_stages() {
 #[test]
 fn math_closure_array_loop_validates_helper_and_call_site() {
     let scene: SceneDSL = serde_json::from_value(json!({
-        "version": "6.0", "workingColorSpace": "linear-srgb", "metadata": { "name": "arrays" },
+        "version": "6.1", "workingColorSpace": "linear-srgb", "dpi": 3.0, "metadata": { "name": "arrays" },
         "nodes": [{
             "id": "array", "type": "MathClosure",
             "params": { "source": "for (int i=0; i<2; i++) { output[i] = points[i] * 2.0; }",
@@ -113,7 +113,7 @@ fn math_closure_array_loop_validates_helper_and_call_site() {
 #[test]
 fn math_closure_rejects_missing_contract_instead_of_guessing() {
     let scene: SceneDSL = serde_json::from_value(json!({
-        "version": "6.0", "workingColorSpace": "linear-srgb", "metadata": { "name": "contract" },
+        "version": "6.1", "workingColorSpace": "linear-srgb", "dpi": 3.0, "metadata": { "name": "contract" },
         "nodes": [{ "id": "invalid", "type": "MathClosure", "params": { "source": "output = vec3(1.0);" },
             "outputs": [{ "id": "output", "type": "vector3" }] }], "connections": []
     })).unwrap();
@@ -144,7 +144,7 @@ fn math_closure_display_labels_preserve_function_links_in_both_stages() {
         "outputs": [{ "id": "output", "type": "vector3" }]
     })).collect();
     let raw_scene = json!({
-        "version": "6.0", "workingColorSpace": "linear-srgb",
+        "version": "6.1", "workingColorSpace": "linear-srgb", "dpi": 3.0,
         "metadata": { "name": "MathClosure display labels" },
         "nodes": nodes, "connections": []
     });
@@ -176,7 +176,7 @@ fn math_closure_display_labels_preserve_function_links_in_both_stages() {
 #[test]
 fn math_closure_stage_names_do_not_alias_in_a_shared_context() {
     let scene: SceneDSL = serde_json::from_value(json!({
-        "version": "6.0", "workingColorSpace": "linear-srgb", "metadata": { "name": "stages" },
+        "version": "6.1", "workingColorSpace": "linear-srgb", "dpi": 3.0, "metadata": { "name": "stages" },
         "nodes": [{ "id": "closure", "type": "MathClosure", "params": { "source": "output = 1.0;", "outputType": "float" },
             "outputs": [{ "id": "output", "type": "float" }] }], "connections": []
     })).unwrap();

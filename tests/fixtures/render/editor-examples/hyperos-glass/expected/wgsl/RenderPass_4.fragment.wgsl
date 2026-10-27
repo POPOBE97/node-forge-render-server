@@ -36,6 +36,10 @@ var<uniform> params: Params;
 struct GraphInputs {
     // Node: Vector3Input_67
     node_Vector3Input_67_698d8c66: vec4f,
+    // Node: dp.Rect2DGeometry_3.radius
+    node_dp_Rect2DGeometry_3_radius_c119ca88: vec4f,
+    // Node: dp.Rect2DGeometry_3.size
+    node_dp_Rect2DGeometry_3_size_7230bc1a: vec4f,
 };
 
 @group(0) @binding(2)
@@ -569,7 +573,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      // --- Shape SDF ---
      let edge = f32(30.0);
      let edge_pow = f32(2.0);
-     let radius_px = f32(baked_data_parse[(in.instance_index) * 5u + 1u].x);
+     let radius_px = f32(baked_data_parse[(in.instance_index) * 8u + 1u].x);
      let safe_edge = max(edge, 1e-6);
      let box_sdf = hyperos_glass_shape_sdf(pos_from_center, half_size_px, radius_px, edge, edge_pow);
      let normalized_sdf = -box_sdf / safe_edge;
@@ -687,7 +691,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     let _rect_half_size_px = in.geo_size_px * 0.5;
     let _rect_point_px = abs(in.local_px.xy - _rect_half_size_px);
     let _rect_radius_limit_px = max(min(_rect_half_size_px.x, _rect_half_size_px.y), 0.0);
-    let _rect_radius_px = clamp(1.0, 0.0, _rect_radius_limit_px);
+    let _rect_radius_px = clamp((graph_inputs.node_dp_Rect2DGeometry_3_radius_c119ca88).x, 0.0, _rect_radius_limit_px);
     let _rect_smooth = clamp(1.0, 0.0, 1.0);
     let _rect_distance = sdf2d_smooth_round_rect(
         _rect_point_px,

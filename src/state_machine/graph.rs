@@ -234,6 +234,7 @@ pub enum GraphEvaluationPhase {
 
 /// Input context supplied to graph_definition evaluation.
 pub struct GraphInputContext {
+    pub dpi: f64,
     /// Current parameter snapshot keyed by graph_definition-input port id.
     pub values: HashMap<String, GraphValue>,
     /// Monotonic scene time in seconds.
@@ -302,6 +303,28 @@ pub fn evaluate_graph_with_motion_phase(
         let deadline = Instant::now() + GRAPH_FRAME_BUDGET;
 
         let mut port_values: HashMap<(&str, &str), GraphValue> = HashMap::new();
+
+        // Only evaluate live inline defaults. Bound inputs must not validate or scale
+        // the authored value that they replace.
+        for node in &graph_definition.nodes {
+            if !required_nodes.contains(node.id.as_str()) {
+                continue;
+            }
+            for port in &node.inputs {
+                let is_bound = graph_definition.input_bindings.iter().any(|binding|
+                    binding.to.node_id == node.id && binding.to.port_id == port.id)
+                    || graph_definition.connections.iter().any(|edge|
+                        edge.to.node_id == node.id && edge.to.port_id == port.id);
+                if is_bound {
+                    continue;
+                }
+                if let Some(value) = crate::input_units::inner_params(&node.params, &port.id, ctx.dpi, port.port_type.as_deref() == Some("int"))? {
+                    let value = GraphValue::from_json_typed(&value, port.port_type.as_deref())
+                        .ok_or_else(|| anyhow::anyhow!("invalid inline value {}.{}", node.id, port.id))?;
+                    port_values.insert((node.id.as_str(), port.id.as_str()), value);
+                }
+            }
+        }
 
         for b in &graph_definition.input_bindings {
             let value = resolve_input_binding_value(b, ctx);
@@ -558,6 +581,7 @@ fn resolve_input_binding_value(
 fn resolve_builtin_value(name: &str, ctx: &GraphInputContext) -> Option<GraphValue> {
     match name {
         "sceneElapsedTime" => Some(ctx.scene_elapsed_time.into()),
+        "scene.dpi" => Some(ctx.dpi.into()),
         "localElapsedTime" => Some(ctx.local_elapsed_time.into()),
         "scene.size" => Some(
             ctx.scene_size
@@ -591,13 +615,33 @@ fn evaluate_inner_node<'a>(
     phase: GraphEvaluationPhase,
 ) -> Result<()> {
     match node.node_type {
-        GraphInnerNodeType::FloatInput => {
-            let value = node
-                .params
-                .get("value")
-                .and_then(|v| v.as_f64())
-                .unwrap_or(0.0);
-            write_output_if_declared_or_default(node, port_values, "value", value.into());
+        GraphInnerNodeType::FloatInput | GraphInnerNodeType::IntInput
+        | GraphInnerNodeType::Vector2Input | GraphInnerNodeType::Vector3Input | GraphInnerNodeType::Vector4Input => {
+            let keys: &[&str] = match node.node_type {
+                GraphInnerNodeType::Vector2Input => &["x", "y"],
+                GraphInnerNodeType::Vector3Input => &["x", "y", "z"],
+                GraphInnerNodeType::Vector4Input => &["x", "y", "z", "w"],
+                _ => &["value"],
+            };
+            let mut values = Vec::new();
+            for key in keys {
+                let value = if let Some(value) = get_port_value(node, key, port_values).and_then(AnimValue::as_f64) {
+                    value
+                } else {
+                    crate::input_units::inner_params(&node.params, key, ctx.dpi, node.node_type == GraphInnerNodeType::IntInput)?
+                        .and_then(|value| value.as_f64()).unwrap_or(0.0)
+                };
+                values.push(value);
+            }
+            let output = match values.as_slice() {
+                [x] if node.node_type == GraphInnerNodeType::IntInput => AnimValue::Int(*x as i64),
+                [x] => AnimValue::Float(*x),
+                [x, y] => AnimValue::Vec2([*x, *y]),
+                [x, y, z] => AnimValue::Vec3([*x, *y, *z]),
+                [x, y, z, w] => AnimValue::Vec4([*x, *y, *z, *w]),
+                _ => unreachable!(),
+            };
+            write_output_if_declared_or_default(node, port_values, if keys.len() == 1 { "value" } else { "vector" }, output);
         }
         GraphInnerNodeType::PackArray => {
             let packed = node
@@ -944,6 +988,7 @@ mod value_contract_tests {
     #[test]
     fn mouse_position_vector_is_bottom_left_scene_px() {
         let ctx = GraphInputContext {
+            dpi: 3.0,
             values: HashMap::new(),
             scene_elapsed_time: 0.0,
             local_elapsed_time: 0.0,

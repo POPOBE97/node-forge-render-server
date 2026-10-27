@@ -14,6 +14,7 @@ pub mod color;
 #[cfg(feature = "native")]
 pub mod debug_artifacts;
 pub mod dsl;
+pub mod input_units;
 #[cfg(feature = "native")]
 pub mod diagnostics;
 #[cfg(feature = "native")]
@@ -43,3 +44,6 @@ pub(crate) mod portable_js;
 
 #[cfg(feature = "android-core")]
 pub mod mobile_ws;
+
+#[cfg(test)]
+mod dp_tests;

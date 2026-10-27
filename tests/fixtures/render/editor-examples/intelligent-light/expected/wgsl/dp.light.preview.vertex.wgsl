@@ -1,0 +1,115 @@
+
+struct Params {
+    target_size: vec2f,
+    geo_size: vec2f,
+    center: vec2f,
+
+    geo_translate: vec2f,
+    geo_scale: vec2f,
+
+    // Pack to 16-byte boundary.
+    time: f32,
+    _pad0: f32,
+
+    // 16-byte aligned.
+    color: vec4f,
+    camera: mat4x4f,
+    camera_position: vec4f,
+};
+
+@group(0) @binding(0)
+var<uniform> params: Params;
+
+ struct VSOut {
+     @builtin(position) position: vec4f,
+     @location(0) uv: vec2f,
+     // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
+     @location(1) frag_coord_gl: vec2f,
+     // Geometry-local pixel coordinate (GeoFragcoord): origin at bottom-left.
+     @location(2) local_px: vec3f,
+     // Geometry size in pixels after applying geometry/instance transforms.
+     @location(3) geo_size_px: vec2f,
+     @location(4) @interpolate(flat) instance_index: u32,
+ };
+
+
+struct GraphInputs {
+    // Node: dp.metric.dp.light.preview.size
+    node_dp_metric_dp_light_preview_size_985a8744: vec4f,
+    // Node: sys.image-pass.dp.light.preview.alpha.default
+    node_sys_image_pass_dp_light_preview_alpha_default_044e981e: vec4f,
+    // Node: sys.image-pass.dp.light.preview.alpha.max
+    node_sys_image_pass_dp_light_preview_alpha_max_fb95f62d: vec4f,
+    // Node: sys.image-pass.dp.light.preview.alpha.min
+    node_sys_image_pass_dp_light_preview_alpha_min_45bddf2d: vec4f,
+};
+
+@group(0) @binding(2)
+var<uniform> graph_inputs: GraphInputs;
+
+@group(0) @binding(1)
+var<storage, read> baked_data_parse: array<vec4f>;
+@group(1) @binding(0)
+var pass_tex_IntelligentLight_8: texture_2d<f32>;
+
+@group(1) @binding(1)
+var pass_samp_IntelligentLight_8: sampler;
+
+
+// --- Extra WGSL declarations (generated) ---
+fn nf_math_closure_fragment_closure(uv_2: vec2<f32>) -> vec4<f32> {
+    var uv_3: vec2<f32>;
+    var output: vec4<f32>;
+
+    uv_3 = uv_2;
+    let _e4: vec2<f32> = uv_3;
+    let _e5: vec4<f32> = nf_math_closure_fragment_closure_sample_image_texture(_e4);
+    output = _e5;
+    let _e6: vec4<f32> = output;
+    return _e6;
+}
+
+fn nf_math_closure_fragment_closure_sample_image_texture(uv: vec2f) -> vec4f {
+    let raster_uv = vec2f(uv.x, 1.0 - uv.y);
+    return textureSample(pass_tex_IntelligentLight_8, pass_samp_IntelligentLight_8, raster_uv);
+}
+
+
+ @vertex
+ fn vs_main(
+     @location(0) position: vec3f,
+     @location(1) uv: vec2f,
+     @builtin(instance_index) instance_index: u32,
+ ) -> VSOut {
+ var out: VSOut;
+
+ out.instance_index = instance_index;
+
+ let _unused_geo_size = params.geo_size;
+ let _unused_geo_translate = params.geo_translate;
+ let _unused_geo_scale = params.geo_scale;
+
+ // UV passed as vertex attribute.
+ out.uv = vec2f(uv.x, 1.0 - uv.y);
+
+ let rect_size_px_base = vec2f((graph_inputs.node_dp_metric_dp_light_preview_size_985a8744).x, (graph_inputs.node_dp_metric_dp_light_preview_size_985a8744).y);
+ let rect_center_px = baked_data_parse[(instance_index) * 1u + 0u].xy;
+ let rect_dyn = vec4f(rect_center_px, rect_size_px_base);
+ out.geo_size_px = rect_dyn.zw;
+ // Geometry-local pixel coordinate (GeoFragcoord).
+ out.local_px = vec3f(uv * out.geo_size_px, 0.0);
+
+ let p_rect_local_px = vec3f(position.xy * rect_dyn.zw, position.z);
+ var p_local = p_rect_local_px;
+
+ // Geometry vertices are in local pixel units centered at (0,0).
+ // Convert to target pixel coordinates with bottom-left origin.
+ out.local_px = vec3f(out.local_px.xy, p_local.z);
+ let p_px = rect_dyn.xy + p_local.xy;
+
+ out.position = params.camera * vec4f(p_px, p_local.z, 1.0);
+
+ // Pixel-centered like GLSL gl_FragCoord.xy.
+ out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
+ return out;
+ }

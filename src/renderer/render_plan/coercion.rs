@@ -4,7 +4,6 @@ use anyhow::{Result, anyhow, bail};
 
 use crate::{
     dsl::{Connection, Endpoint, Node, SceneDSL, incoming_connection},
-    renderer::utils::cpu_num_u32_min_1,
     schema,
 };
 
@@ -385,8 +384,7 @@ fn downstream_target_sizes(
                     target.from.node_id
                 )
             })?;
-            let width = cpu_num_u32_min_1(scene, nodes, target_node, "width", 1024)?;
-            let height = cpu_num_u32_min_1(scene, nodes, target_node, "height", 1024)?;
+            let [width, height] = crate::dsl::render_texture_size(scene, nodes, target_node)?;
             if !sizes.contains(&[width, height]) {
                 sizes.push([width, height]);
             }
@@ -564,8 +562,9 @@ mod tests {
 
     fn scene(nodes: Vec<Node>, connections: Vec<Connection>) -> SceneDSL {
         SceneDSL {
-            version: "6.0".to_string(),
+            version: "6.1".to_string(),
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             metadata: Metadata {
                 name: "coercion test".to_string(),
                 created: None,

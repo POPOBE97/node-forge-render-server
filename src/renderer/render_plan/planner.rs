@@ -29,7 +29,7 @@ use crate::{
             sampler::build_image_prepare_wgsl,
         },
         types::{MaterialCompileContext, PassBindings, PassOutputRegistry},
-        utils::{as_bytes_slice, cpu_num_u32_min_1},
+        utils::as_bytes_slice,
     },
 };
 
@@ -222,20 +222,7 @@ impl RenderPlanner {
                     }
                 }
                 "RenderTexture" => {
-                    let w = cpu_num_u32_min_1(
-                        &prepared.scene,
-                        nodes_by_id,
-                        node,
-                        "width",
-                        resolution[0],
-                    )?;
-                    let h = cpu_num_u32_min_1(
-                        &prepared.scene,
-                        nodes_by_id,
-                        node,
-                        "height",
-                        resolution[1],
-                    )?;
+                    let [w, h] = crate::dsl::render_texture_size(&prepared.scene, nodes_by_id, node)?;
                     let format = parse_texture_format(&node.params)?;
                     textures.push(TextureDecl {
                         name,
@@ -862,7 +849,7 @@ fn plan_image_textures(
             });
             continue;
         }
-        if node.node_type != "ImageTexture" && node.node_type != "Matcap" {
+        if !matches!(node.node_type.as_str(), "ImageTexture" | "Matcap" | "EnvMaterial") {
             bail!(
                 "expected ImageTexture node for {node_id}, got {}",
                 node.node_type
@@ -878,7 +865,7 @@ fn plan_image_textures(
             .params
             .get("encoderSpace")
             .and_then(|v| v.as_str())
-            .unwrap_or("srgb")
+            .unwrap_or(if node.node_type == "EnvMaterial" { "linear" } else { "srgb" })
             .trim()
             .to_ascii_lowercase();
         let decode_srgb_transfer = match encoder_space.as_str() {
@@ -920,7 +907,19 @@ fn plan_image_textures(
             }
         };
 
-        let image = normalize_image_channels(image)?;
+        let image = if node.node_type == "EnvMaterial" {
+            // Environment RGB is radiance. EXR alpha is not surface coverage and
+            // must never erase the lighting before sampling/filtering.
+            let mut pixels = image.to_rgba32f();
+            for pixel in pixels.pixels_mut() {
+                anyhow::ensure!(pixel.0[..3].iter().all(|v| v.is_finite()),
+                    "EnvMaterial '{node_id}': HDRI contains non-finite radiance");
+                pixel.0[3] = 1.0;
+            }
+            Arc::new(image::DynamicImage::ImageRgba32F(pixels))
+        } else {
+            normalize_image_channels(image)?
+        };
         let alpha_mode = node
             .params
             .get("alphaMode")
@@ -1068,6 +1067,40 @@ mod tests {
         Ok((scene, assets))
     }
 
+    #[test]
+    fn meter_text_fields_plan_at_six_pixels_per_dp_without_gpu() -> Result<()> {
+        let planner = planner_for_mode(ShaderSpacePresentationMode::UiSdrDisplayEncode);
+        for example in ["practice-gaudge-meter", "practice-bauhaus-meter"] {
+            let (mut scene, assets) = load_case(example)?;
+            scene.dpi = 6.0;
+            let plan = planner.plan(&scene, assets.as_ref(), None)?;
+            let field = &plan.resources.image_textures.iter()
+                .find(|texture| texture.name.as_str() == "gauge.label50.sdf")
+                .expect("meter digit strip").image;
+            assert!(field.width() <= 8192 && field.height() <= 8192);
+            assert!(u64::from(field.width()) * u64::from(field.height()) <= 4 * 1024 * 1024);
+            let field = field.as_rgba32f().expect("floating point distance field");
+            let metadata = field.get_pixel(0, 0).0;
+            assert_eq!([metadata[1], metadata[2]], [300.0, 4500.0]);
+            assert_eq!(metadata[0], 10.0);
+            eprintln!("{example}: 6x DPI MTSDF atlas {} x {} texels", field.width(), field.height());
+            assert!(field.as_raw().iter().all(|value| value.is_finite()));
+            assert!(u64::from(field.width()) * u64::from(field.height()) < 128 * 1024);
+            // Each shaped digit references a bounded MTSDF tile with actual ink.
+            for glyph in 0..10 {
+                let index = 2 + 2 * glyph;
+                let tile = field.get_pixel(index % field.width(), index / field.width()).0;
+                let [x, y, width, height] = tile.map(|value| value as u32);
+                assert!(y > metadata[3] as u32);
+                assert!(x + width < field.width() && y + height < field.height());
+                assert!((y..y + height).any(|y| (x..x + width).any(|x| {
+                    field.get_pixel(x, y)[3] < 0.0
+                })), "{example}: missing digit {glyph}");
+            }
+        }
+        Ok(())
+    }
+
     fn intelligent_light_node_id(plan: &RenderPlan) -> String {
         plan.prepared
             .scene
@@ -1104,23 +1137,20 @@ mod tests {
         };
 
         let background_materializer = "GroupInstance_33/sys.migrate.processing.pass.edge_1";
-        let background_blur = "GroupInstance_33/GradientBlur_11";
         let caustic_pass = "GroupInstance_60/RenderPass_9a874ffe_53";
         let caustic_blur_source = "sys.blur.GroupInstance_60/GuassianBlurPass_b9da1676_59.src";
 
         assert_eq!(
             output_size(background_materializer, "texture"),
-            [1260, 2800]
+            [1080, 1080]
         );
-        assert_eq!(output_size(background_blur, "texture"), [1260, 2800]);
         assert_ne!(
             output_size(background_materializer, "texture"),
             [1024, 1024]
         );
-        assert_ne!(output_size(background_blur, "texture"), [1024, 1024]);
 
         assert_eq!(output_size(caustic_pass, "texture"), [1008, 208]);
-        assert_ne!(output_size(caustic_pass, "texture"), [1260, 2800]);
+        assert_ne!(output_size(caustic_pass, "texture"), [1080, 1080]);
         let caustic_blur_source_size = plan
             .resources
             .textures
@@ -1136,7 +1166,7 @@ mod tests {
 
     fn image_pass_texture_size_scene() -> SceneDSL {
         serde_json::from_value(serde_json::json!({
-            "version": "6.0", "workingColorSpace": "linear-srgb",
+            "version": "6.1", "workingColorSpace": "linear-srgb", "dpi": 3.0,
             "metadata": { "name": "image-pass-texture-size" },
             "nodes": [
                 {
@@ -1353,7 +1383,16 @@ mod tests {
 
     #[test]
     fn intelligent_light_composite_uses_intrinsic_output_and_edge_compose() -> Result<()> {
-        let (scene, assets) = load_case("intelligent-light")?;
+        let (mut scene, assets) = load_case("intelligent-light")?;
+        // The example uses an explicitly sized preview. Exercise direct pass composition here.
+        let light_id = scene.nodes.iter().find(|node| node.node_type == "IntelligentLight").unwrap().id.clone();
+        let composite_id = scene.nodes.iter().find(|node| node.node_type == "Composite").unwrap().id.clone();
+        scene.connections.retain(|edge| edge.to.node_id != composite_id || edge.to.port_id != "pass");
+        scene.connections.push(crate::dsl::Connection {
+            id: "direct-light-compose".into(),
+            from: crate::dsl::Endpoint { node_id: light_id, port_id: "pass".into() },
+            to: crate::dsl::Endpoint { node_id: composite_id, port_id: "pass".into() },
+        });
         let plan = planner_for_mode(ShaderSpacePresentationMode::SceneLinear).plan(
             &scene,
             assets.as_ref(),
@@ -1768,15 +1807,15 @@ mod tests {
         let expected = r#"PlanSummary {
     resolution: [
         1080,
-        2400,
+        1080,
     ],
     scene_output_texture: "node_5",
     present_output_texture: "node_5.present.sdr.srgb",
     export_output_texture: "node_5.present.sdr.srgb",
     export_encode_pass_name: None,
     textures: [
-        "node_5.present.sdr.srgb:Rgba8Unorm:1080x2400:samples=1",
-        "node_5:Rgba8Unorm:1080x2400:samples=1",
+        "node_5.present.sdr.srgb:Rgba8Unorm:1080x1080:samples=1",
+        "node_5:Rgba8Unorm:1080x1080:samples=1",
     ],
     image_textures: [],
     image_prepasses: [],
@@ -1788,11 +1827,9 @@ mod tests {
         "node_2.pass->node_5/Clear",
         "node_5.present.sdr.srgb.pass->node_5.present.sdr.srgb/Clear",
     ],
-    graph_bound_passes: [
-        "node_2.pass",
-    ],
+    graph_bound_passes: [],
     pass_outputs: [
-        "node_2:pass->node_5:1080x2400:Rgba8Unorm",
+        "node_2:pass->node_5:1080x1080:Rgba8Unorm",
     ],
 }"#;
         assert_eq!(summary, expected);
@@ -1811,21 +1848,21 @@ mod tests {
         let expected = r#"PlanSummary {
     resolution: [
         1080,
-        2400,
+        1080,
     ],
     scene_output_texture: "node_5",
     present_output_texture: "node_5.present.sdr.srgb",
     export_output_texture: "node_5.present.sdr.srgb",
     export_encode_pass_name: None,
     textures: [
-        "TextureRender.node_11.pass.target:Rgba8Unorm:1080x2400:samples=1",
+        "TextureRender.node_11.pass.target:Rgba8Unorm:1080x1080:samples=1",
         "node_15:Rgba32Float:1080x2400:samples=1",
-        "node_5.present.sdr.srgb:Rgba8Unorm:1080x2400:samples=1",
-        "node_5:Rgba8UnormSrgb:1080x2400:samples=1",
-        "sys.blur.GuassianBlurPass_17.h:Rgba8Unorm:1080x2400:samples=1",
-        "sys.blur.GuassianBlurPass_17.v:Rgba8Unorm:1080x2400:samples=1",
-        "sys.blur.GuassianBlurPass_18.h:Rgba8Unorm:1080x2400:samples=1",
-        "sys.blur.GuassianBlurPass_18.v:Rgba8Unorm:1080x2400:samples=1",
+        "node_5.present.sdr.srgb:Rgba8Unorm:1080x1080:samples=1",
+        "node_5:Rgba8UnormSrgb:1080x1080:samples=1",
+        "sys.blur.GuassianBlurPass_17.h:Rgba8Unorm:1080x1080:samples=1",
+        "sys.blur.GuassianBlurPass_17.v:Rgba8Unorm:1080x1080:samples=1",
+        "sys.blur.GuassianBlurPass_18.h:Rgba8Unorm:1080x1080:samples=1",
+        "sys.blur.GuassianBlurPass_18.v:Rgba8Unorm:1080x1080:samples=1",
     ],
     image_textures: [
         "sys.image.node_15.src",
@@ -1855,12 +1892,12 @@ mod tests {
     ],
     graph_bound_passes: [
         "image.pass.edge26.pass",
-        "node_2.pass",
+        "node_11.pass",
     ],
     pass_outputs: [
-        "TextureDraw.edge_26:pass->node_5:1080x2400:Rgba8UnormSrgb",
-        "node_11:pass->TextureRender.node_11.pass.target:1080x2400:Rgba8Unorm",
-        "node_2:pass->node_5:1080x2400:Rgba8UnormSrgb",
+        "TextureDraw.edge_26:pass->node_5:1080x1080:Rgba8UnormSrgb",
+        "node_11:pass->TextureRender.node_11.pass.target:1080x1080:Rgba8Unorm",
+        "node_2:pass->node_5:1080x1080:Rgba8UnormSrgb",
     ],
 }"#;
         assert_eq!(summary, expected);
@@ -1917,7 +1954,7 @@ mod tests {
         let expected = r#"PlanSummary {
     resolution: [
         1080,
-        2400,
+        1080,
     ],
     scene_output_texture: "RenderTexture_6",
     present_output_texture: "RenderTexture_6",
@@ -1926,41 +1963,41 @@ mod tests {
         "RenderTexture_6.present.sdr.srgb.pass",
     ),
     textures: [
-        "RenderTexture_6.present.hdr.gamma:Rgba16Float:1080x2400:samples=1",
-        "RenderTexture_6.present.sdr.srgb:Rgba8Unorm:1080x2400:samples=1",
-        "RenderTexture_6:Rgba16Float:1080x2400:samples=1",
-        "TextureRender.RenderPass_4.pass.target:Rgba16Float:1080x2400:samples=1",
-        "sys.blur.GuassianBlurPass_23.h:Rgba16Float:16x37:samples=1",
-        "sys.blur.GuassianBlurPass_23.v:Rgba16Float:16x37:samples=1",
-        "sys.blur.GuassianBlurPass_27.h:Rgba16Float:33x75:samples=1",
-        "sys.blur.GuassianBlurPass_27.v:Rgba16Float:33x75:samples=1",
-        "sys.blur.GuassianBlurPass_31.h:Rgba16Float:67x150:samples=1",
-        "sys.blur.GuassianBlurPass_31.v:Rgba16Float:67x150:samples=1",
-        "sys.blur.GuassianBlurPass_34.h:Rgba16Float:135x300:samples=1",
-        "sys.blur.GuassianBlurPass_34.v:Rgba16Float:135x300:samples=1",
-        "sys.blur.GuassianBlurPass_37.h:Rgba16Float:270x600:samples=1",
-        "sys.blur.GuassianBlurPass_37.v:Rgba16Float:270x600:samples=1",
-        "sys.blur.GuassianBlurPass_40.h:Rgba16Float:540x1200:samples=1",
-        "sys.blur.GuassianBlurPass_40.v:Rgba16Float:540x1200:samples=1",
-        "sys.downsample.Downsample_10.out:Rgba16Float:540x1200:samples=1",
-        "sys.downsample.Downsample_12.out:Rgba16Float:270x600:samples=1",
-        "sys.downsample.Downsample_14.out:Rgba16Float:135x300:samples=1",
-        "sys.downsample.Downsample_16.out:Rgba16Float:67x150:samples=1",
-        "sys.downsample.Downsample_18.out:Rgba16Float:33x75:samples=1",
-        "sys.downsample.Downsample_20.out:Rgba16Float:16x37:samples=1",
-        "sys.msaa.sys.pass.RenderPass_4.msaa.resolve.4.color:Rgba16Float:1080x2400:samples=4",
-        "sys.pass.RenderPass_4.msaa.resolve:Rgba16Float:1080x2400:samples=1",
-        "sys.pass.RenderPass_BloomMerge_29.out:Rgba16Float:67x150:samples=1",
-        "sys.pass.RenderPass_BloomMerge_30.out:Rgba16Float:33x75:samples=1",
-        "sys.pass.RenderPass_BloomMerge_33.out:Rgba16Float:135x300:samples=1",
-        "sys.pass.RenderPass_BloomMerge_36.out:Rgba16Float:270x600:samples=1",
-        "sys.pass.RenderPass_BloomMerge_39.out:Rgba16Float:540x1200:samples=1",
-        "sys.upsample.Upsample_24.out:Rgba16Float:33x75:samples=1",
-        "sys.upsample.Upsample_28.out:Rgba16Float:67x150:samples=1",
-        "sys.upsample.Upsample_32.out:Rgba16Float:135x300:samples=1",
-        "sys.upsample.Upsample_35.out:Rgba16Float:270x600:samples=1",
-        "sys.upsample.Upsample_38.out:Rgba16Float:540x1200:samples=1",
-        "sys.upsample.Upsample_41.out:Rgba16Float:1080x2400:samples=1",
+        "RenderTexture_6.present.hdr.gamma:Rgba16Float:1080x1080:samples=1",
+        "RenderTexture_6.present.sdr.srgb:Rgba8Unorm:1080x1080:samples=1",
+        "RenderTexture_6:Rgba16Float:1080x1080:samples=1",
+        "TextureRender.RenderPass_4.pass.target:Rgba16Float:1080x1080:samples=1",
+        "sys.blur.GuassianBlurPass_23.h:Rgba16Float:16x16:samples=1",
+        "sys.blur.GuassianBlurPass_23.v:Rgba16Float:16x16:samples=1",
+        "sys.blur.GuassianBlurPass_27.h:Rgba16Float:1080x1080:samples=1",
+        "sys.blur.GuassianBlurPass_27.v:Rgba16Float:1080x1080:samples=1",
+        "sys.blur.GuassianBlurPass_31.h:Rgba16Float:1080x1080:samples=1",
+        "sys.blur.GuassianBlurPass_31.v:Rgba16Float:1080x1080:samples=1",
+        "sys.blur.GuassianBlurPass_34.h:Rgba16Float:1080x1080:samples=1",
+        "sys.blur.GuassianBlurPass_34.v:Rgba16Float:1080x1080:samples=1",
+        "sys.blur.GuassianBlurPass_37.h:Rgba16Float:1080x1080:samples=1",
+        "sys.blur.GuassianBlurPass_37.v:Rgba16Float:1080x1080:samples=1",
+        "sys.blur.GuassianBlurPass_40.h:Rgba16Float:1080x1080:samples=1",
+        "sys.blur.GuassianBlurPass_40.v:Rgba16Float:1080x1080:samples=1",
+        "sys.downsample.Downsample_10.out:Rgba16Float:540x540:samples=1",
+        "sys.downsample.Downsample_12.out:Rgba16Float:270x270:samples=1",
+        "sys.downsample.Downsample_14.out:Rgba16Float:135x135:samples=1",
+        "sys.downsample.Downsample_16.out:Rgba16Float:67x67:samples=1",
+        "sys.downsample.Downsample_18.out:Rgba16Float:33x33:samples=1",
+        "sys.downsample.Downsample_20.out:Rgba16Float:16x16:samples=1",
+        "sys.msaa.sys.pass.RenderPass_4.msaa.resolve.4.color:Rgba16Float:1080x1080:samples=4",
+        "sys.pass.RenderPass_4.msaa.resolve:Rgba16Float:1080x1080:samples=1",
+        "sys.pass.RenderPass_BloomMerge_29.out:Rgba16Float:1080x1080:samples=1",
+        "sys.pass.RenderPass_BloomMerge_30.out:Rgba16Float:1080x1080:samples=1",
+        "sys.pass.RenderPass_BloomMerge_33.out:Rgba16Float:1080x1080:samples=1",
+        "sys.pass.RenderPass_BloomMerge_36.out:Rgba16Float:1080x1080:samples=1",
+        "sys.pass.RenderPass_BloomMerge_39.out:Rgba16Float:1080x1080:samples=1",
+        "sys.upsample.Upsample_24.out:Rgba16Float:33x33:samples=1",
+        "sys.upsample.Upsample_28.out:Rgba16Float:67x67:samples=1",
+        "sys.upsample.Upsample_32.out:Rgba16Float:135x135:samples=1",
+        "sys.upsample.Upsample_35.out:Rgba16Float:270x270:samples=1",
+        "sys.upsample.Upsample_38.out:Rgba16Float:540x540:samples=1",
+        "sys.upsample.Upsample_41.out:Rgba16Float:1080x1080:samples=1",
     ],
     image_textures: [],
     image_prepasses: [],
@@ -2038,13 +2075,13 @@ mod tests {
         "rende.rpass4.pass",
     ],
     pass_outputs: [
-        "RenderPass_4:pass->sys.pass.RenderPass_4.msaa.resolve:1080x2400:Rgba16Float",
-        "RenderPass_BloomMerge_29:pass->sys.pass.RenderPass_BloomMerge_29.out:67x150:Rgba16Float",
-        "RenderPass_BloomMerge_30:pass->sys.pass.RenderPass_BloomMerge_30.out:33x75:Rgba16Float",
-        "RenderPass_BloomMerge_33:pass->sys.pass.RenderPass_BloomMerge_33.out:135x300:Rgba16Float",
-        "RenderPass_BloomMerge_36:pass->sys.pass.RenderPass_BloomMerge_36.out:270x600:Rgba16Float",
-        "RenderPass_BloomMerge_39:pass->sys.pass.RenderPass_BloomMerge_39.out:540x1200:Rgba16Float",
-        "sys.coercion.fullscreen.pass.edge_75:pass->RenderTexture_6:1080x2400:Rgba16Float",
+        "RenderPass_4:pass->sys.pass.RenderPass_4.msaa.resolve:1080x1080:Rgba16Float",
+        "RenderPass_BloomMerge_29:pass->sys.pass.RenderPass_BloomMerge_29.out:1080x1080:Rgba16Float",
+        "RenderPass_BloomMerge_30:pass->sys.pass.RenderPass_BloomMerge_30.out:1080x1080:Rgba16Float",
+        "RenderPass_BloomMerge_33:pass->sys.pass.RenderPass_BloomMerge_33.out:1080x1080:Rgba16Float",
+        "RenderPass_BloomMerge_36:pass->sys.pass.RenderPass_BloomMerge_36.out:1080x1080:Rgba16Float",
+        "RenderPass_BloomMerge_39:pass->sys.pass.RenderPass_BloomMerge_39.out:1080x1080:Rgba16Float",
+        "sys.coercion.fullscreen.pass.edge_75:pass->RenderTexture_6:1080x1080:Rgba16Float",
     ],
 }"#;
         assert_eq!(summary, expected);
@@ -2063,7 +2100,7 @@ mod tests {
         let expected = r#"PlanSummary {
     resolution: [
         1080,
-        2400,
+        1080,
     ],
     scene_output_texture: "RenderTexture_7",
     present_output_texture: "RenderTexture_7.present.sdr.srgb",
@@ -2071,8 +2108,8 @@ mod tests {
     export_encode_pass_name: None,
     textures: [
         "ImageTexture_9:Rgba32Float:1080x2400:samples=1",
-        "RenderTexture_7.present.sdr.srgb:Rgba8Unorm:1080x2400:samples=1",
-        "RenderTexture_7:Rgba8UnormSrgb:1080x2400:samples=1",
+        "RenderTexture_7.present.sdr.srgb:Rgba8Unorm:1080x1080:samples=1",
+        "RenderTexture_7:Rgba8UnormSrgb:1080x1080:samples=1",
     ],
     image_textures: [
         "sys.image.ImageTexture_9.src",
@@ -2092,7 +2129,7 @@ mod tests {
         "image.pass.wedge7.pass",
     ],
     pass_outputs: [
-        "TextureDraw.edge_7:pass->RenderTexture_7:1080x2400:Rgba8UnormSrgb",
+        "TextureDraw.edge_7:pass->RenderTexture_7:1080x1080:Rgba8UnormSrgb",
     ],
 }"#;
         assert_eq!(summary, expected);
@@ -2200,7 +2237,7 @@ mod tests {
     #[test]
     fn group_draw_and_texture_outputs_keep_independent_invocations() -> Result<()> {
         let scene: SceneDSL = serde_json::from_value(serde_json::json!({
-            "version": "6.0", "workingColorSpace": "linear-srgb",
+            "version": "6.1", "workingColorSpace": "linear-srgb", "dpi": 3.0,
             "metadata": { "name": "group dual domain" },
             "nodes": [
                 { "id": "group", "type": "GroupInstance", "params": { "groupId": "source" } },
@@ -2246,7 +2283,7 @@ mod tests {
     #[test]
     fn nested_composite_layers_write_to_their_own_render_texture() -> Result<()> {
         let scene: SceneDSL = serde_json::from_value(serde_json::json!({
-            "version": "6.0", "workingColorSpace": "linear-srgb",
+            "version": "6.1", "workingColorSpace": "linear-srgb", "dpi": 3.0,
             "metadata": {
                 "name": "nested composite target routing",
                 "created": null,

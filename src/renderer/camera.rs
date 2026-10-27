@@ -277,7 +277,7 @@ fn resolve_camera_vec3_input(
 ) -> Result<[f32; 3]> {
     if let Some(conn) = incoming_connection(scene, &node.id, key) {
         let from_node = find_node(nodes_by_id, &conn.from.node_id)?;
-        if from_node.node_type != "Vector3Input" || conn.from.port_id != "vector" {
+        if !matches!(from_node.node_type.as_str(), "Vector3Input") || conn.from.port_id != "vector" {
             bail!(
                 "{}.{} expects Vector3Input.vector connection, got {}.{} ({})",
                 node.id,
@@ -288,9 +288,9 @@ fn resolve_camera_vec3_input(
             );
         }
 
-        let x = cpu_num_f32(scene, nodes_by_id, from_node, "x", 0.0)?;
-        let y = cpu_num_f32(scene, nodes_by_id, from_node, "y", 0.0)?;
-        let z = cpu_num_f32(scene, nodes_by_id, from_node, "z", 0.0)?;
+        let x = crate::dsl::numeric_input_output_component(scene, nodes_by_id, from_node, "x")? as f32;
+        let y = crate::dsl::numeric_input_output_component(scene, nodes_by_id, from_node, "y")? as f32;
+        let z = crate::dsl::numeric_input_output_component(scene, nodes_by_id, from_node, "z")? as f32;
         let value = [x, y, z];
         ensure_finite_vec3(node.id.as_str(), key, value)?;
         return Ok(value);
@@ -537,8 +537,9 @@ mod tests {
 
     fn scene(nodes: Vec<Node>, connections: Vec<Connection>) -> SceneDSL {
         SceneDSL {
-            version: "6.0".to_string(),
+            version: "6.1".to_string(),
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             metadata: Metadata {
                 name: "camera-tests".to_string(),
                 created: None,

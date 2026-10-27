@@ -33,6 +33,12 @@ struct VSOut {
 
 
 struct GraphInputs {
+    // Node: dp.chromatic.blur.rgbOffset
+    float_input_dp: vec4f,
+    // Node: dp.chromatic.blur.rgbSpread
+    float_input_dp_b6947df2: vec4f,
+    // Node: dp.mask.rgbMask
+    dp_mask_rgb_mask: vec4f,
     // Node: effect.center
     effect_center: vec4f,
 };
@@ -137,6 +143,6 @@ fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
     // Final composite
-    let _frag_out = cb_rgb(pass_tex_sys_cb_chromatic_blur_radial, pass_samp_sys_cb_chromatic_blur_radial, vec2f(in.uv.x, 1.0 - in.uv.y), (graph_inputs.effect_center).xy, params.geo_size, select(0.0, cb_mask(vec2f(in.uv.x, 1.0 - in.uv.y), (graph_inputs.effect_center).xy, params.geo_size, vec4f(640.0, 0.59, 1.0, 1.0)), true), 120.0, max(80.0, 0.0), 4, vec3f(1.0, 0.0, -1.0), false, 0.0);
+    let _frag_out = cb_rgb(pass_tex_sys_cb_chromatic_blur_radial, pass_samp_sys_cb_chromatic_blur_radial, vec2f(in.uv.x, 1.0 - in.uv.y), (graph_inputs.effect_center).xy, params.geo_size, select(0.0, cb_mask(vec2f(in.uv.x, 1.0 - in.uv.y), (graph_inputs.effect_center).xy, params.geo_size, (graph_inputs.dp_mask_rgb_mask)), true), (graph_inputs.float_input_dp).x, max((graph_inputs.float_input_dp_b6947df2).x, 0.0), 4, vec3f(1.0, 0.0, -1.0), false, 0.0);
     return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

@@ -19,7 +19,7 @@ use crate::{
 
 const APPLICATION_ID: i64 = 1_313_232_455;
 const FORMAT_VERSION: i64 = 6;
-const SCENE_DSL_VERSION: &str = "6.0";
+const SCENE_DSL_VERSION: &str = "6.1";
 const SYNC_LOG_RETENTION: i64 = 10_000;
 const CONTENT_HISTORY_RETENTION: i64 = 256;
 const HISTORY_ENTITY_KIND: &str = "document_history";
@@ -550,6 +550,7 @@ fn read_scene(connection: &Connection) -> Result<(SceneDSL, AssetStore, DebugArt
         .and_then(|value| value.as_object().cloned())
         .unwrap_or_default();
     scene.insert("version".to_string(), Value::String(scene_version));
+    scene.insert("dpi".to_string(), sections.remove("dpi").ok_or_else(|| anyhow::anyhow!("missing dpi section in .nforge"))?);
     scene.insert(
         "workingColorSpace".to_string(),
         sections.remove("workingColorSpace")
@@ -966,6 +967,7 @@ pub fn initialize_test_document(path: &Path, scene: &SceneDSL) -> Result<()> {
     )?;
     for (key, value) in [
         ("workingColorSpace", serde_json::to_value(scene.working_color_space)?),
+        ("dpi", serde_json::json!(scene.dpi)),
         (
             "outputs",
             object.get("outputs").cloned().unwrap_or(Value::Null),
@@ -1029,8 +1031,9 @@ mod frame_freeze_tests {
 
     fn empty_scene() -> SceneDSL {
         SceneDSL {
-            version: "6.0".into(),
+            version: "6.1".into(),
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             metadata: Metadata {
                 name: "freeze test".into(),
                 created: None,

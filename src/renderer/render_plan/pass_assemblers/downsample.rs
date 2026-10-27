@@ -4,8 +4,6 @@
 //! source pass resolution. Both share kernel, sampling, camera, blend, and final
 //! composition behavior.
 
-use std::collections::HashMap;
-
 use anyhow::{Context, Result, anyhow, bail};
 use rust_wgpu_fiber::{
     ResourceName,
@@ -16,10 +14,8 @@ use crate::{
     dsl::{Node, find_node, incoming_connection, parse_str},
     renderer::{
         camera::{legacy_projection_camera_matrix, resolve_effective_camera_for_pass_node},
-        graph_uniforms::graph_field_name,
         pass_source::processing_input_connection,
-        types::{KernelSpec, MaterialCompileContext, TypedExpr, ValueType},
-        utils::{coerce_to_type, cpu_num_u32_min_1},
+        types::KernelSpec,
         wgsl::{
             LanczosAxis, build_downsample_pass_wgsl_bundle, build_fullscreen_textured_bundle,
             build_lanczos_downsample_pass_wgsl_bundle, build_upsample_bilinear_bundle,
@@ -138,91 +134,9 @@ fn assemble_kernel_pass(
         .unwrap_or("");
     let kernel_spec = crate::renderer::render_plan::parse_kernel_source_js_like(kernel_src)?;
 
-    fn parse_json_number_f32(v: &serde_json::Value) -> Option<f32> {
-        v.as_f64()
-            .map(|x| x as f32)
-            .or_else(|| v.as_i64().map(|x| x as f32))
-            .or_else(|| v.as_u64().map(|x| x as f32))
-    }
-
-    let (out_w, out_h) = match kind {
-        KernelPassKind::Convolution => (src_resolution[0], src_resolution[1]),
-        KernelPassKind::Downsample => {
-            // Resolve targetSize.
-            let target_size_expr = if let Some(target_size_conn) =
-                incoming_connection(scene, layer_id, "targetSize")
-            {
-                let target_size_expr = {
-                    let mut ctx = MaterialCompileContext::default();
-                    let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
-                    crate::renderer::node_compiler::compile_material_expr(
-                        scene,
-                        &nodes_by_id,
-                        &target_size_conn.from.node_id,
-                        Some(&target_size_conn.from.port_id),
-                        &mut ctx,
-                        &mut cache,
-                    )?
-                };
-                coerce_to_type(target_size_expr, ValueType::Vec2)?
-            } else if let Some(v) = layer_node.params.get("targetSize") {
-                let (x, y) = if let Some(arr) = v.as_array() {
-                    (
-                        arr.get(0).and_then(parse_json_number_f32).unwrap_or(0.0),
-                        arr.get(1).and_then(parse_json_number_f32).unwrap_or(0.0),
-                    )
-                } else if let Some(obj) = v.as_object() {
-                    (
-                        obj.get("x").and_then(parse_json_number_f32).unwrap_or(0.0),
-                        obj.get("y").and_then(parse_json_number_f32).unwrap_or(0.0),
-                    )
-                } else {
-                    bail!(
-                        "Downsample.targetSize must be an object {{x,y}} or array [x,y] in params for {layer_id}"
-                    );
-                };
-                TypedExpr::new(format!("vec2f({x}, {y})"), ValueType::Vec2)
-            } else {
-                bail!("missing input '{layer_id}.targetSize' (no connection and no param)");
-            };
-
-            // Require CPU-known size for texture allocation.
-            let s = target_size_expr.expr.replace([' ', '\n', '\t', '\r'], "");
-            if let Some(inner) = s
-                .strip_prefix("(graph_inputs.")
-                .and_then(|x| x.strip_suffix(").xy"))
-            {
-                if let Some((_node_id, node)) = nodes_by_id.iter().find(|(_, n)| {
-                    n.node_type == "Vector2Input" && graph_field_name(&n.id) == inner
-                }) {
-                    let w = cpu_num_u32_min_1(scene, &nodes_by_id, node, "x", 1)?;
-                    let h = cpu_num_u32_min_1(scene, &nodes_by_id, node, "y", 1)?;
-                    (w, h)
-                } else {
-                    bail!(
-                        "Downsample.targetSize must be a CPU-constant vec2f(w,h) for now, got {}",
-                        target_size_expr.expr
-                    );
-                }
-            } else if let Some(inner) = s.strip_prefix("vec2f(").and_then(|x| x.strip_suffix(')')) {
-                let parts: Vec<&str> = inner.split(',').collect();
-                if parts.len() == 2 {
-                    let w = parts[0].parse::<f32>().unwrap_or(0.0).max(1.0).floor() as u32;
-                    let h = parts[1].parse::<f32>().unwrap_or(0.0).max(1.0).floor() as u32;
-                    (w, h)
-                } else {
-                    bail!(
-                        "Downsample.targetSize must be vec2f(w,h), got {}",
-                        target_size_expr.expr
-                    );
-                }
-            } else {
-                bail!(
-                    "Downsample.targetSize must be a CPU-constant vec2f(w,h) for now, got {}",
-                    target_size_expr.expr
-                );
-            }
-        }
+    let [out_w, out_h] = match kind {
+        KernelPassKind::Convolution => src_resolution,
+        KernelPassKind::Downsample => crate::dsl::processing_target_size(scene, &nodes_by_id, layer_node)?,
     };
 
     let materializes_texture = bs.materialized_texture_output_ids.contains(layer_id);

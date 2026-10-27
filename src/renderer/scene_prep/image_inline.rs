@@ -81,7 +81,7 @@ pub(crate) fn inline_image_file_connections_into_image_textures(
         let Some(dst) = by_id.get(&c.to.node_id) else {
             continue;
         };
-        if dst.node_type != "ImageTexture" {
+        if !matches!(dst.node_type.as_str(), "ImageTexture" | "Matcap" | "EnvMaterial") {
             continue;
         }
 
@@ -115,13 +115,17 @@ pub(crate) fn inline_image_file_connections_into_image_textures(
                 dst_id
             );
         };
-        if dst.node_type != "ImageTexture" {
+        if !matches!(dst.node_type.as_str(), "ImageTexture" | "Matcap" | "EnvMaterial") {
             bail!(
                 "expected ImageTexture node '{}' when inlining ImageFile, got {}",
                 dst_id,
                 dst.node_type
             );
         }
+        // An explicit ImageFile connection wins over the upload stored inline.
+        dst.params.remove("assetId");
+        dst.params.remove("dataUrl");
+        dst.params.remove("path");
         copy_image_file_params_into_image_texture(
             dst,
             asset_id.clone(),

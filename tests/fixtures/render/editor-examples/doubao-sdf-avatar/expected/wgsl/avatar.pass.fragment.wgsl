@@ -29,26 +29,29 @@ var<uniform> params: Params;
      @location(2) local_px: vec3f,
      // Geometry size in pixels after applying geometry/instance transforms.
      @location(3) geo_size_px: vec2f,
-  };
+     @location(4) @interpolate(flat) instance_index: u32,
+ };
 
 
 struct GraphInputs {
     // Node: control.clay
-    control_clay: vec4f,
+    node_control_clay_b94ab17b: vec4f,
     // Node: control.gaze
-    control_gaze: vec4f,
+    node_control_gaze_35dc926d: vec4f,
     // Node: control.hairVolume
-    control_hair_volume: vec4f,
+    node_control_hairVolume_3e4d13a9: vec4f,
     // Node: control.pitch
-    control_pitch: vec4f,
+    node_control_pitch_46405c52: vec4f,
     // Node: control.smile
-    control_smile: vec4f,
+    node_control_smile_d4fde756: vec4f,
     // Node: control.sunglasses
-    control_sunglasses: vec4f,
+    node_control_sunglasses_2a168170: vec4f,
     // Node: control.yaw
-    control_yaw: vec4f,
+    node_control_yaw_6b286bb2: vec4f,
     // Node: control.zoom
-    control_zoom: vec4f,
+    node_control_zoom_0be3090d: vec4f,
+    // Node: dp.avatar.quad.size
+    node_dp_avatar_quad_size_58ce9364: vec4f,
 };
 
 @group(0) @binding(2)
@@ -2273,14 +2276,14 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     // Shader Material avatar.sculpt.material
     let shader_material_material = shader_material_avatar_sculpt(
         ShaderMaterialInput(vec2f(in.uv.x, 1.0 - in.uv.y), in.frag_coord_gl, in.local_px, in.geo_size_px, params.target_size, params.time),
-        (graph_inputs.control_yaw).x,
-        (graph_inputs.control_pitch).x,
-        (graph_inputs.control_zoom).x,
-        (graph_inputs.control_smile).x,
-        (graph_inputs.control_gaze).x,
-        (graph_inputs.control_hair_volume).x,
-        (graph_inputs.control_sunglasses).x,
-        (graph_inputs.control_clay).x,
+        (graph_inputs.node_control_yaw_6b286bb2).x,
+        (graph_inputs.node_control_pitch_46405c52).x,
+        (graph_inputs.node_control_zoom_0be3090d).x,
+        (graph_inputs.node_control_smile_d4fde756).x,
+        (graph_inputs.node_control_gaze_35dc926d).x,
+        (graph_inputs.node_control_hairVolume_3e4d13a9).x,
+        (graph_inputs.node_control_sunglasses_2a168170).x,
+        (graph_inputs.node_control_clay_b94ab17b).x,
     );
     // Final composite
     let _frag_out = shader_material_material;

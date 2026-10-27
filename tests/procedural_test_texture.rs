@@ -10,7 +10,7 @@ mod support;
 
 fn scene(width: u32, height: u32, working: WorkingColorSpace) -> SceneDSL {
     serde_json::from_value(json!({
-        "version": "6.0", "workingColorSpace": working,
+        "version": "6.1", "workingColorSpace": working, "dpi": 3.0,
         "metadata": { "name": "procedural-test-texture" },
         "nodes": [
             { "id": "chart", "type": "ProceduralTestTexture", "params": { "width": width, "height": height } },
@@ -32,7 +32,7 @@ fn scene(width: u32, height: u32, working: WorkingColorSpace) -> SceneDSL {
 fn procedural_test_texture_has_an_independent_size_and_accepts_connected_dimensions() {
     let mut input = scene(1260, 2800, WorkingColorSpace::DisplayP3);
     input.nodes.push(
-        serde_json::from_value(json!({"id":"width", "type":"IntInput", "params":{"value":1080}}))
+        serde_json::from_value(json!({"id":"width", "type":"IntInput", "params":{"value":1087}}))
             .unwrap(),
     );
     input.connections.push(serde_json::from_value(json!({"id":"width", "from":{"nodeId":"width","portId":"value"}, "to":{"nodeId":"chart","portId":"width"}})).unwrap());
@@ -51,7 +51,16 @@ fn procedural_test_texture_has_an_independent_size_and_accepts_connected_dimensi
         1,
     )
     .unwrap();
-    assert_eq!(width, 1080);
+    assert_eq!(width, 1087);
+    let height = node_forge_render_server::renderer::utils::cpu_num_u32_min_1(
+        &prepared.scene,
+        &prepared.nodes_by_id,
+        source_target,
+        "height",
+        1,
+    )
+    .unwrap();
+    assert_eq!(height, 2800);
     assert_eq!(
         prepared
             .scene
@@ -122,6 +131,7 @@ fn procedural_test_texture_matches_the_chart_in_each_working_color_space() {
             build.shader_space.render();
             let actual = build.shader_space.read_texture_rgba16f("target").unwrap();
             assert_eq!([actual.width, actual.height], [width, height]);
+            assert_eq!([expected.width, expected.height], [width, height]);
             assert!(
                 actual.channels.iter().any(|value| *value > 1.4),
                 "HDR test patches must survive"

@@ -243,6 +243,7 @@ fn validate_source(sm: &StateMachine, source: &StateValueSource) -> Result<()> {
                 "sceneElapsedTime"
                     | "localElapsedTime"
                     | "scene.size"
+                    | "scene.dpi"
                     | "mouse.position"
                     | "mouse.position.x"
                     | "mouse.position.y"
@@ -1549,16 +1550,15 @@ fn validate_graph_core(
 }
 
 fn builtin_graph_output_port(node: &GraphInnerNode, port_id: &str) -> Option<GraphPort> {
-    match (node.node_type, port_id) {
-        (GraphInnerNodeType::FloatInput, "value") => Some(GraphPort {
-            id: "value".into(),
-            name: Some("Value".into()),
-            port_type: Some("float".into()),
-            array_length: None,
-            motion: None,
-        }),
-        _ => None,
-    }
+    let port_type = match (node.node_type, port_id) {
+        (GraphInnerNodeType::FloatInput, "value") => "float",
+        (GraphInnerNodeType::IntInput, "value") => "int",
+        (GraphInnerNodeType::Vector2Input, "vector") => "vector2",
+        (GraphInnerNodeType::Vector3Input, "vector") => "vector3",
+        (GraphInnerNodeType::Vector4Input, "vector") => "vector4",
+        _ => return None,
+    };
+    Some(GraphPort { id: port_id.into(), name: None, port_type: Some(port_type.into()), array_length: None, motion: None })
 }
 
 fn validate_port_compatibility(label: &str, source: &GraphPort, target: &GraphPort) -> Result<()> {
@@ -1590,8 +1590,9 @@ mod tests {
 
     fn scene_with_state_machine(sm: StateMachine, nodes: Vec<Node>) -> SceneDSL {
         SceneDSL {
-            version: "6.0".into(),
+            version: "6.1".into(),
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             metadata: crate::dsl::Metadata {
                 name: "Validation test".into(),
                 created: None,

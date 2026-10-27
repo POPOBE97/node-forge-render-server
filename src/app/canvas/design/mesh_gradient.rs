@@ -801,6 +801,7 @@ mod tests {
     fn connected_mesh_gradient_ports_are_locked() {
         let scene = SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1".to_string(),
             metadata: crate::dsl::Metadata {
                 name: "lock test".to_string(),

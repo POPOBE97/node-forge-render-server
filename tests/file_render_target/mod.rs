@@ -8,6 +8,7 @@ use node_forge_render_server::dsl::{
 fn file_render_target_applies_scheme_defaults() {
     let mut scene = SceneDSL {
         working_color_space: node_forge_render_server::color::WorkingColorSpace::Srgb,
+        dpi: 3.0,
         version: "1".to_string(),
         metadata: Metadata {
             name: "test".to_string(),

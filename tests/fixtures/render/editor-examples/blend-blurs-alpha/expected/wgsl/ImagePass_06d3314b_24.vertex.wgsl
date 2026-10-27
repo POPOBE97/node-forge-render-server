@@ -88,7 +88,7 @@ fn nf_math_closure_fragment_closure_sample_image_texture(uv: vec2f) -> vec4f {
  // UV passed as vertex attribute.
  out.uv = vec2f(uv.x, 1.0 - uv.y);
 
- let rect_size_px_base = (graph_inputs.node_Vector2Input_06d3314b_25_d025acfc).xy;
+ let rect_size_px_base = vec2f((graph_inputs.node_Vector2Input_06d3314b_25_d025acfc).x, (graph_inputs.node_Vector2Input_06d3314b_25_d025acfc).y);
  let rect_center_px = params.center;
  let rect_dyn = vec4f(rect_center_px, rect_size_px_base);
  out.geo_size_px = rect_dyn.zw;

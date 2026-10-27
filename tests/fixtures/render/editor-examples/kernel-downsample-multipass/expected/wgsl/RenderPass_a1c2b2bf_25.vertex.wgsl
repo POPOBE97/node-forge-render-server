@@ -34,9 +34,9 @@ var<uniform> params: Params;
 
 struct GraphInputs {
     // Node: FloatInput_blur_sigma_max
-    float_input_blur_sigma_max: vec4f,
+    float_input_dp_28d4b9e7: vec4f,
     // Node: FloatInput_blur_sigma_min
-    float_input_blur_sigma_min: vec4f,
+    float_input_dp: vec4f,
     // Node: FloatInput_blur_y_max
     float_input_blur_y_max: vec4f,
     // Node: FloatInput_blur_y_min

@@ -40,6 +40,46 @@ fn render_type(port: &Port) -> Result<ValueType> {
     })
 }
 
+fn inline_literal(value: &serde_json::Value, ty: ValueType) -> Result<TypedExpr> {
+    let array = match ty {
+        ValueType::F32Array(n) => Some((n, ValueType::F32)),
+        ValueType::Vec2Array(n) => Some((n, ValueType::Vec2)),
+        ValueType::Vec3Array(n) => Some((n, ValueType::Vec3)),
+        ValueType::Vec4Array(n) => Some((n, ValueType::Vec4)),
+        _ => None,
+    };
+    let expr = if let Some((length, element_type)) = array {
+        let values = value.as_array().context("inline array expected")?;
+        anyhow::ensure!(values.len() == length, "inline array length mismatch");
+        let elements = values.iter().map(|value| inline_literal(value, element_type).map(|expr| expr.expr))
+            .collect::<Result<Vec<_>>>()?;
+        format!("{}({})", ty.wgsl_type_string(), elements.join(", "))
+    } else if matches!(ty, ValueType::Vec2 | ValueType::Vec3 | ValueType::Vec4) {
+        let length = match ty { ValueType::Vec2 => 2, ValueType::Vec3 => 3, _ => 4 };
+        let values = value.as_array().context("inline vector expected")?;
+        anyhow::ensure!(values.len() == length, "inline vector length mismatch");
+        let elements = values.iter().map(|value| inline_literal(value, ValueType::F32).map(|expr| expr.expr))
+            .collect::<Result<Vec<_>>>()?;
+        format!("{}({})", ty.wgsl_type_string(), elements.join(", "))
+    } else {
+        match ty {
+            ValueType::Bool => value.as_bool().context("inline bool expected")?.to_string(),
+            ValueType::I32 => {
+                let value = value.as_f64().context("inline int expected")?;
+                anyhow::ensure!(value.fract() == 0.0 && value >= i32::MIN as f64 && value <= i32::MAX as f64, "inline int exceeds i32");
+                format!("{}i", value as i32)
+            }
+            ValueType::F32 => {
+                let value = value.as_f64().context("inline number expected")? as f32;
+                anyhow::ensure!(value.is_finite(), "inline number exceeds f32");
+                format!("{value:?}")
+            }
+            _ => bail!("unsupported inline MathClosure type {ty:?}"),
+        }
+    };
+    Ok(TypedExpr::new(expr, ty))
+}
+
 pub fn compile_math_closure<F>(
     scene: &SceneDSL,
     nodes_by_id: &HashMap<String, Node>,
@@ -200,6 +240,9 @@ where
                     )?,
                     ty,
                 )?
+            } else if let Some(value) = node.params.get(&port.id) {
+                inline_literal(&crate::input_units::inline_value(node, &port.id, value, scene.dpi)?, ty)
+                    .with_context(|| format!("MathClosure {} input {}", node.id, port.id))?
             } else {
                 // Typed zero, including fixed-size arrays. Never infer a type from source text.
                 TypedExpr::new(format!("{}()", ty.wgsl_type_string()), ty)

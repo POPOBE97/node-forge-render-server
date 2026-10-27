@@ -119,7 +119,12 @@ fn shader_material_web_present_material(
     let straight = limit_highlights_web_present_material(max(fg.rgb / max(a, 0.00001), vec3f(0.0)));
     let encoded_effect = encode_srgb_web_present_material(straight) * a
         + encode_srgb_web_present_material(bg.rgb / max(bg.a, 0.00001)) * bg.a * (1.0 - a);
-    let system = sample_texture_local_uv(chrome, chrome_sampler, in.uv);
+    // Anchor the source image's top and bottom chrome without stretching its glyphs.
+    let source_size = vec2f(textureDimensions(chrome));
+    let scale = in.geometry_size.x / source_size.x;
+    let source_y = select(in.uv.y * in.geometry_size.y / scale,
+        source_size.y - (1.0 - in.uv.y) * in.geometry_size.y / scale, in.uv.y >= 0.5);
+    let system = sample_texture_local_uv(chrome, chrome_sampler, vec2f(in.uv.x, source_y / source_size.y));
     let encoded = encode_srgb_web_present_material(system.rgb / max(system.a, 0.00001)) * system.a
         + encoded_effect * (1.0 - system.a);
     let alpha = a + bg.a * (1.0 - a);

@@ -36,7 +36,7 @@ struct GraphInputs {
     // Node: FloatInput_11
     float_input_11: vec4f,
     // Node: FloatInput_2
-    float_input_2: vec4f,
+    float_input_dp_dad897e5: vec4f,
     // Node: FloatInput_3
     float_input_3: vec4f,
     // Node: FloatInput_39
@@ -71,6 +71,12 @@ struct GraphInputs {
     vector3_input_12: vec4f,
     // Node: Vector3Input_46
     vector3_input_46: vec4f,
+    // Node: dp.Sdf2D_1.position
+    vector2_input_dp: vec4f,
+    // Node: dp.Sdf2D_1.radius
+    float_input_dp: vec4f,
+    // Node: dp.Sdf2D_1.size
+    dp_sdf2d_1_size: vec4f,
 };
 
 @group(0) @binding(2)

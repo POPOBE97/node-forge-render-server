@@ -14,7 +14,7 @@ use serde_json::json;
 
 fn scene(width: u32, height: u32, encoding: &str, alpha: &str, output: &str) -> SceneDSL {
     let mut value = json!({
-        "version": "6.0", "workingColorSpace": "linear-srgb",
+        "version": "6.1", "workingColorSpace": "linear-srgb", "dpi": 3.0,
         "metadata": { "name": "image-texture-precision" },
         "nodes": [
             { "id": "image", "type": "ImageTexture", "params": {

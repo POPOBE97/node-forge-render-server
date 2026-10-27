@@ -81,7 +81,7 @@ fn android_maps_float_targets_to_native_hdr_and_unorm_to_window_primaries() {
 
 fn scene(working: WorkingColorSpace, output: &str, format: &str) -> SceneDSL {
     serde_json::from_value(json!({
-        "version":"6.0", "workingColorSpace":working,
+        "version":"6.1", "workingColorSpace":working, "dpi":3.0,
         "metadata":{"name":"android-presentation"},
         "nodes":[
             {"id":"color","type":"ColorInput","params":{"value":if format == "rgba16float" { [-0.25,2.0,0.125,1.0] } else { [0.125,1.0,0.5,1.0] }}},

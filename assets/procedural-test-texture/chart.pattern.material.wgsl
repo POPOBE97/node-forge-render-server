@@ -137,7 +137,7 @@ fn axis_line_coverage(value: f32, center: f32, along: f32, start: f32, end: f32)
 }
 
 fn shader_material(in: ShaderMaterialInput, blur: texture_2d<f32>, blur_sampler: sampler,
-  show_grid: bool, show_patterns: bool, show_colors: bool) -> vec4f {
+  show_grid: bool, show_patterns: bool, show_colors: bool, iconInsetPx: f32, iconRadiusPx: f32) -> vec4f {
   let p = in.local_position.xy;
   let size = in.target_size;
   // Figma encoded gray 0.39073893427848816, decoded once when authoring.
@@ -191,8 +191,8 @@ fn shader_material(in: ShaderMaterialInput, blur: texture_2d<f32>, blur_sampler:
     // Smooth, filled placeholder generated from the continuous-corner SDF.
     let icon = inset_box(cell_box(size,4,16,5,17));
     if (inside(p,icon)) {
-      let half_size = vec2f(min(icon.z-icon.x,icon.w-icon.y)*0.5-10.0);
-      let sdf = smooth_rect_sdf(p-(icon.xy+icon.zw)*0.5,half_size,min(35.0,min(half_size.x,half_size.y)),0.6);
+      let half_size = vec2f(min(icon.z-icon.x,icon.w-icon.y)*0.5-iconInsetPx);
+      let sdf = smooth_rect_sdf(p-(icon.xy+icon.zw)*0.5,half_size,min(iconRadiusPx,min(half_size.x,half_size.y)),0.6);
       rgb = mix(rgb,vec3f(1.0),smooth_rect_sdf_coverage(sdf));
     }
 

@@ -5,9 +5,9 @@ use super::{
 };
 use crate::{
     asset_store::AssetStore,
-    dsl::{Node, SceneDSL, data_parse_output, evaluate_data_parse, incoming_connection},
+    dsl::{Node, SceneDSL, incoming_connection},
 };
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, ensure};
 use std::collections::HashMap;
 
 pub(crate) struct TextInputs<'a> {
@@ -25,58 +25,8 @@ impl TextInputs<'_> {
 }
 
 pub(crate) fn vec2(sc: &TextInputs<'_>, node: &Node, port: &str) -> Result<Option<[f32; 2]>> {
-    let computed;
-    let value = if let Some(edge) = incoming_connection(sc.scene(), &node.id, port) {
-        let source = sc
-            .nodes_by_id()
-            .get(&edge.from.node_id)
-            .context("missing Text vector source")?;
-        match source.node_type.as_str() {
-            "Vector2Input" if edge.from.port_id == "vector" => {
-                return Ok(Some([
-                    cpu_num_f32(sc.scene(), sc.nodes_by_id(), source, "x", 0.0)?,
-                    cpu_num_f32(sc.scene(), sc.nodes_by_id(), source, "y", 0.0)?,
-                ]));
-            }
-            "DataParse" => {
-                computed = evaluate_data_parse(
-                    sc.scene(),
-                    sc.nodes_by_id(),
-                    source,
-                    0,
-                    &mut crate::renderer::scene_prep::data_parse_runtime::TsRuntime::new(),
-                )?;
-                data_parse_output(source, &computed, &edge.from.port_id)?
-            }
-            _ => bail!(
-                "Text.{port} requires a CPU Vector2Input or DataParse, got {}.{}",
-                source.node_type,
-                edge.from.port_id
-            ),
-        }
-    } else {
-        let Some(value) = node.params.get(port) else {
-            return Ok(None);
-        };
-        value
-    };
-    let xy = if let Some(a) = value.as_array() {
-        ensure!(a.len() == 2, "Text.{port} requires exactly two components");
-        [
-            a.first().and_then(|v| v.as_f64()),
-            a.get(1).and_then(|v| v.as_f64()),
-        ]
-    } else {
-        [
-            value.get("x").and_then(|v| v.as_f64()),
-            value.get("y").and_then(|v| v.as_f64()),
-        ]
-    };
-    let [Some(x), Some(y)] = xy else {
-        bail!("Text.{port} requires [x,y] or {{x,y}}");
-    };
-    ensure!(x.is_finite() && y.is_finite(), "Text.{port} must be finite");
-    Ok(Some([x as f32, y as f32]))
+    Ok(crate::dsl::resolve_input_vec2(sc.scene(), sc.nodes_by_id(), node, port)?
+        .map(|value| value.map(|component| component as f32)))
 }
 
 fn font(sc: &TextInputs<'_>, node: &Node, port: &str) -> Result<Option<FontSource>> {
@@ -251,7 +201,7 @@ mod tests {
 
     fn scene() -> SceneDSL {
         serde_json::from_value(json!({
-            "version": "6.0", "workingColorSpace": "linear-srgb",
+            "version": "6.1", "workingColorSpace": "linear-srgb", "dpi": 3.0,
             "metadata": {"name": "dynamic SDF sampling"}, "outputs": null,
             "nodes": [
                 {"id": "text", "type": "TextSdf", "params": {}},

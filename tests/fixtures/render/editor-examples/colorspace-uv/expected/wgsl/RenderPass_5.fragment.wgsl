@@ -29,8 +29,17 @@ var<uniform> params: Params;
      @location(2) local_px: vec3f,
      // Geometry size in pixels after applying geometry/instance transforms.
      @location(3) geo_size_px: vec2f,
-  };
+     @location(4) @interpolate(flat) instance_index: u32,
+ };
 
+
+struct GraphInputs {
+    // Node: dp.Rect2DGeometry_8.size
+    node_dp_Rect2DGeometry_8_size_15fb5749: vec4f,
+};
+
+@group(0) @binding(2)
+var<uniform> graph_inputs: GraphInputs;
 
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;

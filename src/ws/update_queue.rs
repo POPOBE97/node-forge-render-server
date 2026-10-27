@@ -271,8 +271,9 @@ mod tests {
     fn snapshot(nodes: Vec<Node>) -> SceneUpdate {
         SceneUpdate::Parsed {
             scene: SceneDSL {
-                version: "6.0".into(),
+                version: "6.1".into(),
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
                 metadata: Metadata {
                     name: "queue-test".into(),
                     created: None,

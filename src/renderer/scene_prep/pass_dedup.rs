@@ -514,6 +514,7 @@ mod tests {
 
         let mut scene = SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "test".to_string(),
@@ -583,6 +584,7 @@ mod tests {
 
         let mut scene = SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "test".to_string(),
@@ -613,6 +615,7 @@ mod tests {
     fn test_non_group_pass_keeps_canonical_id() {
         let mut scene = SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "test".to_string(),

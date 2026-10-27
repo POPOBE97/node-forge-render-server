@@ -41,6 +41,8 @@ struct GraphInputs {
     node_Vector2Input_67_d6ac4dbd: vec4f,
     // Node: Vector2Input_68
     node_Vector2Input_68_87bf4dbd: vec4f,
+    // Node: dp.Sdf2DBevel_61.width
+    node_dp_Sdf2DBevel_61_width_5ca037c2: vec4f,
 };
 
 @group(0) @binding(2)
@@ -228,7 +230,7 @@ fn sdf2d_smooth_round_rect(point: vec2f, center: vec2f, radius: f32, axis_mix: v
  let inst_m = mat4x4f(i0, i1, i2, i3);
  let geo_sx = length(inst_m[0].xy);
  let geo_sy = length(inst_m[1].xy);
- let rect_size_px_base = (graph_inputs.node_Vector2Input_67_d6ac4dbd).xy;
+ let rect_size_px_base = vec2f((graph_inputs.node_Vector2Input_67_d6ac4dbd).x, (graph_inputs.node_Vector2Input_67_d6ac4dbd).y);
  let rect_center_px = (graph_inputs.node_Vector2Input_68_87bf4dbd).xy;
  let rect_dyn = vec4f(rect_center_px, rect_size_px_base);
  let geo_size_px = rect_dyn.zw * vec2f(geo_sx, geo_sy);

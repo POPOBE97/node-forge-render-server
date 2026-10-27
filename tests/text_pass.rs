@@ -30,7 +30,7 @@ fn assets() -> AssetStore {
     store
 }
 fn scene(width: u32, height: u32) -> SceneDSL {
-    serde_json::from_value(json!({"version":"6.0", "workingColorSpace": "linear-srgb", "metadata":{"name":"text-pass-test"},
+    serde_json::from_value(json!({"version":"6.1", "workingColorSpace": "linear-srgb", "dpi": 3.0, "metadata":{"name":"text-pass-test"},
         "nodes":[
             {"id":"font","type":"FontFile","params":{"assetId":"latin"}},
             {"id":"fallback","type":"FontFile","params":{"assetId":"cjk"}},

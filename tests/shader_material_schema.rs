@@ -47,6 +47,7 @@ fn scene(shader_input: NodePort, to_port: &str) -> SceneDSL {
 
     SceneDSL {
         working_color_space: node_forge_render_server::color::WorkingColorSpace::Srgb,
+        dpi: 3.0,
         version: "1.0".to_string(),
         metadata: Metadata {
             name: "shader-material-schema".to_string(),
@@ -127,8 +128,9 @@ fn accepts_image_pass_texture_to_shader_material_resource() {
         array_length: None,
     });
     let scene = SceneDSL {
-        version: "6.0".to_string(),
+        version: "6.1".to_string(),
             working_color_space: node_forge_render_server::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
         metadata: Metadata {
             name: "image-pass-shader-resource".to_string(),
             created: None,
@@ -156,8 +158,9 @@ fn accepts_image_pass_texture_to_shader_material_resource() {
 #[test]
 fn accepts_texture_source_for_image_pass_image_input() {
     let scene = SceneDSL {
-        version: "6.0".to_string(),
+        version: "6.1".to_string(),
             working_color_space: node_forge_render_server::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
         metadata: Metadata {
             name: "image-pass-texture-input".to_string(),
             created: None,

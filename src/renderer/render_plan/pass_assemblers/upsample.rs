@@ -4,22 +4,17 @@
 //! `targetSize`-sized texture using bilinear filtering. Optionally adds a fit
 //! pass to scale to the Composite target size.
 
-use std::collections::HashMap;
-
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, bail};
 use rust_wgpu_fiber::{
     ResourceName,
     wgpu::{self, BlendState, Color},
 };
 
 use crate::{
-    dsl::{Node, incoming_connection, parse_str},
+    dsl::{Node, parse_str},
     renderer::{
         camera::{legacy_projection_camera_matrix, resolve_effective_camera_for_pass_node},
-        graph_uniforms::graph_field_name,
         pass_source::processing_input_connection,
-        types::{MaterialCompileContext, TypedExpr, ValueType},
-        utils::{coerce_to_type, cpu_num_f32},
         wgsl::{build_fullscreen_textured_bundle, build_upsample_bilinear_bundle},
     },
 };
@@ -64,136 +59,7 @@ pub(crate) fn assemble_upsample(
     )?;
     let src_binding = src.binding.clone();
 
-    fn parse_json_number_f32(v: &serde_json::Value) -> Option<f32> {
-        v.as_f64()
-            .map(|x| x as f32)
-            .or_else(|| v.as_i64().map(|x| x as f32))
-            .or_else(|| v.as_u64().map(|x| x as f32))
-    }
-
-    fn to_positive_target_size(layer_id: &str, x: f32, y: f32) -> Result<(u32, u32)> {
-        if !x.is_finite() || !y.is_finite() {
-            bail!("Upsample.targetSize must have finite components for {layer_id}, got ({x}, {y})");
-        }
-        if x <= 0.0 || y <= 0.0 {
-            bail!(
-                "Upsample.targetSize must have positive components for {layer_id}, got ({x}, {y})"
-            );
-        }
-        Ok((x.round().max(1.0) as u32, y.round().max(1.0) as u32))
-    }
-
-    let target_size_expr = if let Some(target_size_conn) =
-        incoming_connection(scene, layer_id, "targetSize")
-    {
-        let target_size_expr = {
-            let mut ctx = MaterialCompileContext::default();
-            let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
-            crate::renderer::node_compiler::compile_material_expr(
-                scene,
-                &nodes_by_id,
-                &target_size_conn.from.node_id,
-                Some(&target_size_conn.from.port_id),
-                &mut ctx,
-                &mut cache,
-            )?
-        };
-        coerce_to_type(target_size_expr, ValueType::Vec2)?
-    } else if let Some(v) = layer_node.params.get("targetSize") {
-        let (x, y) = if let Some(arr) = v.as_array() {
-            let x = arr
-                .first()
-                .and_then(parse_json_number_f32)
-                .ok_or_else(|| {
-                    anyhow!(
-                        "Upsample.targetSize must be an object {{x,y}} or array [x,y] in params for {layer_id}"
-                    )
-                })?;
-            let y = arr
-                .get(1)
-                .and_then(parse_json_number_f32)
-                .ok_or_else(|| {
-                    anyhow!(
-                        "Upsample.targetSize must be an object {{x,y}} or array [x,y] in params for {layer_id}"
-                    )
-                })?;
-            (x, y)
-        } else if let Some(obj) = v.as_object() {
-            let x = obj
-                .get("x")
-                .and_then(parse_json_number_f32)
-                .ok_or_else(|| {
-                    anyhow!(
-                        "Upsample.targetSize must be an object {{x,y}} or array [x,y] in params for {layer_id}"
-                    )
-                })?;
-            let y = obj
-                .get("y")
-                .and_then(parse_json_number_f32)
-                .ok_or_else(|| {
-                    anyhow!(
-                        "Upsample.targetSize must be an object {{x,y}} or array [x,y] in params for {layer_id}"
-                    )
-                })?;
-            (x, y)
-        } else {
-            bail!(
-                "Upsample.targetSize must be an object {{x,y}} or array [x,y] in params for {layer_id}"
-            );
-        };
-        TypedExpr::new(format!("vec2f({x}, {y})"), ValueType::Vec2)
-    } else {
-        bail!("missing input '{layer_id}.targetSize' (no connection and no param)");
-    };
-
-    let (out_w, out_h) = {
-        let s = target_size_expr.expr.replace([' ', '\n', '\t', '\r'], "");
-        if let Some(inner) = s
-            .strip_prefix("(graph_inputs.")
-            .and_then(|x| x.strip_suffix(").xy"))
-        {
-            if let Some((_node_id, node)) = nodes_by_id
-                .iter()
-                .find(|(_, n)| n.node_type == "Vector2Input" && graph_field_name(&n.id) == inner)
-            {
-                let w = cpu_num_f32(scene, &nodes_by_id, node, "x", 0.0)?;
-                let h = cpu_num_f32(scene, &nodes_by_id, node, "y", 0.0)?;
-                to_positive_target_size(layer_id, w, h)?
-            } else {
-                bail!(
-                    "Upsample.targetSize must be a CPU-constant vec2f(w,h) for now, got {}",
-                    target_size_expr.expr
-                );
-            }
-        } else if let Some(inner) = s.strip_prefix("vec2f(").and_then(|x| x.strip_suffix(')')) {
-            let parts: Vec<&str> = inner.split(',').collect();
-            if parts.len() == 2 {
-                let w = parts[0].parse::<f32>().map_err(|_| {
-                    anyhow!(
-                        "Upsample.targetSize must be vec2f(w,h), got {}",
-                        target_size_expr.expr
-                    )
-                })?;
-                let h = parts[1].parse::<f32>().map_err(|_| {
-                    anyhow!(
-                        "Upsample.targetSize must be vec2f(w,h), got {}",
-                        target_size_expr.expr
-                    )
-                })?;
-                to_positive_target_size(layer_id, w, h)?
-            } else {
-                bail!(
-                    "Upsample.targetSize must be vec2f(w,h), got {}",
-                    target_size_expr.expr
-                );
-            }
-        } else {
-            bail!(
-                "Upsample.targetSize must be a CPU-constant vec2f(w,h) for now, got {}",
-                target_size_expr.expr
-            );
-        }
-    };
+    let [out_w, out_h] = crate::dsl::processing_target_size(scene, &nodes_by_id, layer_node)?;
 
     let materializes_texture = bs.materialized_texture_output_ids.contains(layer_id);
     let needs_intermediate = materializes_texture || (out_w != tgt_w_u || out_h != tgt_h_u);

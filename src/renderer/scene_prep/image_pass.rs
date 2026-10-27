@@ -542,8 +542,9 @@ mod tests {
     #[test]
     fn lowers_image_pass_to_canonical_nodes_and_preserves_public_outputs() {
         let mut scene = SceneDSL {
-            version: "6.0".to_string(),
+            version: "6.1".to_string(),
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             metadata: Metadata {
                 name: "image-pass".to_string(),
                 created: None,
@@ -713,8 +714,9 @@ mod tests {
     #[test]
     fn blur_path_preserves_public_blur_identity_and_routes_source_only_ports() {
         let mut scene = SceneDSL {
-            version: "6.0".to_string(),
+            version: "6.1".to_string(),
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             metadata: Metadata {
                 name: "image-pass-blur".to_string(),
                 created: None,
@@ -818,8 +820,9 @@ mod tests {
     #[test]
     fn blur_texture_route_materializes_its_private_draw_in_geosize_domain() {
         let mut scene = SceneDSL {
-            version: "6.0".to_string(),
+            version: "6.1".to_string(),
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             metadata: Metadata {
                 name: "image-pass-texture".to_string(),
                 created: None,
@@ -864,8 +867,9 @@ mod tests {
     #[test]
     fn texture_route_without_authored_size_inherits_the_image_texture_extent() {
         let mut scene = SceneDSL {
-            version: "6.0".to_string(),
+            version: "6.1".to_string(),
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             metadata: Metadata {
                 name: "image-pass-inferred-size".to_string(),
                 created: None,
@@ -902,8 +906,9 @@ mod tests {
     #[test]
     fn texture_route_with_authored_size_does_not_inherit_the_image_texture_extent() {
         let mut scene = SceneDSL {
-            version: "6.0".to_string(),
+            version: "6.1".to_string(),
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             metadata: Metadata {
                 name: "image-pass-explicit-size".to_string(),
                 created: None,
@@ -945,8 +950,9 @@ mod tests {
     #[test]
     fn animation_target_keeps_zero_radius_on_the_gaussian_path() {
         let mut scene = SceneDSL {
-            version: "6.0".to_string(),
+            version: "6.1".to_string(),
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             metadata: Metadata {
                 name: "image-pass-animated-blur".to_string(),
                 created: None,
@@ -1005,8 +1011,9 @@ mod tests {
     #[test]
     fn connected_alpha_replaces_the_private_default_source() {
         let mut scene = SceneDSL {
-            version: "6.0".to_string(),
+            version: "6.1".to_string(),
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             metadata: Metadata {
                 name: "image-pass-connected-alpha".to_string(),
                 created: None,
@@ -1049,7 +1056,7 @@ mod tests {
     #[test]
     fn image_pass_builds_image_sampling_dynamic_geometry_and_corner_coverage_wgsl() {
         let scene: SceneDSL = serde_json::from_value(json!({
-            "version": "6.0", "workingColorSpace": "linear-srgb",
+            "version": "6.1", "workingColorSpace": "linear-srgb", "dpi": 3.0,
             "metadata": { "name": "image-pass-wgsl" },
             "nodes": [
                 {

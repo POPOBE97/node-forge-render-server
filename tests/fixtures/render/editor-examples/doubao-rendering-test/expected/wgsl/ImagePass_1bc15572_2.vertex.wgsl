@@ -29,14 +29,13 @@ var<uniform> params: Params;
      @location(2) local_px: vec3f,
      // Geometry size in pixels after applying geometry/instance transforms.
      @location(3) geo_size_px: vec2f,
-  };
+     @location(4) @interpolate(flat) instance_index: u32,
+ };
 
 
 struct GraphInputs {
     // Node: Vector2Input_1bc15572_3
     node_Vector2Input_1bc15572_3_5f48e4b9: vec4f,
-    // Node: Vector2Input_f90af5a3_4
-    node_Vector2Input_f90af5a3_4_5595d036: vec4f,
     // Node: sys.image-pass.ImagePass_1bc15572_2.alpha.default
     node_sys_image_pass_ImagePass_1bc15572_2_alpha_default_dcb56728: vec4f,
     // Node: sys.image-pass.ImagePass_1bc15572_2.alpha.max
@@ -80,8 +79,11 @@ fn nf_math_closure_fragment_closure_sample_image_texture(uv: vec2f) -> vec4f {
  fn vs_main(
      @location(0) position: vec3f,
      @location(1) uv: vec2f,
+     @builtin(instance_index) instance_index: u32,
  ) -> VSOut {
  var out: VSOut;
+
+ out.instance_index = instance_index;
 
  let _unused_geo_size = params.geo_size;
  let _unused_geo_translate = params.geo_translate;
@@ -90,8 +92,8 @@ fn nf_math_closure_fragment_closure_sample_image_texture(uv: vec2f) -> vec4f {
  // UV passed as vertex attribute.
  out.uv = vec2f(uv.x, 1.0 - uv.y);
 
- let rect_size_px_base = (graph_inputs.node_Vector2Input_1bc15572_3_5f48e4b9).xy;
- let rect_center_px = (graph_inputs.node_Vector2Input_f90af5a3_4_5595d036).xy;
+ let rect_size_px_base = vec2f((graph_inputs.node_Vector2Input_1bc15572_3_5f48e4b9).x, (graph_inputs.node_Vector2Input_1bc15572_3_5f48e4b9).y);
+ let rect_center_px = baked_data_parse[(instance_index) * 13u + 12u].xy;
  let rect_dyn = vec4f(rect_center_px, rect_size_px_base);
  out.geo_size_px = rect_dyn.zw;
  // Geometry-local pixel coordinate (GeoFragcoord).

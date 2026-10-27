@@ -1049,6 +1049,7 @@ mod tests {
     fn position_and_color_locks_are_tracked_independently() {
         let scene = SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1".to_string(),
             metadata: crate::dsl::Metadata {
                 name: "ilight locks".to_string(),
@@ -1115,6 +1116,7 @@ mod tests {
     fn manual_overlay_values_prefer_connected_position_and_color() {
         let scene = SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1".to_string(),
             metadata: crate::dsl::Metadata {
                 name: "ilight manual".to_string(),
@@ -1200,6 +1202,7 @@ mod tests {
     fn animation_playing_prefers_scene_params_over_optimistic_params() {
         let scene = SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1".to_string(),
             metadata: crate::dsl::Metadata {
                 name: "ilight animated".to_string(),
@@ -1282,6 +1285,7 @@ mod tests {
         });
         let scene = SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1".to_string(),
             metadata: crate::dsl::Metadata {
                 name: "ilight packed animation".to_string(),

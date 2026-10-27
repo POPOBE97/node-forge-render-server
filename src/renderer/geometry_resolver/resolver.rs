@@ -14,7 +14,6 @@ use crate::{
         },
         render_plan::resolve_geometry_for_render_pass,
         scene_prep::composite_layers_in_draw_order,
-        utils::cpu_num_u32_min_1,
     },
 };
 
@@ -102,7 +101,7 @@ fn build_coord_domain(
     nodes_by_id: &HashMap<String, Node>,
     ids: &HashMap<String, ResourceName>,
     composition_node_id: &str,
-    default_resolution: [u32; 2],
+    _default_resolution: [u32; 2],
 ) -> Result<CoordDomain> {
     let target_conn =
         incoming_connection(scene, composition_node_id, "target").ok_or_else(|| {
@@ -118,20 +117,7 @@ fn build_coord_domain(
         );
     }
 
-    let width = cpu_num_u32_min_1(
-        scene,
-        nodes_by_id,
-        target_node,
-        "width",
-        default_resolution[0],
-    )?;
-    let height = cpu_num_u32_min_1(
-        scene,
-        nodes_by_id,
-        target_node,
-        "height",
-        default_resolution[1],
-    )?;
+    let [width, height] = crate::dsl::render_texture_size(scene, nodes_by_id, target_node)?;
     let texture_name = ids
         .get(&render_texture_node_id)
         .cloned()
@@ -371,6 +357,7 @@ mod tests {
     fn scene(nodes: Vec<Node>, connections: Vec<Connection>) -> SceneDSL {
         SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0.0".to_string(),
             metadata: Metadata {
                 name: "test".to_string(),

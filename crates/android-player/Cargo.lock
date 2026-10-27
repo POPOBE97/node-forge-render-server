@@ -742,6 +742,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "glyphux"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc290aa813384208c8fde7b5e8c3736098262ab6e2333705674dcf8eb51ee687"
+
+[[package]]
 name = "gpu-allocator"
 version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1263,6 +1269,7 @@ dependencies = [
  "core-graphics",
  "cosmic-text",
  "gltf",
+ "glyphux",
  "half",
  "image",
  "metal",

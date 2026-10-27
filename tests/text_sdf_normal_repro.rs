@@ -9,7 +9,7 @@ use serde_json::json;
 const WIDTH: usize = 480;
 const HEIGHT: usize = 315;
 
-// Minimal version of practive-gaudge-meter's C -> SDF -> bevel normal -> PBR chain.
+// Minimal version of practice-gaudge-meter's C -> SDF -> bevel normal -> PBR chain.
 fn scene(sample_distance: f32) -> SceneDSL {
     let edges = [
         ("font", "font", "text", "font"),
@@ -24,8 +24,8 @@ fn scene(sample_distance: f32) -> SceneDSL {
         ("composite", "texture", "screen", "texture"),
     ];
     serde_json::from_value(json!({
-        "version": "6.0",
-        "workingColorSpace": "linear-srgb",
+        "version": "6.1",
+        "workingColorSpace": "linear-srgb", "dpi": 3.0,
         "metadata": {"name": "text-sdf-normal-repro"},
         "nodes": [
             {"id": "font", "type": "FontFile", "params": {"assetId": "font"}},
@@ -85,49 +85,8 @@ fn render(scene: &SceneDSL, renderer: &HeadlessRenderer, assets: &AssetStore) ->
         .channels
 }
 
-// Returns (center deviation / neighbor variation, center deviation, x, y).
-// Large values flag an isolated bright/dark pixel rather than a smooth shaded edge.
-fn worst_isolated_pixel(pixels: &[f32]) -> (f32, f32, usize, usize) {
-    let mut worst = (0.0, 0.0, 0, 0);
-    for y in 1..HEIGHT - 1 {
-        for x in 1..WIDTH - 1 {
-            let at = |x: usize, y: usize| &pixels[(y * WIDTH + x) * 4..][..4];
-            if at(x, y)[3] < 0.99
-                || [at(x - 1, y), at(x + 1, y), at(x, y - 1), at(x, y + 1)]
-                    .iter()
-                    .any(|p| p[3] < 0.99)
-            {
-                continue;
-            }
-            let center = at(x, y);
-            let neighbors = [at(x - 1, y), at(x + 1, y), at(x, y - 1), at(x, y + 1)];
-            let deviation = (0..3)
-                .map(|c| {
-                    let average = neighbors.iter().map(|p| p[c]).sum::<f32>() * 0.25;
-                    (center[c] - average).powi(2)
-                })
-                .sum::<f32>()
-                .sqrt();
-            let horizontal = (0..3)
-                .map(|c| (neighbors[0][c] - neighbors[1][c]).powi(2))
-                .sum::<f32>()
-                .sqrt();
-            let vertical = (0..3)
-                .map(|c| (neighbors[2][c] - neighbors[3][c]).powi(2))
-                .sum::<f32>()
-                .sqrt();
-            let neighbor_delta = (horizontal + vertical) * 0.5;
-            let score = deviation / (neighbor_delta + 1e-5);
-            if score > worst.0 {
-                worst = (score, deviation, x, y);
-            }
-        }
-    }
-    worst
-}
-
 #[test]
-fn sub_texel_bevel_stencil_reproduces_isolated_normal_spikes() {
+fn mtsdf_bevel_stencils_preserve_coverage_and_converge() {
     let renderer = HeadlessRenderer::new(HeadlessRendererConfig::default()).unwrap();
     let assets = AssetStore::new();
     assets.insert(
@@ -138,17 +97,23 @@ fn sub_texel_bevel_stencil_reproduces_isolated_normal_spikes() {
             original_name: "Michroma-Regular.ttf".into(),
         },
     );
-    // The SDF uses 2x density, so one texel is 0.5 LocalPx. The reference C uses 0.35.
-    let narrow = worst_isolated_pixel(&render(&scene(0.35), &renderer, &assets));
-    let wide = worst_isolated_pixel(&render(&scene(1.0), &renderer, &assets));
-    println!("sampleDistance=0.35: {narrow:?}; sampleDistance=1.0: {wide:?}");
-
-    assert!(
-        narrow.0 > 4.0,
-        "reference stencil should reproduce a spike: {narrow:?}"
-    );
-    assert!(
-        wide.0 < narrow.0 * 0.5,
-        "one-local-pixel stencil should suppress the spike: narrow={narrow:?}, wide={wide:?}"
-    );
+    // A fixed-em true-distance tile supports subpixel samples at any display scale.
+    // Changing the normal stencil must not change the independent RGB coverage.
+    let narrow = render(&scene(0.35), &renderer, &assets);
+    let wide = render(&scene(1.0), &renderer, &assets);
+    assert!(narrow.iter().chain(&wide).all(|v| v.is_finite()));
+    let mut energy = 0.0;
+    let mut difference = 0.0;
+    let mut ink = 0;
+    for (a, b) in narrow.chunks_exact(4).zip(wide.chunks_exact(4)) {
+        assert!((a[3] - b[3]).abs() < 0.001, "normal sampling changed glyph coverage");
+        if a[3] > 0.99 { ink += 1; }
+        for c in 0..3 {
+            energy += a[c].abs();
+            difference += (a[c] - b[c]).abs();
+        }
+    }
+    assert!(ink > 1000, "missing glyph body");
+    assert!(difference / energy.max(1.0) < 0.08,
+        "subpixel stencils should produce consistent shading: difference={difference}, energy={energy}");
 }

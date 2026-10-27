@@ -985,6 +985,7 @@ mod tests {
     fn scene_with_node_types(node_types: &[&str]) -> SceneDSL {
         SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "scene".to_string(),
@@ -1107,6 +1108,7 @@ fn shader_material(in: ShaderMaterialInput) -> vec4f {
 
         let scene = SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "test".to_string(),

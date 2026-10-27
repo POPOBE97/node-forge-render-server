@@ -1371,8 +1371,9 @@ mod tests {
     #[test]
     fn timeline_labels_use_authored_state_param_and_render_input_titles() {
         let scene = crate::dsl::SceneDSL {
-            version: "6.0".into(),
+            version: "6.1".into(),
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             metadata: crate::dsl::Metadata {
                 name: "scene".into(),
                 created: None,
@@ -1443,6 +1444,7 @@ mod tests {
     fn collect_graph_uniform_updates_skips_unchanged_buffers() {
         let scene = crate::dsl::SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0".to_string(),
             metadata: crate::dsl::Metadata {
                 name: "scene".to_string(),
@@ -1513,6 +1515,7 @@ mod tests {
     fn collect_graph_uniform_updates_emits_when_value_changes() {
         let scene = crate::dsl::SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0".to_string(),
             metadata: crate::dsl::Metadata {
                 name: "scene".to_string(),
@@ -1583,6 +1586,7 @@ mod tests {
     fn collect_graph_uniform_updates_emits_shader_parameter_buffer_changes() {
         let scene = crate::dsl::SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0".to_string(),
             metadata: crate::dsl::Metadata {
                 name: "scene".to_string(),
@@ -1655,6 +1659,7 @@ mod tests {
     fn apply_uniform_node_param_updates_updates_direct_matches() {
         let mut scene = crate::dsl::SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0".to_string(),
             metadata: crate::dsl::Metadata {
                 name: "scene".to_string(),
@@ -1699,6 +1704,7 @@ mod tests {
     fn apply_uniform_node_param_updates_updates_suffix_matches_when_enabled() {
         let mut scene = crate::dsl::SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0".to_string(),
             metadata: crate::dsl::Metadata {
                 name: "scene".to_string(),
@@ -1743,6 +1749,7 @@ mod tests {
     fn apply_uniform_node_param_updates_rejects_missing_suffix_match_when_disabled() {
         let mut scene = crate::dsl::SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0".to_string(),
             metadata: crate::dsl::Metadata {
                 name: "scene".to_string(),
@@ -1784,6 +1791,7 @@ mod tests {
     fn active_scene_uniform_updates_ignore_pruned_branch_nodes() {
         let mut scene = crate::dsl::SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0".to_string(),
             metadata: crate::dsl::Metadata {
                 name: "active scene".to_string(),

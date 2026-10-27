@@ -33,6 +33,10 @@ struct VSOut {
 
 
 struct GraphInputs {
+    // Node: dp.chromatic.blur.gaussianSigma
+    float_input_dp: vec4f,
+    // Node: dp.mask.gaussianMask
+    dp_mask_gaussian_mask: vec4f,
     // Node: effect.center
     effect_center: vec4f,
 };
@@ -155,7 +159,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     // Evaluate mask → sigma in pixels.
     // NOTE: The mask expression sees user coordinates (in.local_px),
     // i.e. (0,0) = bottom-left of the original source image.
-    let gb_sigma = max(select(0.0, max(40.0, 0.0) * cb_mask(in.local_px.xy / params.geo_size, (graph_inputs.effect_center).xy, params.geo_size, vec4f(640.0, 0.86, 1.7, 1.0)), true), 0.0);
+    let gb_sigma = max(select(0.0, max((graph_inputs.float_input_dp).x, 0.0) * cb_mask(in.local_px.xy / params.geo_size, (graph_inputs.effect_center).xy, params.geo_size, (graph_inputs.dp_mask_gaussian_mask)), true), 0.0);
     if (gb_sigma <= 0.0) { return textureSampleLevel(pass_tex_sys_cb_chromatic_blur_rgb, pass_samp_sys_cb_chromatic_blur_rgb, in.uv, 0.0); }
 
     // Sigma → mip level (clamped to safe range).

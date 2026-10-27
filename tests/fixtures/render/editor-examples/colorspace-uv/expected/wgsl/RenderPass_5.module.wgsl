@@ -29,8 +29,17 @@ var<uniform> params: Params;
      @location(2) local_px: vec3f,
      // Geometry size in pixels after applying geometry/instance transforms.
      @location(3) geo_size_px: vec2f,
-  };
+     @location(4) @interpolate(flat) instance_index: u32,
+ };
 
+
+struct GraphInputs {
+    // Node: dp.Rect2DGeometry_8.size
+    node_dp_Rect2DGeometry_8_size_15fb5749: vec4f,
+};
+
+@group(0) @binding(2)
+var<uniform> graph_inputs: GraphInputs;
 
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;
@@ -39,8 +48,11 @@ var<storage, read> baked_data_parse: array<vec4f>;
  fn vs_main(
      @location(0) position: vec3f,
      @location(1) uv: vec2f,
+     @builtin(instance_index) instance_index: u32,
  ) -> VSOut {
  var out: VSOut;
+
+ out.instance_index = instance_index;
 
  let _unused_geo_size = params.geo_size;
  let _unused_geo_translate = params.geo_translate;
@@ -49,16 +61,20 @@ var<storage, read> baked_data_parse: array<vec4f>;
  // UV passed as vertex attribute.
  out.uv = vec2f(uv.x, 1.0 - uv.y);
 
- out.geo_size_px = params.geo_size;
+ let rect_size_px_base = (graph_inputs.node_dp_Rect2DGeometry_8_size_15fb5749).xy;
+ let rect_center_px = baked_data_parse[(instance_index) * 1u + 0u].xy;
+ let rect_dyn = vec4f(rect_center_px, rect_size_px_base);
+ out.geo_size_px = rect_dyn.zw;
  // Geometry-local pixel coordinate (GeoFragcoord).
  out.local_px = vec3f(uv * out.geo_size_px, 0.0);
 
- var p_local = position;
+ let p_rect_local_px = vec3f(position.xy * rect_dyn.zw, position.z);
+ var p_local = p_rect_local_px;
 
  // Geometry vertices are in local pixel units centered at (0,0).
  // Convert to target pixel coordinates with bottom-left origin.
  out.local_px = vec3f(out.local_px.xy, p_local.z);
- let p_px = params.center + p_local.xy;
+ let p_px = rect_dyn.xy + p_local.xy;
 
  out.position = params.camera * vec4f(p_px, p_local.z, 1.0);
 

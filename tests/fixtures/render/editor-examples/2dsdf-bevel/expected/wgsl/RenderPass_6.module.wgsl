@@ -41,6 +41,8 @@ struct GraphInputs {
     node_Vector2Input_67_d6ac4dbd: vec4f,
     // Node: Vector2Input_68
     node_Vector2Input_68_87bf4dbd: vec4f,
+    // Node: dp.Sdf2DBevel_61.width
+    node_dp_Sdf2DBevel_61_width_5ca037c2: vec4f,
 };
 
 @group(0) @binding(2)
@@ -228,7 +230,7 @@ fn sdf2d_smooth_round_rect(point: vec2f, center: vec2f, radius: f32, axis_mix: v
  let inst_m = mat4x4f(i0, i1, i2, i3);
  let geo_sx = length(inst_m[0].xy);
  let geo_sy = length(inst_m[1].xy);
- let rect_size_px_base = (graph_inputs.node_Vector2Input_67_d6ac4dbd).xy;
+ let rect_size_px_base = vec2f((graph_inputs.node_Vector2Input_67_d6ac4dbd).x, (graph_inputs.node_Vector2Input_67_d6ac4dbd).y);
  let rect_center_px = (graph_inputs.node_Vector2Input_68_87bf4dbd).xy;
  let rect_dyn = vec4f(rect_center_px, rect_size_px_base);
  let geo_size_px = rect_dyn.zw * vec2f(geo_sx, geo_sy);
@@ -272,10 +274,26 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         (in.geo_size_px * 0.5),
         vec4f((graph_inputs.node_FloatInput_12_af780221).x),
     );
-    let _2d_sdf_bevel_normal_depth_px = sdf2d_bevel_smooth7(_2d_sdf_bevel_normal_sdf_px, 22, 0.46);
-    let _2d_sdf_bevel_normal_depth_nx = sdf2d_bevel_smooth7(_2d_sdf_bevel_normal_sdf_nx, 22, 0.46);
-    let _2d_sdf_bevel_normal_depth_py = sdf2d_bevel_smooth7(_2d_sdf_bevel_normal_sdf_py, 22, 0.46);
-    let _2d_sdf_bevel_normal_depth_ny = sdf2d_bevel_smooth7(_2d_sdf_bevel_normal_sdf_ny, 22, 0.46);
+    let _2d_sdf_bevel_normal_depth_px = sdf2d_bevel_smooth7(
+        _2d_sdf_bevel_normal_sdf_px,
+        (graph_inputs.node_dp_Sdf2DBevel_61_width_5ca037c2).x,
+        0.46,
+    );
+    let _2d_sdf_bevel_normal_depth_nx = sdf2d_bevel_smooth7(
+        _2d_sdf_bevel_normal_sdf_nx,
+        (graph_inputs.node_dp_Sdf2DBevel_61_width_5ca037c2).x,
+        0.46,
+    );
+    let _2d_sdf_bevel_normal_depth_py = sdf2d_bevel_smooth7(
+        _2d_sdf_bevel_normal_sdf_py,
+        (graph_inputs.node_dp_Sdf2DBevel_61_width_5ca037c2).x,
+        0.46,
+    );
+    let _2d_sdf_bevel_normal_depth_ny = sdf2d_bevel_smooth7(
+        _2d_sdf_bevel_normal_sdf_ny,
+        (graph_inputs.node_dp_Sdf2DBevel_61_width_5ca037c2).x,
+        0.46,
+    );
     let _2d_sdf_bevel_normal_normal = sdf2d_bevel_normal(
         _2d_sdf_bevel_normal_depth_px,
         _2d_sdf_bevel_normal_depth_nx,

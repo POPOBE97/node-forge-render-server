@@ -29,14 +29,13 @@ var<uniform> params: Params;
      @location(2) local_px: vec3f,
      // Geometry size in pixels after applying geometry/instance transforms.
      @location(3) geo_size_px: vec2f,
-  };
+     @location(4) @interpolate(flat) instance_index: u32,
+ };
 
 
 struct GraphInputs {
     // Node: Vector2Input_1bc15572_3
     node_Vector2Input_1bc15572_3_5f48e4b9: vec4f,
-    // Node: Vector2Input_f90af5a3_4
-    node_Vector2Input_f90af5a3_4_5595d036: vec4f,
     // Node: sys.image-pass.ImagePass_1bc15572_2.alpha.default
     node_sys_image_pass_ImagePass_1bc15572_2_alpha_default_dcb56728: vec4f,
     // Node: sys.image-pass.ImagePass_1bc15572_2.alpha.max

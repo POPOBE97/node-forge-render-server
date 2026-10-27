@@ -38,6 +38,16 @@ struct GraphInputs {
     node_Vector3Input_67_698d8c66: vec4f,
     // Node: Vector4Input_82
     node_Vector4Input_82_911287d3: vec4f,
+    // Node: dp.GlassMaterial_40.uShapeEdgePx
+    node_dp_GlassMaterial_40_uShapeEdgePx_7ef736e3: vec4f,
+    // Node: dp.GlassMaterial_40.uShapeReflectOffsetPx
+    node_dp_GlassMaterial_40_uShapeReflectOffsetPx_9ba0d7e0: vec4f,
+    // Node: dp.GlassMaterial_40.uShapeThicknessPx
+    node_dp_GlassMaterial_40_uShapeThicknessPx_d385d2a6: vec4f,
+    // Node: dp.Rect2DGeometry_3.radius
+    node_dp_Rect2DGeometry_3_radius_c119ca88: vec4f,
+    // Node: dp.Rect2DGeometry_3.size
+    node_dp_Rect2DGeometry_3_size_7230bc1a: vec4f,
 };
 
 @group(0) @binding(2)
@@ -580,9 +590,9 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      let screen_uv = glass_sample_screen_uv(screen_px, params.target_size);
 
      // --- Shape SDF ---
-     let edge = f32(30.0);
+     let edge = f32((graph_inputs.node_dp_GlassMaterial_40_uShapeEdgePx_7ef736e3).x);
      let edge_pow = f32(2.0);
-     let radius_px = f32(baked_data_parse[(in.instance_index) * 5u + 1u].x);
+     let radius_px = f32(baked_data_parse[(in.instance_index) * 8u + 1u].x);
      let safe_edge = max(edge, 1e-6);
      let box_sdf = glass_shape_sdf(pos_from_center, half_size_px, radius_px, edge, edge_pow);
      let normalized_sdf = -box_sdf / safe_edge;
@@ -608,14 +618,14 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      let incident_ray = normalize(vec3f(0.0, 0.0, -1.0));
      let refractive_index = f32(1.450000048);
      let refract_dir = refract(incident_ray, normal, 1.0 / max(refractive_index, 1e-6));
-     let refract_thickness = mix((f32(80.0) - edge) * 2.0, f32(80.0) * 2.0, clamp(normalized_sdf, 0.0, 1.0));
+     let refract_thickness = mix((f32((graph_inputs.node_dp_GlassMaterial_40_uShapeThicknessPx_d385d2a6).x) - edge) * 2.0, f32((graph_inputs.node_dp_GlassMaterial_40_uShapeThicknessPx_d385d2a6).x) * 2.0, clamp(normalized_sdf, 0.0, 1.0));
      let refract_local_px = uv_display_px + refract_dir.xy * refract_thickness;
      let refract_uv = glass_sample_screen_uv(geo_origin_px + refract_local_px, params.target_size);
      let refraction = textureSample(pass_tex_sys_group_BackgroundPass_GuassianBlurPass_42, pass_samp_sys_group_BackgroundPass_GuassianBlurPass_42, refract_uv);
 
      // --- Reflection ---
      let reflect_dir = reflect(incident_ray, normal);
-     let reflect_local_px = uv_display_px + reflect_dir.xy * mix(0.0, f32(750.0), 1.0 - clamp(normalized_sdf, 0.0, 1.0));
+     let reflect_local_px = uv_display_px + reflect_dir.xy * mix(0.0, f32((graph_inputs.node_dp_GlassMaterial_40_uShapeReflectOffsetPx_9ba0d7e0).x), 1.0 - clamp(normalized_sdf, 0.0, 1.0));
      let reflect_uv = glass_sample_screen_uv(geo_origin_px + reflect_local_px, params.target_size);
      let reflection = textureSample(pass_tex_sys_group_BackgroundPass_GuassianBlurPass_42, pass_samp_sys_group_BackgroundPass_GuassianBlurPass_42, reflect_uv);
 
@@ -687,7 +697,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     let _rect_half_size_px = in.geo_size_px * 0.5;
     let _rect_point_px = abs(in.local_px.xy - _rect_half_size_px);
     let _rect_radius_limit_px = max(min(_rect_half_size_px.x, _rect_half_size_px.y), 0.0);
-    let _rect_radius_px = clamp(1.0, 0.0, _rect_radius_limit_px);
+    let _rect_radius_px = clamp((graph_inputs.node_dp_Rect2DGeometry_3_radius_c119ca88).x, 0.0, _rect_radius_limit_px);
     let _rect_smooth = clamp(1.0, 0.0, 1.0);
     let _rect_distance = sdf2d_smooth_round_rect(
         _rect_point_px,

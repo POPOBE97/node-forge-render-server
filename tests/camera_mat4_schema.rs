@@ -25,6 +25,7 @@ fn node(id: &str, node_type: &str, params: serde_json::Value) -> Node {
 fn scene(nodes: Vec<Node>, connections: Vec<Connection>) -> SceneDSL {
     SceneDSL {
         working_color_space: node_forge_render_server::color::WorkingColorSpace::Srgb,
+        dpi: 3.0,
         version: "1.0".to_string(),
         metadata: Metadata {
             name: "camera-mat4-schema".to_string(),

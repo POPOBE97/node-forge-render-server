@@ -4,7 +4,7 @@ use serde_json::json;
 
 fn scene(external_shape: bool) -> SceneDSL {
     let mut scene: SceneDSL = serde_json::from_value(json!({
-        "version": "6.0", "workingColorSpace": "linear-srgb", "metadata":{"name":"glass lighting"},
+        "version": "6.1", "workingColorSpace": "linear-srgb", "dpi": 3.0, "metadata":{"name":"glass lighting"},
         "nodes": [
             {"id":"geometry", "type":"Rect2DGeometry", "params":{"size":[32,32], "position":[16,16]}},
             {"id":"background", "type":"ColorInput", "params":{"value":[0.1,0.3,0.4,1]}},

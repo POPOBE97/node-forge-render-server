@@ -29,15 +29,24 @@ var<uniform> params: Params;
      @location(2) local_px: vec3f,
      // Geometry size in pixels after applying geometry/instance transforms.
      @location(3) geo_size_px: vec2f,
-      @location(6) world_pos: vec3f,
+     @location(4) @interpolate(flat) instance_index: u32,
+     @location(6) world_pos: vec3f,
  };
 
 
 struct GraphInputs {
-    // Node: gauge.clock.seconds
-    gauge_clock_seconds: vec4f,
+    // Node: Vector4Input_6ab22c56_7
+    node_Vector4Input_6ab22c56_7_6867e865: vec4f,
+    // Node: gauge.clock.angle
+    node_gauge_clock_angle_d5c8a937: vec4f,
+    // Node: gauge.clock.major.base
+    node_gauge_clock_major_base_f2347680: vec4f,
+    // Node: gauge.clock.major.initial.angle
+    node_gauge_clock_major_initial_angle_54a664b1: vec4f,
     // Node: gauge.glass.tint
-    gauge_glass_tint: vec4f,
+    node_gauge_glass_tint_95754a06: vec4f,
+    // Node: gauge.major.zero
+    node_gauge_major_zero_55b98f49: vec4f,
 };
 
 @group(0) @binding(2)
@@ -46,15 +55,9 @@ var<uniform> graph_inputs: GraphInputs;
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;
 @group(1) @binding(0)
-var img_tex_gauge_label50_sdf: texture_2d<f32>;
-
-@group(1) @binding(1)
-var img_samp_gauge_label50_sdf: sampler;
-
-@group(1) @binding(2)
 var pass_tex_gauge_glass_background: texture_2d<f32>;
 
-@group(1) @binding(3)
+@group(1) @binding(1)
 var pass_samp_gauge_glass_background: sampler;
 
 
@@ -495,81 +498,6 @@ fn glass_sample_screen_uv(screen_px: vec2f, resolution: vec2f) -> vec2f {
     return vec2f(screen_px.x, resolution.y - screen_px.y) / resolution;
 }
 
-fn nf_math_closure_fragment_closure(uv: vec2<f32>, phase: f32, localPx: vec2<f32>) -> vec2<f32> {
-    var uv_1: vec2<f32>;
-    var phase_1: f32;
-    var localPx_1: vec2<f32>;
-    var output: vec2<f32>;
-    var value: f32;
-    var local: f32;
-    var local_1: f32;
-    var digits: f32;
-    var left: f32;
-    var cell: f32;
-    var place: f32;
-    var digit: f32;
-    var local_2: vec2<f32>;
-
-    uv_1 = uv;
-    phase_1 = phase;
-    localPx_1 = localPx;
-    let _e10: f32 = phase_1;
-    let _e17: f32 = phase_1;
-    value = floor(clamp(_e17, 0f, 100f));
-    let _e23: f32 = value;
-    if (_e23 >= 100f) {
-        local_1 = 3f;
-    } else {
-        let _e27: f32 = value;
-        if (_e27 >= 10f) {
-            local = 2f;
-        } else {
-            local = 1f;
-        }
-        let _e33: f32 = local;
-        local_1 = _e33;
-    }
-    let _e35: f32 = local_1;
-    digits = _e35;
-    let _e38: f32 = digits;
-    left = ((450f - (_e38 * 150f)) * 0.5f);
-    let _e45: vec2<f32> = localPx_1;
-    let _e47: f32 = left;
-    let _e51: vec2<f32> = localPx_1;
-    let _e53: f32 = left;
-    cell = floor(((_e51.x - _e53) / 150f));
-    let _e60: f32 = digits;
-    let _e61: f32 = cell;
-    let _e66: f32 = digits;
-    let _e67: f32 = cell;
-    place = pow(10f, ((_e66 - _e67) - 1f));
-    let _e73: f32 = value;
-    let _e74: f32 = place;
-    let _e76: f32 = value;
-    let _e77: f32 = place;
-    let _e81: f32 = value;
-    let _e82: f32 = place;
-    let _e84: f32 = value;
-    let _e85: f32 = place;
-    let _e87: f32 = floor((_e84 / _e85));
-    digit = (_e87 - (floor((_e87 / 10f)) * 10f));
-    let _e94: f32 = cell;
-    let _e97: f32 = cell;
-    let _e98: f32 = digits;
-    if ((_e94 < 0f) || (_e97 >= _e98)) {
-        local_2 = vec2(100000f);
-    } else {
-        let _e103: f32 = left;
-        let _e104: f32 = cell;
-        let _e108: f32 = digit;
-        local_2 = vec2<f32>((_e103 + (_e104 * 150f)), (-(_e108) * 225f));
-    }
-    let _e114: vec2<f32> = local_2;
-    output = _e114;
-    let _e115: vec2<f32> = output;
-    return _e115;
-}
-
 
 // ---- 2D SDF bevel helpers (generated) ----
 // 2D SDF bevel helper template.
@@ -713,34 +641,114 @@ fn sdf2d_smooth_round_rect(point: vec2f, center: vec2f, radius: f32, axis_mix: v
     return vec3f(final_height, fallback_dir);
 }
 
-// Private texture storage is top-down; the node boundary is bottom-left LocalPx.
-// Manual bilinear sampling also works on devices without FLOAT32_FILTERABLE.
-fn nf_text_sdf(field: texture_2d<f32>, local_px: vec2f) -> f32 {
-    let metadata = textureLoad(field, vec2i(0), 0).gba;
-    let dims = vec2i(textureDimensions(field));
-    let raster = vec2f(local_px.x, metadata.y - local_px.y) * metadata.z - 0.5;
-    let bounded = clamp(raster, vec2f(0.0), vec2f(dims - 1));
-    let lo = vec2i(floor(bounded));
-    let hi = min(lo + 1, dims - 1);
-    let t = fract(bounded);
-    let a = mix(textureLoad(field, lo, 0).r, textureLoad(field, vec2i(hi.x, lo.y), 0).r, t.x);
-    let b = mix(textureLoad(field, vec2i(lo.x, hi.y), 0).r, textureLoad(field, hi, 0).r, t.x);
-    let d = mix(a, b, t.y);
-    let outside = length(raster - bounded) / metadata.z;
-    return select(d, max(d, 0.0) + outside, outside > 0.0);
-}
-fn nf_sdf_coverage(distance: f32) -> f32 {
-    let aa = max(fwidth(distance), 0.0001);
-    return clamp(0.5 - distance / aa, 0.0, 1.0);
+
+// --- Extra WGSL declarations (generated) ---
+fn nf_math_closure_vertex_c3173fa0_closure(uv: vec2<f32>, angle: f32, initialAngle: f32, index: i32) -> vec3<f32> {
+    var uv_1: vec2<f32>;
+    var angle_1: f32;
+    var initialAngle_1: f32;
+    var index_1: i32;
+    var output: vec3<f32>;
+
+    uv_1 = uv;
+    angle_1 = angle;
+    initialAngle_1 = initialAngle;
+    index_1 = index;
+    let _e11: f32 = initialAngle_1;
+    let _e12: f32 = angle_1;
+    let _e14: i32 = index_1;
+    output = vec3<f32>(0f, 0f, ((_e11 + _e12) - (f32(_e14) * 30f)));
+    let _e20: vec3<f32> = output;
+    return _e20;
 }
 
+fn nf_math_closure_vertex_closure(uv: vec2<f32>, angle: f32, base: vec3<f32>, index: i32, dialCenter: vec2<f32>) -> vec3<f32> {
+    var uv_1: vec2<f32>;
+    var angle_1: f32;
+    var base_1: vec3<f32>;
+    var index_1: i32;
+    var dialCenter_1: vec2<f32>;
+    var output: vec3<f32>;
+    var a: f32;
+    var theta: f32;
+    var v: vec2<f32>;
+    var p: vec2<f32>;
+    var local: vec3<f32>;
+
+    uv_1 = uv;
+    angle_1 = angle;
+    base_1 = base;
+    index_1 = index;
+    dialCenter_1 = dialCenter;
+    let _e11: f32 = angle_1;
+    let _e12: i32 = index_1;
+    let _e17: f32 = angle_1;
+    let _e18: i32 = index_1;
+    a = radians((_e17 - (f32(_e18) * 30f)));
+    let _e26: f32 = angle_1;
+    let _e28: i32 = index_1;
+    theta = ((150f + _e26) - (f32(_e28) * 30f));
+    let _e34: vec3<f32> = base_1;
+    let _e36: vec2<f32> = dialCenter_1;
+    v = (_e34.xy - _e36);
+    let _e39: vec2<f32> = dialCenter_1;
+    let _e41: f32 = a;
+    let _e43: vec2<f32> = v;
+    let _e47: f32 = a;
+    let _e49: vec2<f32> = v;
+    let _e54: f32 = a;
+    let _e56: vec2<f32> = v;
+    let _e60: f32 = a;
+    let _e62: vec2<f32> = v;
+    p = (_e39 + vec2<f32>(((cos(_e41) * _e43.x) - (sin(_e47) * _e49.y)), ((sin(_e54) * _e56.x) + (cos(_e60) * _e62.y))));
+    let _e69: f32 = theta;
+    let _e72: f32 = theta;
+    if ((_e69 < 132f) || (_e72 > 168f)) {
+        local = vec3<f32>(100000f, 100000f, 0f);
+    } else {
+        let _e80: vec2<f32> = p;
+        let _e81: vec3<f32> = base_1;
+        local = vec3<f32>(_e80.x, _e80.y, _e81.z);
+    }
+    let _e87: vec3<f32> = local;
+    output = _e87;
+    let _e88: vec3<f32> = output;
+    return _e88;
+}
+
+
+fn sys_apply_trs_xyz(p: vec3f, t: vec3f, r_deg: vec3f, s: vec3f) -> vec3f {
+    let rad = r_deg * 0.017453292519943295;
+
+    let cx = cos(rad.x);
+    let sx = sin(rad.x);
+    let cy = cos(rad.y);
+    let sy = sin(rad.y);
+    let cz = cos(rad.z);
+    let sz = sin(rad.z);
+
+    let p0 = p * s;
+    let p1 = vec3f(p0.x, p0.y * cx - p0.z * sx, p0.y * sx + p0.z * cx);
+    let p2 = vec3f(p1.x * cy + p1.z * sy, p1.y, -p1.x * sy + p1.z * cy);
+    let p3 = vec3f(p2.x * cz - p2.y * sz, p2.x * sz + p2.y * cz, p2.z);
+    return p3 + t;
+}
 
  @vertex
  fn vs_main(
      @location(0) position: vec3f,
      @location(1) uv: vec2f,
+     @location(2) i0: vec4f,
+     @location(3) i1: vec4f,
+     @location(4) i2: vec4f,
+     @location(5) i3: vec4f,
+     @builtin(instance_index) instance_index: u32,
  ) -> VSOut {
  var out: VSOut;
+
+    let math_closure_out = nf_math_closure_vertex_closure(vec2f(uv.x, 1.0 - uv.y), (graph_inputs.node_gauge_clock_angle_d5c8a937).x, (graph_inputs.node_gauge_clock_major_base_f2347680).xyz, i32(instance_index), baked_data_parse[(instance_index) * 6u + 1u].xy);
+    let math_closure_out_b005e18f = nf_math_closure_vertex_c3173fa0_closure(vec2f(uv.x, 1.0 - uv.y), (graph_inputs.node_gauge_clock_angle_d5c8a937).x, (graph_inputs.node_gauge_clock_major_initial_angle_54a664b1).x, i32(instance_index));
+ out.instance_index = instance_index;
 
  let _unused_geo_size = params.geo_size;
  let _unused_geo_translate = params.geo_translate;
@@ -749,11 +757,17 @@ fn nf_sdf_coverage(distance: f32) -> f32 {
  // UV passed as vertex attribute.
  out.uv = vec2f(uv.x, 1.0 - uv.y);
 
- out.geo_size_px = params.geo_size;
- // Geometry-local pixel coordinate (GeoFragcoord).
- out.local_px = vec3f(uv * out.geo_size_px, 0.0);
+ let inst_m = mat4x4f(i0, i1, i2, i3);
+ let geo_sx = length(inst_m[0].xy);
+ let geo_sy = length(inst_m[1].xy);
+ let geo_size_px = params.geo_size * vec2f(geo_sx, geo_sy);
+ out.geo_size_px = geo_size_px;
+ out.local_px = vec3f(uv * geo_size_px, 0.0);
 
- var p_local = position;
+ var p_local = (inst_m * vec4f(position, 1.0)).xyz;
+
+ let delta_t = (sys_apply_trs_xyz(p_local, math_closure_out, math_closure_out_b005e18f, vec3f(1.0, 1.0, 1.0)) - p_local);
+ p_local = p_local + delta_t;
 
  // Geometry vertices are in local pixel units centered at (0,0).
  // Convert to target pixel coordinates with bottom-left origin.

@@ -3,6 +3,7 @@
 pub mod attribute;
 pub mod color_nodes;
 pub mod data_parse;
+pub mod env_material;
 pub mod geometry_nodes;
 pub mod glass_material;
 pub mod hyperos_glass_material;
@@ -19,6 +20,7 @@ pub mod texture_nodes;
 pub mod text_sdf;
 pub mod trigonometry_nodes;
 pub mod vector_nodes;
+pub mod wave;
 
 use anyhow::{Result, bail};
 use std::collections::HashMap;
@@ -469,6 +471,7 @@ fn try_compile_pure_group_call(
     let helper_scene = SceneDSL {
         version: scene.version.clone(),
         working_color_space: scene.working_color_space,
+        dpi: scene.dpi,
         metadata: Metadata {
             name: format!("group:{group_id}"),
             created: None,
@@ -881,7 +884,7 @@ fn compile_expr(
         "FragCoord" => input_nodes::compile_frag_coord(node, out_port)?,
         "GeoFragcoord" => input_nodes::compile_geo_fragcoord(node, out_port)?,
         "GeoSize" => input_nodes::compile_geo_size_for_stage(node, out_port, stage)?,
-        "Index" => input_nodes::compile_index(node, out_port, ctx)?,
+        "Index" => input_nodes::compile_index(node, out_port, ctx, stage)?,
         "ResourcePool" => input_nodes::compile_resource_pool(
             scene,
             nodes_by_id,
@@ -972,6 +975,7 @@ fn compile_expr(
             compile_fn,
             stage,
         )?,
+        "Wave" => wave::compile(scene, node, out_port, ctx, cache, compile_fn)?,
 
         "Remap" => {
             remap_nodes::compile_remap(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?
@@ -1002,6 +1006,7 @@ fn compile_expr(
 
         // Material nodes
         "PBRMaterial" => pbr_material::compile(scene, node, out_port, ctx, cache, compile_fn)?,
+        "EnvMaterial" => env_material::compile(scene, node, out_port, ctx, cache, compile_fn)?,
         "GlassMaterial" => glass_material::compile_glass_material(
             scene,
             nodes_by_id,
@@ -1246,6 +1251,7 @@ pub mod test_utils {
     pub fn test_scene(nodes: Vec<Node>, connections: Vec<Connection>) -> SceneDSL {
         SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "test".to_string(),
@@ -1270,6 +1276,7 @@ pub mod test_utils {
     ) -> SceneDSL {
         SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "test".to_string(),
@@ -1345,6 +1352,7 @@ mod readability_tests {
     fn scene(nodes: Vec<Node>, connections: Vec<Connection>, groups: Vec<GroupDSL>) -> SceneDSL {
         SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "readability".to_string(),

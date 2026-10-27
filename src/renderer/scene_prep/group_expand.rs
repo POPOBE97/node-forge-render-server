@@ -288,7 +288,7 @@ pub(crate) fn expand_group_instances(scene: &mut SceneDSL) -> Result<usize> {
             let target_is_image_texture = group
                 .nodes
                 .iter()
-                .any(|node| node.id == b.to.node_id && node.node_type == "ImageTexture");
+                .any(|node| node.id == b.to.node_id && matches!(node.node_type.as_str(), "ImageTexture" | "Matcap" | "EnvMaterial"));
             if !any && b.to.port_id == "image" && target_is_image_texture {
                 // Use the first available source.
                 let src_ep = sources.first().cloned().ok_or_else(|| {
@@ -332,7 +332,7 @@ pub(crate) fn expand_group_instances(scene: &mut SceneDSL) -> Result<usize> {
                         target_new_node_id
                     );
                 };
-                if dst.node_type != "ImageTexture" {
+                if !matches!(dst.node_type.as_str(), "ImageTexture" | "Matcap" | "EnvMaterial") {
                     bail!(
                         "group '{}' inputBindings maps {} -> {}.image, but target node type is {}",
                         group_id,
@@ -342,6 +342,9 @@ pub(crate) fn expand_group_instances(scene: &mut SceneDSL) -> Result<usize> {
                     );
                 }
 
+                dst.params.remove("assetId");
+                dst.params.remove("dataUrl");
+                dst.params.remove("path");
                 copy_image_file_params_into_image_texture(dst, asset_id, data_url, path);
 
                 any = true;
@@ -357,6 +360,19 @@ pub(crate) fn expand_group_instances(scene: &mut SceneDSL) -> Result<usize> {
                         },
                     });
                 }
+            }
+
+            if !any && let Some(value) = _instance_params.get(&b.group_port_id) {
+                let instance = scene.nodes.iter().find(|node| node.id == instance_id)
+                    .ok_or_else(|| anyhow!("missing group instance {instance_id}"))?;
+                let value = crate::input_units::inline_value(instance, &b.group_port_id, value, scene.dpi)?;
+                let target = scene.nodes.iter_mut().find(|node| node.id == *target_new_node_id)
+                    .ok_or_else(|| anyhow!("missing group input target {target_new_node_id}"))?;
+                target.params.insert(b.to.port_id.clone(), value);
+                if let Some(units) = target.params.get_mut("inputUnits").and_then(serde_json::Value::as_object_mut) {
+                    units.remove(&b.to.port_id);
+                }
+                any = true;
             }
 
             if !any {
@@ -466,7 +482,7 @@ mod tests {
         }
 
         serde_json::from_value(json!({
-            "version": "6.0", "workingColorSpace": "linear-srgb",
+            "version": "6.1", "workingColorSpace": "linear-srgb", "dpi": 3.0,
             "metadata": { "name": "group expansion regression" },
             "nodes": [
                 {
@@ -578,7 +594,7 @@ mod tests {
     #[test]
     fn expanded_nodes_inherit_the_group_instance_title_label() {
         let mut scene: SceneDSL = serde_json::from_value(json!({
-            "version": "6.0", "workingColorSpace": "linear-srgb",
+            "version": "6.1", "workingColorSpace": "linear-srgb", "dpi": 3.0,
             "metadata": { "name": "group label regression" },
             "nodes": [
                 {
@@ -639,5 +655,26 @@ mod tests {
                 .and_then(|value| value.as_str()),
             Some("Beauty Pass")
         );
+    }
+    #[test]
+    fn nested_group_inline_bindings_convert_only_at_the_authoring_boundary() {
+        let mut scene = crate::dp_tests::scene(json!([
+            {"id":"outer","type":"GroupInstance","params":{"groupId":"outer-group","size":12,"inputUnits":{"size":"dp"}}},
+            {"id":"sink","type":"RenderPass"}
+        ]), json!([{"id":"use","from":{"nodeId":"outer","portId":"out"},"to":{"nodeId":"sink","portId":"geometry"}}]), 2.5);
+        scene.groups = serde_json::from_value(json!([
+            {"id":"outer-group","name":"Outer","inputs":[{"id":"size","type":"float"}],"outputs":[{"id":"out","type":"geometry"}],
+             "nodes":[{"id":"inner","type":"GroupInstance","params":{"groupId":"inner-group","size":999,"inputUnits":{"size":"dp"}}}],
+             "connections":[],"inputBindings":[{"groupPortId":"size","to":{"nodeId":"inner","portId":"size"}}],
+             "outputBindings":[{"groupPortId":"out","from":{"nodeId":"inner","portId":"out"}}]},
+            {"id":"inner-group","name":"Inner","inputs":[{"id":"size","type":"float"}],"outputs":[{"id":"out","type":"geometry"}],
+             "nodes":[{"id":"geometry","type":"Rect2DGeometry","params":{"radius":999,"inputUnits":{"radius":"dp"}}}],
+             "connections":[],"inputBindings":[{"groupPortId":"size","to":{"nodeId":"geometry","portId":"radius"}}],
+             "outputBindings":[{"groupPortId":"out","from":{"nodeId":"geometry","portId":"geometry"}}]}
+        ])).unwrap();
+        assert_eq!(expand_group_instances(&mut scene).unwrap(), 2);
+        crate::input_units::materialize_scene(&mut scene).unwrap();
+        let geometry = scene.nodes.iter().find(|node| node.node_type == "Rect2DGeometry").unwrap();
+        assert_eq!(geometry.params["radius"], json!(30.0));
     }
 }

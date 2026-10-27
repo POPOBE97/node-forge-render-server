@@ -223,7 +223,7 @@ impl ILightUpdateConfig {
                             nodes_by_id
                                 .get(conn.from.node_id.as_str())
                                 .and_then(|upstream| {
-                                    resolve_connected_vec2_source(upstream, &conn.from.port_id)
+                                    resolve_connected_vec2_source(scene, upstream, &conn.from.port_id)
                                 })
                         })
                     })
@@ -297,7 +297,7 @@ fn resolve_vec2_runtime(
                 .map(|node| (connection, *node))
         })
         .and_then(|(connection, node)| {
-            resolve_connected_vec2_source(node, &connection.from.port_id)
+            resolve_connected_vec2_source(scene, node, &connection.from.port_id)
         })
         .or_else(|| {
             nodes_by_id
@@ -429,45 +429,6 @@ fn parse_packed_colors(
         .map_err(|_| anyhow::anyhow!("colors length changed during validation"))
 }
 
-fn packed_input_value(scene: &crate::dsl::SceneDSL, node: &Node) -> serde_json::Value {
-    if let Some(value) = node.params.get("value") {
-        return value.clone();
-    }
-    let nodes_by_id = scene
-        .nodes
-        .iter()
-        .map(|candidate| (candidate.id.as_str(), candidate))
-        .collect::<std::collections::HashMap<_, _>>();
-    serde_json::Value::Array(
-        node.inputs
-            .iter()
-            .map(|input| {
-                let source = incoming_connection(scene, &node.id, &input.id)
-                    .and_then(|connection| nodes_by_id.get(connection.from.node_id.as_str()))
-                    .copied();
-                let Some(source) = source else {
-                    return serde_json::Value::Null;
-                };
-                match source.node_type.as_str() {
-                    "Vector2Input" => serde_json::json!([
-                        source.params.get("x").and_then(json_f32).unwrap_or(0.0),
-                        source.params.get("y").and_then(json_f32).unwrap_or(0.0)
-                    ]),
-                    "ColorInput" => source
-                        .params
-                        .get("value")
-                        .cloned()
-                        .unwrap_or_else(|| serde_json::json!([1.0, 0.0, 1.0, 1.0])),
-                    _ => source
-                        .params
-                        .get("value")
-                        .cloned()
-                        .unwrap_or(serde_json::Value::Null),
-                }
-            })
-            .collect(),
-    )
-}
 
 pub(crate) fn resolve_packed_pair(
     scene: &crate::dsl::SceneDSL,
@@ -529,8 +490,8 @@ pub(crate) fn resolve_packed_pair(
                 );
             }
             Ok(Some((
-                parse_packed_positions(&packed_input_value(scene, positions_node))?,
-                parse_packed_colors(&packed_input_value(scene, colors_node))?,
+                parse_packed_positions(&crate::renderer::graph_uniforms::connected_packed_input_value(scene, positions_node)?)?,
+                parse_packed_colors(&crate::renderer::graph_uniforms::connected_packed_input_value(scene, colors_node)?)?,
             )))
         }
         _ => bail!("packed mode requires both positions and colors"),
@@ -545,14 +506,12 @@ pub(crate) fn default_light_position(index: usize, target_size: [f32; 2]) -> [f3
     local_uv_to_pixel_space(source, target_size)
 }
 
-fn resolve_connected_vec2_source(node: &Node, output_port_id: &str) -> Option<[f32; 2]> {
-    if node.node_type == "Vector2Input" {
-        return Some([
-            node.params.get("x").and_then(json_f32).unwrap_or(0.0),
-            node.params.get("y").and_then(json_f32).unwrap_or(0.0),
-        ]);
+fn resolve_connected_vec2_source(scene: &crate::dsl::SceneDSL, node: &Node, output_port_id: &str) -> Option<[f32; 2]> {
+    if matches!(node.node_type.as_str(), "Vector2Input") {
+        let value = crate::dsl::numeric_declaration_value(scene, node).ok()?;
+        let values = value.as_array()?;
+        return Some([json_f32(&values[0])?, json_f32(&values[1])?]);
     }
-
     parse_vec2_from_params(&node.params, "value")
         .or_else(|| parse_vec2_from_params(&node.params, output_port_id))
 }
@@ -653,7 +612,7 @@ pub(crate) fn assemble_intelligent_light(
                 .map(|node| (connection, node))
         })
         .and_then(|(connection, node)| {
-            resolve_connected_vec2_source(node, &connection.from.port_id)
+            resolve_connected_vec2_source(scene, node, &connection.from.port_id)
         })
         .or_else(|| parse_vec2_from_params(&layer_node.params, "pointerTintPosition"))
         .unwrap_or([18.0, 18.0]);
@@ -672,7 +631,7 @@ pub(crate) fn assemble_intelligent_light(
         .and_then(|connection| {
             nodes_by_id
                 .get(&connection.from.node_id)
-                .and_then(|node| resolve_connected_vec2_source(node, &connection.from.port_id))
+                .and_then(|node| resolve_connected_vec2_source(scene, node, &connection.from.port_id))
         })
         .or_else(|| parse_vec2_from_params(&layer_node.params, "canvasSizePx"))
         .unwrap_or(DEFAULT_INTELLIGENT_LIGHT_CANVAS_SIZE);
@@ -704,7 +663,7 @@ pub(crate) fn assemble_intelligent_light(
                 nodes_by_id
                     .get(conn.from.node_id.as_str())
                     .and_then(|upstream| {
-                        resolve_connected_vec2_source(upstream, &conn.from.port_id)
+                        resolve_connected_vec2_source(scene, upstream, &conn.from.port_id)
                     })
             })
         });
@@ -1238,6 +1197,7 @@ mod tests {
 
         SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1".to_string(),
             metadata: Metadata {
                 name: "ilight".to_string(),

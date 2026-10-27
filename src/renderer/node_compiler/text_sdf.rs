@@ -39,10 +39,8 @@ where
         .entry("text_sdf".into())
         .or_insert_with(|| include_str!("templates/text_sdf.wgsl").into());
     let texture = MaterialCompileContext::tex_var_name(&node.id);
-    let distance = format!(
-        "nf_text_sdf({texture}, in.local_px.xy - ({}))",
-        position.expr
-    );
+    let sample = if port == "coverage" { "nf_text_msdf" } else { "nf_text_sdf" };
+    let distance = format!("{sample}({texture}, in.local_px.xy - ({}))", position.expr);
     let expr = if port == "coverage" {
         format!("nf_sdf_coverage({distance})")
     } else {

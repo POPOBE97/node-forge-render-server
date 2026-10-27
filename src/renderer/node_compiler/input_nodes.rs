@@ -90,7 +90,7 @@ pub fn compile_float_or_int_input(
     _out_port: Option<&str>,
     ctx: &mut MaterialCompileContext,
 ) -> Result<TypedExpr> {
-    if node.node_type == "IntInput" {
+    if matches!(node.node_type.as_str(), "IntInput") {
         let field = register_graph_field(ctx, node, GraphFieldKind::I32);
         Ok(TypedExpr::new(
             format!("f32((graph_inputs.{field}).x)"),
@@ -447,10 +447,7 @@ pub fn compile_geo_size_for_stage(
 ///
 /// For instanced geometry, this exposes the per-instance index.
 ///
-/// This must come from the vertex shader builtin `@builtin(instance_index)`.
-///
-/// Today we only need the index in the vertex shader, but we keep the plumbing flexible
-/// so it can be forwarded to fragment later if needed.
+/// Read the vertex builtin directly, or its flat varying in the fragment shader.
 ///
 /// # Output
 /// - Port `index`: Type i32
@@ -458,14 +455,20 @@ pub fn compile_index(
     _node: &Node,
     out_port: Option<&str>,
     ctx: &mut MaterialCompileContext,
+    stage: GlslShaderStage,
 ) -> Result<TypedExpr> {
     let port = out_port.unwrap_or("index");
     match port {
         "index" => {
+            let index = match stage {
+                GlslShaderStage::Vertex => "instance_index",
+                GlslShaderStage::Fragment => "in.instance_index",
+                GlslShaderStage::Compute => bail!("Index requires an instanced render pass"),
+            };
             ctx.uses_instance_index = true;
             // WGSL builtin `instance_index` is `u32`. Keep it as `u32` so MathClosure argument
             // types line up when a closure declares `int index`.
-            Ok(TypedExpr::new("instance_index", ValueType::U32))
+            Ok(TypedExpr::new(index, ValueType::U32))
         }
         other => bail!("Index: unsupported output port '{other}'"),
     }

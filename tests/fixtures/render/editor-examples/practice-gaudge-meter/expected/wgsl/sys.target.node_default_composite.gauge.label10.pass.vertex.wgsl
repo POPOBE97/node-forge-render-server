@@ -1,0 +1,360 @@
+
+struct Params {
+    target_size: vec2f,
+    geo_size: vec2f,
+    center: vec2f,
+
+    geo_translate: vec2f,
+    geo_scale: vec2f,
+
+    // Pack to 16-byte boundary.
+    time: f32,
+    _pad0: f32,
+
+    // 16-byte aligned.
+    color: vec4f,
+    camera: mat4x4f,
+    camera_position: vec4f,
+};
+
+@group(0) @binding(0)
+var<uniform> params: Params;
+
+ struct VSOut {
+     @builtin(position) position: vec4f,
+     @location(0) uv: vec2f,
+     // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
+     @location(1) frag_coord_gl: vec2f,
+     // Geometry-local pixel coordinate (GeoFragcoord): origin at bottom-left.
+     @location(2) local_px: vec3f,
+     // Geometry size in pixels after applying geometry/instance transforms.
+     @location(3) geo_size_px: vec2f,
+      @location(6) world_pos: vec3f,
+ };
+
+
+struct GraphInputs {
+    // Node: gauge.clock.seconds
+    gauge_clock_seconds: vec4f,
+    // Node: gauge.tick.count
+    gauge_tick_count: vec4i,
+};
+
+@group(0) @binding(2)
+var<uniform> graph_inputs: GraphInputs;
+
+@group(0) @binding(1)
+var<storage, read> baked_data_parse: array<vec4f>;
+@group(1) @binding(0)
+var img_tex_gauge_label10_sdf: texture_2d<f32>;
+
+@group(1) @binding(1)
+var img_samp_gauge_label10_sdf: sampler;
+
+
+// --- Extra WGSL declarations (generated) ---
+fn nf_math_closure_fragment_14f5dfc3_closure(uv: vec2<f32>, pointerColor: vec4<f32>) -> vec4<f32> {
+    var uv_1: vec2<f32>;
+    var pointerColor_1: vec4<f32>;
+    var output: vec4<f32>;
+
+    uv_1 = uv;
+    pointerColor_1 = pointerColor;
+    let _e5: vec4<f32> = pointerColor_1;
+    output = _e5;
+    let _e6: vec4<f32> = output;
+    return _e6;
+}
+
+fn nf_math_closure_fragment_647c5198_closure(uv: vec2<f32>, percent: f32, tickCount: i32) -> vec4<f32> {
+    var uv_1: vec2<f32>;
+    var percent_1: f32;
+    var tickCount_1: i32;
+    var output: vec4<f32>;
+    var nonWhiteCount: f32;
+    var redCount: f32;
+    var redStart: f32;
+    var headIndex: f32;
+    var inRed: bool;
+    var local: vec4<f32>;
+
+    uv_1 = uv;
+    percent_1 = percent;
+    tickCount_1 = tickCount;
+    let _e7: i32 = tickCount_1;
+    let _e12: i32 = tickCount_1;
+    nonWhiteCount = max(f32((_e12 - 1i)), 0f);
+    let _e21: i32 = tickCount_1;
+    let _e25: i32 = tickCount_1;
+    let _e31: i32 = tickCount_1;
+    let _e35: i32 = tickCount_1;
+    let _e41: f32 = nonWhiteCount;
+    let _e43: i32 = tickCount_1;
+    let _e47: i32 = tickCount_1;
+    let _e53: i32 = tickCount_1;
+    let _e57: i32 = tickCount_1;
+    redCount = min(_e41, max(1f, ceil((f32(_e57) * 0.15f))));
+    let _e65: f32 = nonWhiteCount;
+    let _e66: f32 = redCount;
+    redStart = (_e65 - _e66);
+    let _e72: f32 = percent_1;
+    let _e78: f32 = nonWhiteCount;
+    let _e83: f32 = percent_1;
+    let _e89: f32 = nonWhiteCount;
+    headIndex = floor(((clamp(_e83, 0f, 100f) / 100f) * _e89));
+    let _e93: f32 = headIndex;
+    let _e94: f32 = redStart;
+    inRed = (_e93 >= _e94);
+    let _e97: bool = inRed;
+    if _e97 {
+        local = vec4<f32>(1f, 0f, 0f, 1f);
+    } else {
+        local = vec4<f32>(0f, 1f, 1f, 1f);
+    }
+    let _e109: vec4<f32> = local;
+    output = _e109;
+    let _e110: vec4<f32> = output;
+    return _e110;
+}
+
+fn nf_math_closure_fragment_closure(uv: vec2<f32>, accent: vec4<f32>) -> vec4<f32> {
+    var uv_1: vec2<f32>;
+    var accent_1: vec4<f32>;
+    var output: vec4<f32>;
+
+    uv_1 = uv;
+    accent_1 = accent;
+    let _e5: vec4<f32> = accent_1;
+    let _e8: vec3<f32> = (_e5.xyz * 0.22f);
+    output = vec4<f32>(_e8.x, _e8.y, _e8.z, 1f);
+    let _e14: vec4<f32> = output;
+    return _e14;
+}
+
+fn nf_math_closure_fragment_de5960c1_closure(uv: vec2<f32>, accent: vec4<f32>) -> vec4<f32> {
+    var uv_1: vec2<f32>;
+    var accent_1: vec4<f32>;
+    var output: vec4<f32>;
+
+    uv_1 = uv;
+    accent_1 = accent;
+    let _e5: vec4<f32> = accent_1;
+    let _e8: vec3<f32> = (_e5.xyz * 0.18f);
+    output = vec4<f32>(_e8.x, _e8.y, _e8.z, 1f);
+    let _e14: vec4<f32> = output;
+    return _e14;
+}
+
+fn nf_pbr_unit(v: vec3f) -> vec3f {
+    return select(vec3f(0.0, 0.0, 1.0), v * inverseSqrt(max(dot(v, v), 1e-12)), dot(v, v) > 1e-12);
+}
+fn nf_pbr(world: vec3f, local: vec2f, base: vec4f, metallic_in: f32,
+    roughness_in: f32, local_normal: vec3f, normal_strength: f32, emission: vec4f,
+    alpha: f32, light_direction: vec3f, light_color: vec4f, intensity: f32,
+    ambient: vec4f, view_direction: vec3f) -> vec4f {
+    // Derivative frame follows each instance's rotation, scale and reflection.
+    let qx = dpdx(world); let qy = dpdy(world);
+    let sx = dpdx(local); let sy = dpdy(local);
+    let det = sx.x * sy.y - sx.y * sy.x;
+    let safe_det = select(-max(abs(det), 1e-8), max(abs(det), 1e-8), det >= 0.0);
+    let tangent = (qx * sy.y - qy * sx.y) / safe_det;
+    let bitangent = (qy * sx.x - qx * sy.x) / safe_det;
+    let geometric = nf_pbr_unit(cross(tangent, bitangent));
+    // Inverse-transpose of the local frame, so a local SDF normal stays local.
+    let n = nf_pbr_unit(cross(bitangent, geometric) * local_normal.x * normal_strength
+        + cross(geometric, tangent) * local_normal.y * normal_strength
+        + cross(tangent, bitangent) * local_normal.z);
+    let l = nf_pbr_unit(light_direction);
+    let v = nf_pbr_unit(view_direction);
+    let h = nf_pbr_unit(l + v);
+    let nl = max(dot(n, l), 0.0);
+    let nv = max(dot(n, v), 0.0001);
+    let nh = max(dot(n, h), 0.0);
+    let vh = max(dot(v, h), 0.0);
+    let metallic = clamp(metallic_in, 0.0, 1.0);
+    let roughness = clamp(roughness_in, 0.045, 1.0);
+    let color = max(base.rgb / max(base.a, 1e-8), vec3f(0.0));
+    let f0 = mix(vec3f(0.04), color, metallic);
+    let fresnel = f0 + (1.0 - f0) * pow(1.0 - vh, 5.0);
+    let a2 = pow(roughness, 4.0);
+    let denom = nh * nh * (a2 - 1.0) + 1.0;
+    let distribution = a2 / max(3.14159265 * denom * denom, 1e-8);
+    let visibility = 0.5 / max(nl * sqrt(nv * nv * (1.0 - a2) + a2)
+        + nv * sqrt(nl * nl * (1.0 - a2) + a2), 1e-6);
+    let diffuse = (1.0 - fresnel) * (1.0 - metallic) * color / 3.14159265;
+    let specular = distribution * visibility * fresnel;
+    let radiance = light_color.rgb * max(intensity, 0.0);
+    let lit = (diffuse + specular) * radiance * nl
+        + ambient.rgb * color * (1.0 - metallic) + emission.rgb;
+    let coverage = clamp(alpha * base.a, 0.0, 1.0);
+    return vec4f(lit * coverage, coverage);
+}
+
+
+// ---- 2D SDF bevel helpers (generated) ----
+// 2D SDF bevel helper template.
+//
+// This file is the editable WGSL source for Sdf2DBevel curve helper functions.
+// The Rust compiler wires node inputs into calls to these helpers.
+
+fn sdf2d_bevel_smooth5_map(t_in: f32) -> f32 {
+    // Evaluate the symmetric polynomial in the nearer endpoint's coordinate.
+    // Expanded terms near t=1 lose precision before finite-difference normals.
+    let t = clamp(0.5 + t_in * 0.5, 0.0, 1.0);
+    let q = min(t, 1.0 - t);
+    let polynomial = q * q * q * (10.0 + q * (-15.0 + 6.0 * q));
+    return select(2.0 * polynomial - 1.0, 1.0 - 2.0 * polynomial, t >= 0.5);
+}
+
+fn sdf2d_bevel_smooth5(d_in: f32, edge: f32, cliff: f32) -> f32 {
+    var d = d_in;
+    if (d < -edge) {
+        d = -edge;
+    } else if (d < 0.0) {
+        var x = -d / edge;
+        if (x >= 0.85) {
+            x = 1.0;
+        } else {
+            x = clamp(x, 0.0, 1.0);
+            x = sdf2d_bevel_smooth5_map(pow(x, 0.5));
+            x = 1.0 - pow(1.0 - x, cliff);
+        }
+        d = -x * edge;
+    }
+    return d;
+}
+
+fn sdf2d_bevel_smooth7_map(t_in: f32) -> f32 {
+    let t = clamp(0.5 + t_in * 0.5, 0.0, 1.0);
+    let q = min(t, 1.0 - t);
+    let q2 = q * q;
+    let polynomial = q2 * q2 * (35.0 + q * (-84.0 + q * (70.0 - 20.0 * q)));
+    return select(2.0 * polynomial - 1.0, 1.0 - 2.0 * polynomial, t >= 0.5);
+}
+
+fn sdf2d_bevel_smooth7(d_in: f32, edge: f32, cliff: f32) -> f32 {
+    var d = d_in;
+    if (d < -edge) {
+        d = -edge;
+    } else if (d < 0.0) {
+        var x = -d / edge;
+        if (x >= 0.85) {
+            x = 1.0;
+        } else {
+            x = clamp(x, 0.0, 1.0);
+            x = sdf2d_bevel_smooth7_map(pow(x, 0.5));
+            x = 1.0 - pow(1.0 - x, cliff);
+        }
+        d = -x * edge;
+    }
+    return d;
+}
+
+fn sdf2d_bevel_eps() -> f32 {
+    return 0.002;
+}
+
+fn sdf2d_bevel_normal(depth_px: f32, depth_nx: f32, depth_py: f32, depth_ny: f32, eps: f32) -> vec3f {
+    let safe_eps = max(abs(eps), 1e-6);
+    let dx = (depth_px - depth_nx) / (2.0 * safe_eps);
+    let dy = (depth_py - depth_ny) / (2.0 * safe_eps);
+    return normalize(vec3f(-dx, -dy, 1.0));
+}
+
+// Note: normal reconstruction uses 4 extra evaluations (finite differences).
+// Potential optimization: use `dpdx`/`dpdy` in WGSL to estimate derivatives with fewer calls.
+
+// Private atlas rows are top-down. Public positions and distances remain LocalPx/Y-up.
+// Header + instance records are separate from the four distance channels in each tile.
+fn nf_text_record(atlas: texture_2d<f32>, index: u32) -> vec4f {
+    let width = textureDimensions(atlas).x;
+    return textureLoad(atlas, vec2i(i32(index % width), i32(index / width)), 0);
+}
+
+fn nf_text_distances(atlas: texture_2d<f32>, local_px: vec2f) -> vec2f {
+    let header = nf_text_record(atlas, 0u);
+    let position = clamp(local_px, vec2f(0.0), header.yz);
+    var distances = vec2f(1e20);
+    for (var i = 0u; i < u32(header.x); i += 1u) {
+        let plane = nf_text_record(atlas, 1u + 2u * i);
+        let outside_box = length(max(max(plane.xy - position, position - plane.zw), vec2f(0.0)));
+        if (outside_box > 0.0 && outside_box > max(max(distances.x, distances.y), 0.0)) {
+            continue;
+        }
+        let tile = nf_text_record(atlas, 2u + 2u * i);
+        let scale = (plane.z - plane.x) / tile.z;
+        let raster = vec2f(position.x - plane.x, plane.w - position.y) / scale - 0.5;
+        let bounded = clamp(raster, vec2f(0.0), tile.zw - 1.0);
+        let lo = vec2i(floor(bounded));
+        let hi = min(lo + 1, vec2i(tile.zw) - 1);
+        let origin = vec2i(tile.xy);
+        let t = fract(bounded);
+        let a = mix(textureLoad(atlas, origin + lo, 0), textureLoad(atlas, origin + vec2i(hi.x, lo.y), 0), t.x);
+        let b = mix(textureLoad(atlas, origin + vec2i(lo.x, hi.y), 0), textureLoad(atlas, origin + hi, 0), t.x);
+        let value = mix(a, b, t.y) * scale;
+        let median = max(min(value.r, value.g), min(max(value.r, value.g), value.b));
+        var glyph = vec2f(value.a, median);
+        let outside = length(raster - bounded) * scale;
+        if (outside > 0.0) {
+            glyph = max(glyph, vec2f(0.0)) + outside;
+        }
+        distances = min(distances, glyph);
+    }
+    let outside_layout = length(local_px - position);
+    if (outside_layout > 0.0) {
+        distances = max(distances, vec2f(0.0)) + outside_layout;
+    }
+    // The atlas includes complete outlines; intersect with the authored layout frame.
+    // This also gives a continuous distance at a frame edge that cuts through ink.
+    let box_delta = abs(local_px - header.yz * 0.5) - header.yz * 0.5;
+    let clip_distance = length(max(box_delta, vec2f(0.0))) + min(max(box_delta.x, box_delta.y), 0.0);
+    return max(distances, vec2f(clip_distance));
+}
+
+fn nf_text_sdf(atlas: texture_2d<f32>, local_px: vec2f) -> f32 {
+    return nf_text_distances(atlas, local_px).x;
+}
+
+fn nf_text_msdf(atlas: texture_2d<f32>, local_px: vec2f) -> f32 {
+    return nf_text_distances(atlas, local_px).y;
+}
+
+fn nf_sdf_coverage(distance: f32) -> f32 {
+    let aa = max(fwidth(distance), 0.0001);
+    return clamp(0.5 - distance / aa, 0.0, 1.0);
+}
+
+
+ @vertex
+ fn vs_main(
+     @location(0) position: vec3f,
+     @location(1) uv: vec2f,
+ ) -> VSOut {
+ var out: VSOut;
+
+ let _unused_geo_size = params.geo_size;
+ let _unused_geo_translate = params.geo_translate;
+ let _unused_geo_scale = params.geo_scale;
+
+ // UV passed as vertex attribute.
+ out.uv = vec2f(uv.x, 1.0 - uv.y);
+
+ out.geo_size_px = params.geo_size;
+ // Geometry-local pixel coordinate (GeoFragcoord).
+ out.local_px = vec3f(uv * out.geo_size_px, 0.0);
+
+ var p_local = position;
+
+ // Geometry vertices are in local pixel units centered at (0,0).
+ // Convert to target pixel coordinates with bottom-left origin.
+ out.local_px = vec3f(out.local_px.xy, p_local.z);
+ let p_px = params.center + p_local.xy;
+
+ out.position = params.camera * vec4f(p_px, p_local.z, 1.0);
+
+ out.world_pos = vec3f(p_px, p_local.z);
+
+ // Pixel-centered like GLSL gl_FragCoord.xy.
+ out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
+ return out;
+ }

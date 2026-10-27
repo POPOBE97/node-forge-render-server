@@ -860,6 +860,14 @@ pub struct GraphPort {
 pub enum GraphInnerNodeType {
     #[serde(rename = "FloatInput")]
     FloatInput,
+    #[serde(rename = "IntInput")]
+    IntInput,
+    #[serde(rename = "Vector2Input")]
+    Vector2Input,
+    #[serde(rename = "Vector3Input")]
+    Vector3Input,
+    #[serde(rename = "Vector4Input")]
+    Vector4Input,
     #[serde(rename = "MutationFunction")]
     MutationFunction,
     #[serde(rename = "DerivationFunction")]

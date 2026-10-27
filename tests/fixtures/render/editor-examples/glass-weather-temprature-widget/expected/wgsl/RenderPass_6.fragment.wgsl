@@ -29,7 +29,8 @@ var<uniform> params: Params;
      @location(2) local_px: vec3f,
      // Geometry size in pixels after applying geometry/instance transforms.
      @location(3) geo_size_px: vec2f,
-  };
+     @location(4) @interpolate(flat) instance_index: u32,
+ };
 
 
 struct GraphInputs {
@@ -45,12 +46,26 @@ struct GraphInputs {
     node_FloatInput_89_1faae820: vec4f,
     // Node: Vector2Input_119
     node_Vector2Input_119_4e6d6989: vec4f,
-    // Node: Vector2Input_120
-    node_Vector2Input_120_72a16b89: vec4f,
     // Node: Vector3Input_105
     node_Vector3Input_105_12e9923b: vec4f,
     // Node: Vector3Input_80
     node_Vector3Input_80_82af6f66: vec4f,
+    // Node: dp.Sdf2DBevel_61.width
+    node_dp_Sdf2DBevel_61_width_5ca037c2: vec4f,
+    // Node: dp.Sdf2D_106.radius
+    node_dp_Sdf2D_106_radius_60a95d0c: vec4f,
+    // Node: dp.metric.MathClosure_115.falloffPx
+    node_dp_metric_MathClosure_115_falloffPx_3eb1865f: vec4f,
+    // Node: dp.metric.MathClosure_115.radiusPx
+    node_dp_metric_MathClosure_115_radiusPx_f64ebaba: vec4f,
+    // Node: dp.metric.Remap_112.edge1
+    node_dp_metric_Remap_112_edge1_ebceb5e2: vec4f,
+    // Node: dp.metric.Remap_113.edge0
+    node_dp_metric_Remap_113_edge0_7b11e137: vec4f,
+    // Node: dp.metric.Remap_113.edge1
+    node_dp_metric_Remap_113_edge1_c80fe137: vec4f,
+    // Node: dp.metric.Remap_64.edge1
+    node_dp_metric_Remap_64_edge1_9f67a4c6: vec4f,
 };
 
 @group(0) @binding(2)
@@ -409,26 +424,33 @@ fn nf_math_closure_fragment_d78208e0_closure(uv: vec2<f32>, xy: vec2<f32>, size:
     return _e10;
 }
 
-fn nf_math_closure_fragment_e6b4d787_closure(uv: vec2<f32>, sdf: f32) -> f32 {
+fn nf_math_closure_fragment_e6b4d787_closure(uv: vec2<f32>, sdf: f32, radiusPx: f32, falloffPx: f32) -> f32 {
     var uv_1: vec2<f32>;
     var sdf_1: f32;
+    var radiusPx_1: f32;
+    var falloffPx_1: f32;
     var output: f32;
     var r: f32;
 
     uv_1 = uv;
     sdf_1 = sdf;
-    let _e5: f32 = sdf_1;
+    radiusPx_1 = radiusPx;
+    falloffPx_1 = falloffPx;
     let _e9: f32 = sdf_1;
-    r = max((_e9 + 22f), 0f);
-    let _e15: f32 = r;
-    r = (_e15 / 42f);
-    let _e18: f32 = r;
-    let _e20: f32 = r;
+    let _e10: f32 = radiusPx_1;
+    let _e13: f32 = sdf_1;
+    let _e14: f32 = radiusPx_1;
+    r = max((_e13 + _e14), 0f);
+    let _e19: f32 = r;
+    let _e20: f32 = falloffPx_1;
+    r = (_e19 / _e20);
     let _e22: f32 = r;
     let _e24: f32 = r;
-    output = f32(exp((-(_e22) * _e24)));
-    let _e28: f32 = output;
-    return _e28;
+    let _e26: f32 = r;
+    let _e28: f32 = r;
+    output = f32(exp((-(_e26) * _e28)));
+    let _e32: f32 = output;
+    return _e32;
 }
 
 fn nf_math_closure_fragment_f48ad587_closure(uv: vec2<f32>, t: f32, size: vec2<f32>) -> vec2<f32> {
@@ -615,10 +637,26 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         (in.geo_size_px * 0.5),
         vec4f((graph_inputs.node_FloatInput_12_af780221).x),
     );
-    let _2d_sdf_bevel_normal_depth_px = sdf2d_bevel_smooth5(_2d_sdf_bevel_normal_sdf_px, 24, 0.03);
-    let _2d_sdf_bevel_normal_depth_nx = sdf2d_bevel_smooth5(_2d_sdf_bevel_normal_sdf_nx, 24, 0.03);
-    let _2d_sdf_bevel_normal_depth_py = sdf2d_bevel_smooth5(_2d_sdf_bevel_normal_sdf_py, 24, 0.03);
-    let _2d_sdf_bevel_normal_depth_ny = sdf2d_bevel_smooth5(_2d_sdf_bevel_normal_sdf_ny, 24, 0.03);
+    let _2d_sdf_bevel_normal_depth_px = sdf2d_bevel_smooth5(
+        _2d_sdf_bevel_normal_sdf_px,
+        (graph_inputs.node_dp_Sdf2DBevel_61_width_5ca037c2).x,
+        0.03,
+    );
+    let _2d_sdf_bevel_normal_depth_nx = sdf2d_bevel_smooth5(
+        _2d_sdf_bevel_normal_sdf_nx,
+        (graph_inputs.node_dp_Sdf2DBevel_61_width_5ca037c2).x,
+        0.03,
+    );
+    let _2d_sdf_bevel_normal_depth_py = sdf2d_bevel_smooth5(
+        _2d_sdf_bevel_normal_sdf_py,
+        (graph_inputs.node_dp_Sdf2DBevel_61_width_5ca037c2).x,
+        0.03,
+    );
+    let _2d_sdf_bevel_normal_depth_ny = sdf2d_bevel_smooth5(
+        _2d_sdf_bevel_normal_sdf_ny,
+        (graph_inputs.node_dp_Sdf2DBevel_61_width_5ca037c2).x,
+        0.03,
+    );
     let _2d_sdf_bevel_normal_normal = sdf2d_bevel_normal(
         _2d_sdf_bevel_normal_depth_px,
         _2d_sdf_bevel_normal_depth_nx,
@@ -632,7 +670,11 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         (in.geo_size_px * 0.5),
         vec4f((graph_inputs.node_FloatInput_12_af780221).x),
     );
-    let _2d_sdf_bevel_depth_depth = sdf2d_bevel_smooth5(_2d_sdf_bevel_depth_sdf_depth, 24, 0.03);
+    let _2d_sdf_bevel_depth_depth = sdf2d_bevel_smooth5(
+        _2d_sdf_bevel_depth_sdf_depth,
+        (graph_inputs.node_dp_Sdf2DBevel_61_width_5ca037c2).x,
+        0.03,
+    );
     let math_closure_out = nf_math_closure_fragment_3da3ebdf_closure(vec2f(in.uv.x, 1.0 - in.uv.y), _2d_sdf_bevel_normal_normal, (graph_inputs.node_Vector3Input_80_82af6f66).xyz, in.local_px.xy, in.geo_size_px, (graph_inputs.node_FloatInput_84_38afe820).x, _2d_sdf_bevel_depth_depth);
     let math_closure_out_06d723e8 = nf_math_closure_fragment_ad9a0be0_closure(vec2f(in.uv.x, 1.0 - in.uv.y), math_closure_out, (graph_inputs.node_FloatInput_89_1faae820).x);
     let math_closure_out_0f230665 = nf_math_closure_fragment_825b1180_closure(vec2f(in.uv.x, 1.0 - in.uv.y), math_closure_out_06d723e8);
@@ -646,10 +688,16 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     // Remap Remap_64.result
     let remap_e6d14104 = smoothstep(
         0.0,
-        -2.0,
+        (graph_inputs.node_dp_metric_Remap_64_edge1_9f67a4c6).x,
         sdf2d_round_rect((in.local_px.xy - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)),
     );
     let math_closure_out_cd229d18 = nf_math_closure_fragment_f48ad587_closure(vec2f(in.uv.x, 1.0 - in.uv.y), (graph_inputs.node_FloatInput_107_c6ed3817).x, in.geo_size_px);
+    // Remap Remap_112.result
+    let remap_2c8313ab = smoothstep(
+        0.0,
+        (graph_inputs.node_dp_metric_Remap_112_edge1_ebceb5e2).x,
+        (length((in.local_px.xy - math_closure_out_cd229d18)) - (graph_inputs.node_dp_Sdf2D_106_radius_60a95d0c).x),
+    );
     let math_closure_out_cc07c6f7 = nf_math_closure_fragment_d78208e0_closure(vec2f(in.uv.x, 1.0 - in.uv.y), in.local_px.xy, in.geo_size_px);
     // ImageTexture ImageTexture_76 aspect-correct uv
     let image_texture_uv = aspect_correct_uv_fill(
@@ -659,10 +707,16 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     );
     // ImageTexture ImageTexture_76.color
     let image_texture_sample = textureSample(img_tex_ImageTexture_76, img_samp_ImageTexture_76, image_texture_uv);
-    let math_closure_out_0fbf5877 = nf_math_closure_fragment_b2bbd787_closure(vec2f(in.uv.x, 1.0 - in.uv.y), smoothstep(0.0, 1.0, (length((in.local_px.xy - math_closure_out_cd229d18)) - 16.5)), image_texture_sample, smoothstep(-7.0, -8.0, (length((in.local_px.xy - math_closure_out_cd229d18)) - 16.5)));
+    // Remap Remap_113.result
+    let remap_07f1a033 = smoothstep(
+        (graph_inputs.node_dp_metric_Remap_113_edge0_7b11e137).x,
+        (graph_inputs.node_dp_metric_Remap_113_edge1_c80fe137).x,
+        (length((in.local_px.xy - math_closure_out_cd229d18)) - (graph_inputs.node_dp_Sdf2D_106_radius_60a95d0c).x),
+    );
+    let math_closure_out_0fbf5877 = nf_math_closure_fragment_b2bbd787_closure(vec2f(in.uv.x, 1.0 - in.uv.y), remap_2c8313ab, image_texture_sample, remap_07f1a033);
     let math_closure_out_ee444196 = nf_math_closure_fragment_7582d587_closure(vec2f(in.uv.x, 1.0 - in.uv.y), math_closure_out_0fbf5877);
     let math_closure_out_41c8c44a = nf_math_closure_fragment_9076d587_closure(vec2f(in.uv.x, 1.0 - in.uv.y), _2d_sdf_bevel_normal_normal, (graph_inputs.node_Vector3Input_105_12e9923b).xyz);
-    let math_closure_out_0b19efb9 = nf_math_closure_fragment_e6b4d787_closure(vec2f(in.uv.x, 1.0 - in.uv.y), (length((in.local_px.xy - math_closure_out_cd229d18)) - 16.5));
+    let math_closure_out_0b19efb9 = nf_math_closure_fragment_e6b4d787_closure(vec2f(in.uv.x, 1.0 - in.uv.y), (length((in.local_px.xy - math_closure_out_cd229d18)) - (graph_inputs.node_dp_Sdf2D_106_radius_60a95d0c).x), (graph_inputs.node_dp_metric_MathClosure_115_radiusPx_f64ebaba).x, (graph_inputs.node_dp_metric_MathClosure_115_falloffPx_3eb1865f).x);
     let math_closure_out_eb50f968 = nf_math_closure_fragment_closure(vec2f(in.uv.x, 1.0 - in.uv.y), math_closure_out_11f9f3c0, remap_e6d14104, math_closure_out_ee444196, remap, math_closure_out_41c8c44a, math_closure_out_0b19efb9);
     // Final composite
     let _frag_out = math_closure_out_eb50f968;

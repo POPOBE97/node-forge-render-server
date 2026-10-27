@@ -116,6 +116,8 @@ pub struct SceneDSL {
     pub version: String,
     #[serde(rename = "workingColorSpace")]
     pub working_color_space: crate::color::WorkingColorSpace,
+    #[serde(deserialize_with = "deserialize_dpi")]
+    pub dpi: f64,
     pub metadata: Metadata,
     pub nodes: Vec<Node>,
     pub connections: Vec<Connection>,
@@ -134,14 +136,23 @@ pub struct SceneDSL {
     pub debug_artifacts: Option<DebugArtifacts>,
 }
 
+fn deserialize_dpi<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where D: serde::Deserializer<'de> {
+    let dpi = f64::deserialize(deserializer)?;
+    if !dpi.is_finite() || dpi <= 0.0 {
+        return Err(serde::de::Error::custom("dpi must be finite and positive"));
+    }
+    Ok(dpi)
+}
+
 fn deserialize_scene_version<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     let version = String::deserialize(deserializer)?;
-    if version != "6.0" {
+    if version != "6.1" {
         return Err(serde::de::Error::custom(format!(
-            "unsupported SceneDSL version '{version}' (expected 6.0)"
+            "unsupported SceneDSL version '{version}' (expected 6.1)"
         )));
     }
     Ok(version)
@@ -215,6 +226,7 @@ pub fn treeshake_unlinked_nodes(scene: &SceneDSL) -> SceneDSL {
     SceneDSL {
         version: scene.version.clone(),
         working_color_space: scene.working_color_space,
+        dpi: scene.dpi,
         metadata: scene.metadata.clone(),
         nodes,
         connections: scene.connections.clone(),
@@ -678,46 +690,18 @@ pub fn parse_texture_format(params: &HashMap<String, serde_json::Value>) -> Resu
 }
 
 pub fn screen_resolution(scene: &SceneDSL) -> Option<[u32; 2]> {
-    let nodes_by_id: HashMap<String, Node> = scene
-        .nodes
-        .iter()
-        .cloned()
-        .map(|n| (n.id.clone(), n))
-        .collect();
-
-    let screen = scene.nodes.iter().find(|n| n.node_type == "Screen")?;
-
-    // Prefer graph-driven values (incoming connections), fallback to inline params.
-    let w = resolve_input_u32(scene, &nodes_by_id, &screen.id, "width")
-        .ok()
-        .flatten()
-        .or_else(|| parse_u32(&screen.params, "width"))
-        .or_else(|| {
-            parse_f32(&screen.params, "width").and_then(|v| {
-                if v.is_finite() {
-                    Some(v.max(0.0).floor() as u32)
-                } else {
-                    None
-                }
-            })
-        })?;
-    let h = resolve_input_u32(scene, &nodes_by_id, &screen.id, "height")
-        .ok()
-        .flatten()
-        .or_else(|| parse_u32(&screen.params, "height"))
-        .or_else(|| {
-            parse_f32(&screen.params, "height").and_then(|v| {
-                if v.is_finite() {
-                    Some(v.max(0.0).floor() as u32)
-                } else {
-                    None
-                }
-            })
-        })?;
-    if w == 0 || h == 0 {
-        return None;
+    let prepared = crate::renderer::scene_prep::prepare_scene(scene).ok()?;
+    if prepared.output_target_node_id.is_some() {
+        return Some(prepared.resolution);
     }
-    Some([w, h])
+    // A processing output owns its extent too. Use the same CPU render planner
+    // as presentation instead of exposing the geometry planning default.
+    use crate::renderer::render_plan::{planner::RenderPlanner, types::PlanBuildOptions};
+    RenderPlanner::new(PlanBuildOptions {
+        gpu_caps: Default::default(),
+        presentation_mode: Default::default(),
+        debug_dump_wgsl_dir: None,
+    }).plan(scene, None, None).ok().map(|plan| plan.resolution)
 }
 
 pub fn screen_color_space(scene: &SceneDSL) -> anyhow::Result<crate::color::WorkingColorSpace> {
@@ -777,6 +761,101 @@ fn f64_to_u32_floor(v: f64) -> Option<u32> {
 ///
 /// This is intentionally minimal: it only implements the node subset needed for
 /// CPU-side parameter resolution (e.g. RenderTexture.width/height).
+pub fn dp_to_px(value: f64, dpi: f64, integer: bool) -> Result<f64> {
+    if !dpi.is_finite() || dpi <= 0.0 || !value.is_finite() {
+        bail!("DP conversion requires a finite input and positive finite dpi");
+    }
+    if integer && (value.fract() != 0.0 || value < i32::MIN as f64 || value > i32::MAX as f64) {
+        bail!("Int DP input must be a signed 32-bit integer");
+    }
+    let value = value * dpi;
+    // Rust round is ties-away-from-zero; GPU inputs receive this already evaluated value.
+    let value = if integer { value.round() } else { value };
+    if !value.is_finite() || value.abs() > f32::MAX as f64
+        || (integer && (value < i32::MIN as f64 || value > i32::MAX as f64)) {
+        bail!("DP result is outside the output type's range");
+    }
+    Ok(value)
+}
+
+/// Read one numeric declaration component as an output (px for DP declarations).
+pub fn numeric_input_output_component(
+    scene: &SceneDSL, nodes: &HashMap<String, Node>, node: &Node, component: &str,
+) -> Result<f64> {
+    let value = resolve_input_f64(scene, nodes, &node.id, component)?.unwrap_or(0.0);
+    Ok(value)
+}
+
+/// Numeric declaration output used by packed values and CPU consumers.
+pub fn numeric_declaration_value(scene: &SceneDSL, node: &Node) -> Result<serde_json::Value> {
+    let nodes = scene.nodes.iter().cloned().map(|n| (n.id.clone(), n)).collect();
+    let keys: &[&str] = match node.node_type.as_str() {
+        "Vector2Input" => &["x", "y"],
+        "Vector3Input" => &["x", "y", "z"],
+        "Vector4Input" => &["x", "y", "z", "w"],
+        "FloatInput" | "IntInput" => &["value"],
+        _ => return Ok(node.params.get("value").cloned().unwrap_or(serde_json::Value::Null)),
+    };
+    let values = keys.iter().map(|key| numeric_input_output_component(scene, &nodes, node, key)).collect::<Result<Vec<_>>>()?;
+    if keys.len() == 1 { Ok(serde_json::json!(values[0])) } else { Ok(serde_json::json!(values)) }
+}
+
+/// Shared CPU vector resolution. Connections take precedence over inline values.
+pub fn resolve_input_vec2(scene: &SceneDSL, nodes: &HashMap<String, Node>, node: &Node, port: &str) -> Result<Option<[f64; 2]>> {
+    let computed;
+    let value = if let Some(edge) = incoming_connection(scene, &node.id, port) {
+        let source = find_node(nodes, &edge.from.node_id)?;
+        match source.node_type.as_str() {
+            "Vector2Input" if edge.from.port_id == "vector" => return Ok(Some([
+                numeric_input_output_component(scene, nodes, source, "x")?,
+                numeric_input_output_component(scene, nodes, source, "y")?,
+            ])),
+            "DataParse" => {
+                computed = evaluate_data_parse(scene, nodes, source, 0,
+                    &mut crate::renderer::scene_prep::data_parse_runtime::TsRuntime::new())?;
+                data_parse_output(source, &computed, &edge.from.port_id)?
+            }
+            _ => bail!("{}.{} requires a CPU vector, got {}.{}", node.id, port, source.node_type, edge.from.port_id),
+        }
+    } else {
+        let Some(value) = node.params.get(port) else { return Ok(None); };
+        computed = crate::input_units::inline_value(node, port, value, scene.dpi)?;
+        &computed
+    };
+    let xy = if let Some(array) = value.as_array() {
+        if array.len() != 2 { bail!("{}.{} requires exactly two components", node.id, port); }
+        [array[0].as_f64(), array[1].as_f64()]
+    } else { [value.get("x").and_then(|v| v.as_f64()), value.get("y").and_then(|v| v.as_f64())] };
+    let [Some(x), Some(y)] = xy else { bail!("{}.{} requires [x,y] or {{x,y}}", node.id, port); };
+    if !x.is_finite() || !y.is_finite() { bail!("{}.{} must be finite", node.id, port); }
+    Ok(Some([x, y]))
+}
+
+pub fn physical_texture_dimension(value: f64) -> Result<u32> {
+    let rounded = value.round();
+    if !value.is_finite() || value <= 0.0 || rounded < 1.0 || rounded > u32::MAX as f64 {
+        bail!("texture dimension must round to a positive unsigned 32-bit integer, got {value}");
+    }
+    Ok(rounded as u32)
+}
+
+pub fn processing_target_size(scene: &SceneDSL, nodes: &HashMap<String, Node>, node: &Node) -> Result<[u32; 2]> {
+    let [x, y] = resolve_input_vec2(scene, nodes, node, "targetSize")?
+        .with_context(|| format!("missing {}.targetSize", node.id))?;
+    Ok([physical_texture_dimension(x)?, physical_texture_dimension(y)?])
+}
+
+/// Resolve a texture's authored size, then convert exactly once at allocation boundary.
+pub fn render_texture_size(scene: &SceneDSL, nodes: &HashMap<String, Node>, node: &Node) -> Result<[u32; 2]> {
+    let mut size = [0; 2];
+    for (index, port) in ["width", "height"].iter().enumerate() {
+        let value = resolve_input_f64(scene, nodes, &node.id, port)?.unwrap_or(1080.0);
+        size[index] = physical_texture_dimension(value)
+            .with_context(|| format!("invalid RenderTexture {}.{}", node.id, port))?;
+    }
+    Ok(size)
+}
+
 pub fn resolve_input_f64(
     scene: &SceneDSL,
     nodes_by_id: &HashMap<String, Node>,
@@ -898,6 +977,25 @@ fn evaluate_data_parse_inner(
                 }
             }
             Some(source) if source.port_id == "index" => serde_json::json!(index),
+            Some(source) if source.port_id == "vector" && nodes_by_id.get(&source.node_id)
+                .is_some_and(|node| matches!(node.node_type.as_str(), "Vector2Input" | "Vector3Input" | "Vector4Input")) => {
+                let node = find_node(nodes_by_id, &source.node_id)?;
+                let keys: &[&str] = match node.node_type.as_str() {
+                    "Vector2Input" => &["x", "y"],
+                    "Vector3Input" => &["x", "y", "z"],
+                    _ => &["x", "y", "z", "w"],
+                };
+                let values = keys.iter().map(|component| {
+                    let value = resolve_input_f64_inner(scene, nodes_by_id, &node.id, component, cache, visiting)?.unwrap_or(0.0);
+                    Ok(value)
+                }).collect::<Result<Vec<_>>>()?;
+                serde_json::json!(values)
+            }
+            Some(source) if nodes_by_id.get(&source.node_id).is_some_and(|node| node.node_type == "DataParse") => {
+                let source_node = find_node(nodes_by_id, &source.node_id)?;
+                let output = evaluate_data_parse_inner(scene, nodes_by_id, source_node, index, runtime, cache, visiting)?;
+                data_parse_output(source_node, &output, &source.port_id)?.clone()
+            }
             Some(source) => {
                 let value = resolve_output_f64_inner(
                     scene, nodes_by_id, &source.node_id, &source.port_id, cache, visiting,
@@ -908,7 +1006,7 @@ fn evaluate_data_parse_inner(
                     serde_json::json!(value)
                 }
             }
-            None => node.params.get(&b.port_id).cloned().unwrap_or(serde_json::Value::Null),
+            None => crate::input_units::inline_value(node, &b.port_id, node.params.get(&b.port_id).unwrap_or(&serde_json::Value::Null), scene.dpi)?,
         };
 
         let json = serde_json::to_string(&val)?;
@@ -970,7 +1068,7 @@ fn resolve_input_f64_inner(
 
     let node = find_node(nodes_by_id, node_id)?;
     if let Some(v) = parse_f64(&node.params, port_id) {
-        return Ok(Some(v));
+        return Ok(crate::input_units::inline_value(node, port_id, &serde_json::json!(v), scene.dpi)?.as_f64());
     }
 
     let fallback = schema::load_default_scheme()
@@ -983,7 +1081,7 @@ fn resolve_input_f64_inner(
                 .or_else(|| v.as_i64().map(|x| x as f64))
                 .or_else(|| v.as_u64().map(|x| x as f64))
         });
-    Ok(fallback)
+    fallback.map(|value| crate::input_units::inline_value(node, port_id, &serde_json::json!(value), scene.dpi).map(|value| value.as_f64())).transpose().map(Option::flatten)
 }
 
 fn resolve_output_f64_inner(
@@ -1022,7 +1120,7 @@ fn resolve_output_f64_inner(
                 0.0
             }
         }
-        "FloatInput" | "IntInput" => parse_f64(&node.params, "value").unwrap_or(0.0),
+        "FloatInput" | "IntInput" => resolve_input_f64_inner(scene, nodes_by_id, node_id, "value", cache, visiting)?.unwrap_or(0.0),
         "MidiInput" => {
             if out_port != "value" {
                 bail!("unsupported MidiInput output port: {out_port}");
@@ -1053,6 +1151,10 @@ fn resolve_output_f64_inner(
                         visiting,
                     )?;
                     values.push(v);
+                } else if node.params.contains_key(port_id) {
+                    if let Some(value) = resolve_input_f64_inner(scene, nodes_by_id, node_id, port_id, cache, visiting)? {
+                        values.push(value);
+                    }
                 }
             }
 
@@ -1086,6 +1188,10 @@ fn resolve_output_f64_inner(
                         visiting,
                     )?;
                     values.push(v);
+                } else if node.params.contains_key(port_id) {
+                    if let Some(value) = resolve_input_f64_inner(scene, nodes_by_id, node_id, port_id, cache, visiting)? {
+                        values.push(value);
+                    }
                 }
             }
 
@@ -1125,6 +1231,10 @@ fn resolve_output_f64_inner(
                         visiting,
                     )?;
                     values.push(v);
+                } else if node.params.contains_key(port_id) {
+                    if let Some(value) = resolve_input_f64_inner(scene, nodes_by_id, node_id, port_id, cache, visiting)? {
+                        values.push(value);
+                    }
                 }
             }
 
@@ -1159,6 +1269,10 @@ fn resolve_output_f64_inner(
                         visiting,
                     )?;
                     values.push(v);
+                } else if node.params.contains_key(port_id) {
+                    if let Some(value) = resolve_input_f64_inner(scene, nodes_by_id, node_id, port_id, cache, visiting)? {
+                        values.push(value);
+                    }
                 }
             }
 
@@ -1272,7 +1386,7 @@ mod tests {
     #[test]
     fn default_scene_asset_matches_current_schema() {
         let scene = load_scene_from_default_asset().expect("default scene should load");
-        assert_eq!(scene.version, "6.0");
+        assert_eq!(scene.version, "6.1");
     }
 
     #[test]
@@ -1343,7 +1457,7 @@ mod tests {
     #[test]
     fn data_parse_scalar_reads_edges_and_rejects_cycles_and_script_errors() {
         let mut scene: SceneDSL = serde_json::from_value(json!({
-            "version":"6.0", "workingColorSpace": "linear-srgb", "metadata":{"name":"CPU layout"}, "nodes":[
+            "version":"6.1", "workingColorSpace": "linear-srgb", "dpi": 3.0, "metadata":{"name":"CPU layout"}, "nodes":[
                 {"id":"width","type":"IntInput","params":{"value":1279}},
                 {"id":"enabled","type":"BoolInput","params":{"value":true}},
                 {"id":"layout","type":"DataParse", "inputs":[{"id":"w","type":"float"},{"id":"enabled","type":"bool"}],

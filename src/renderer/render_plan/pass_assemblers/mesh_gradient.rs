@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, bail};
 use rust_wgpu_fiber::{
     ResourceName,
     wgpu::{self, Color},
@@ -18,7 +18,7 @@ use crate::{
     renderer::{
         camera::{legacy_projection_camera_matrix, resolve_effective_camera_for_pass_node},
         node_compiler::template_loader,
-        utils::{as_bytes_slice, cpu_num_f32, cpu_num_u32_min_1},
+        utils::{as_bytes_slice, cpu_num_u32_min_1},
         wgsl::build_fullscreen_textured_bundle,
     },
 };
@@ -327,38 +327,16 @@ fn resolve_mesh_points(
 fn resolve_position_input(
     sc: &SceneContext<'_>,
     layer_node: &Node,
-    layer_id: &str,
+    _layer_id: &str,
     port_id: &str,
     default: [f32; 2],
 ) -> Result<[f32; 2]> {
     let scene = sc.scene();
     let nodes_by_id = sc.nodes_by_id();
 
-    if let Some(conn) = incoming_connection(scene, layer_id, port_id) {
-        let Some(upstream_node) = nodes_by_id.get(&conn.from.node_id) else {
-            return Ok(default);
-        };
-        if upstream_node.node_type != "Vector2Input" {
-            bail!(
-                "MeshGradient.{port_id} only supports Vector2Input connection, got {} ({})",
-                upstream_node.node_type,
-                conn.from.node_id
-            );
-        }
-        if conn.from.port_id != "vector" {
-            bail!(
-                "MeshGradient.{port_id} must be connected from Vector2Input.vector, got {}.{}",
-                conn.from.node_id,
-                conn.from.port_id
-            );
-        }
-        return Ok([
-            cpu_num_f32(scene, nodes_by_id, upstream_node, "x", default[0])?,
-            cpu_num_f32(scene, nodes_by_id, upstream_node, "y", default[1])?,
-        ]);
-    }
-
-    parse_vec2_param(layer_node, port_id)?.map_or(Ok(default), Ok)
+    Ok(crate::dsl::resolve_input_vec2(scene, nodes_by_id, layer_node, port_id)?
+        .map(|value| value.map(|component| component as f32))
+        .unwrap_or(default))
 }
 
 fn resolve_color_input(
@@ -703,35 +681,6 @@ fn default_position(
         col as f32 / (grid_cols - 1) as f32 * target_size[0],
         row as f32 / (grid_rows - 1) as f32 * target_size[1],
     ]
-}
-
-fn parse_vec2_param(node: &Node, key: &str) -> Result<Option<[f32; 2]>> {
-    let Some(value) = node.params.get(key) else {
-        return Ok(None);
-    };
-    parse_vec2_value(value).map(Some).ok_or_else(|| {
-        anyhow!(
-            "{}.{} must be vec2 object {{x,y}} or array [x,y]",
-            node.id,
-            key
-        )
-    })
-}
-
-fn parse_vec2_value(value: &Value) -> Option<[f32; 2]> {
-    if let Some(arr) = value.as_array() {
-        return Some([
-            arr.first().and_then(json_f32).unwrap_or(0.0),
-            arr.get(1).and_then(json_f32).unwrap_or(0.0),
-        ]);
-    }
-    if let Some(obj) = value.as_object() {
-        return Some([
-            obj.get("x").and_then(json_f32).unwrap_or(0.0),
-            obj.get("y").and_then(json_f32).unwrap_or(0.0),
-        ]);
-    }
-    None
 }
 
 fn parse_color_from_params(

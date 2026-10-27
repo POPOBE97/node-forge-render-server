@@ -35,10 +35,8 @@ var<uniform> params: Params;
 
 
 struct GraphInputs {
-    // Node: FloatInput_53
-    node_FloatInput_53_b820f720: vec4f,
     // Node: GroupInstance_62/ColorInput_68
-    node_GroupInstance_62_ColorInput_68_0f64f50a: vec4f,
+    group_instance_62_color_input_68: vec4f,
 };
 
 @group(0) @binding(2)
@@ -98,39 +96,6 @@ fn nf_color_fragment_closure(uv: vec2<f32>, sampleUV: vec2<f32>, front_color: ve
 }
 
 
-// --- Extra WGSL declarations (generated) ---
-fn nf_rotation_y_vertex_closure(uv: vec2<f32>, t: f32) -> vec3<f32> {
-    var uv_1: vec2<f32>;
-    var t_1: f32;
-    var output: vec3<f32>;
-
-    uv_1 = uv;
-    t_1 = t;
-    let _e6: f32 = t_1;
-    let _e9: f32 = t_1;
-    output = vec3<f32>(90f, (fract((_e9 / 10f)) * 360f), 0f);
-    let _e17: vec3<f32> = output;
-    return _e17;
-}
-
-
-fn sys_apply_trs_xyz(p: vec3f, t: vec3f, r_deg: vec3f, s: vec3f) -> vec3f {
-    let rad = r_deg * 0.017453292519943295;
-
-    let cx = cos(rad.x);
-    let sx = sin(rad.x);
-    let cy = cos(rad.y);
-    let sy = sin(rad.y);
-    let cz = cos(rad.z);
-    let sz = sin(rad.z);
-
-    let p0 = p * s;
-    let p1 = vec3f(p0.x, p0.y * cx - p0.z * sx, p0.y * sx + p0.z * cx);
-    let p2 = vec3f(p1.x * cy + p1.z * sy, p1.y, -p1.x * sy + p1.z * cy);
-    let p3 = vec3f(p2.x * cz - p2.y * sz, p2.x * sz + p2.y * cz, p2.z);
-    return p3 + t;
-}
-
  @vertex
  fn vs_main(
      @location(0) position: vec3f,
@@ -139,7 +104,6 @@ fn sys_apply_trs_xyz(p: vec3f, t: vec3f, r_deg: vec3f, s: vec3f) -> vec3f {
  ) -> VSOut {
  var out: VSOut;
 
-    let rotation_y_out = nf_rotation_y_vertex_closure(vec2f(uv.x, 1.0 - uv.y), (graph_inputs.node_FloatInput_53_b820f720).x);
  let _unused_geo_size = params.geo_size;
  let _unused_geo_translate = params.geo_translate;
  let _unused_geo_scale = params.geo_scale;
@@ -154,8 +118,6 @@ fn sys_apply_trs_xyz(p: vec3f, t: vec3f, r_deg: vec3f, s: vec3f) -> vec3f {
  out.local_px = vec3f(uv * out.geo_size_px, 0.0);
 
  var p_local = position;
- let delta_t = (sys_apply_trs_xyz(position, ((vec3f(540.0, 1200.0, 0.0)) + (vec3f(0.0, 0.0, 0.0))), ((vec3f(0.0, 0.0, 0.0)) + (rotation_y_out)), ((vec3f(0.800000012, 0.800000012, 0.800000012)) * (vec3f(1.0, 1.0, 1.0)))) - p_local);
- p_local = p_local + delta_t;
 
  // Geometry vertices are in local pixel units centered at (0,0).
  // Convert to target pixel coordinates with bottom-left origin.

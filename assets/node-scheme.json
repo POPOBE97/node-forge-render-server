@@ -29,6 +29,7 @@
     "DotProduct",
     "Downsample",
     "EmissionShader",
+    "EnvMaterial",
     "File",
     "FloatInput",
     "FontFile",
@@ -108,7 +109,8 @@
     "Vector3Input",
     "Vector4Input",
     "VectorMath",
-    "ViewVector"
+    "ViewVector",
+    "Wave"
   ],
   "portTypes": [
     "FontFile",
@@ -2088,6 +2090,107 @@
         }
       ],
       "defaultParams": {}
+    },
+    {
+      "type": "EnvMaterial",
+      "label": "Env Material",
+      "category": "Material",
+      "description": "Reflect an equirectangular HDRI environment using geometry-local normals and a world-space view direction. Preserves linear HDR radiance.",
+      "inputs": [
+        {
+          "id": "image",
+          "name": "HDRI",
+          "type": "ImageFile"
+        },
+        {
+          "id": "normal",
+          "name": "Local Normal",
+          "type": "vector3",
+          "default": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "id": "normalStrength",
+          "name": "Normal Strength",
+          "type": "float",
+          "default": 1
+        },
+        {
+          "id": "view",
+          "name": "Direction toward Viewer · World",
+          "type": "vector3",
+          "default": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "id": "roughness",
+          "name": "Roughness",
+          "type": "float",
+          "default": 0,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "rotation",
+          "name": "Rotation Y (°)",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "exposure",
+          "name": "Exposure (EV)",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "intensity",
+          "name": "Intensity",
+          "type": "float",
+          "default": 1
+        },
+        {
+          "id": "tint",
+          "name": "Tint",
+          "type": "color",
+          "default": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "id": "alpha",
+          "name": "Alpha",
+          "type": "float",
+          "default": 1
+        }
+      ],
+      "outputs": [
+        {
+          "id": "material",
+          "name": "Material",
+          "type": "material"
+        },
+        {
+          "id": "color",
+          "name": "Color",
+          "type": "color"
+        }
+      ],
+      "defaultParams": {
+        "assetId": "",
+        "encoderSpace": "linear"
+      }
     },
     {
       "type": "File",
@@ -6675,14 +6778,14 @@
         {
           "id": "width",
           "name": "Width",
-          "type": "int",
-          "default": 1024
+          "type": "float",
+          "default": 1080
         },
         {
           "id": "height",
           "name": "Height",
-          "type": "int",
-          "default": 1024
+          "type": "float",
+          "default": 1080
         }
       ],
       "outputs": [
@@ -6693,8 +6796,8 @@
         }
       ],
       "defaultParams": {
-        "width": 1024,
-        "height": 1024,
+        "width": 1080,
+        "height": 1080,
         "format": "rgba8unorm"
       }
     },
@@ -6748,7 +6851,7 @@
           "id": "height",
           "name": "Height",
           "type": "int",
-          "default": 2400
+          "default": 1080
         }
       ],
       "outputs": [],
@@ -7675,6 +7778,84 @@
         }
       ],
       "defaultParams": {}
+    },
+    {
+      "type": "Wave",
+      "label": "Wave",
+      "category": "Math",
+      "description": "Damped radial wave in geometry LocalPx: height, outward direction, and analytic local normal for PBR. Progress is supplied directly; amplitude and speed are relative to geometry height.",
+      "inputs": [
+        {
+          "id": "progress",
+          "name": "Progress",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "origin",
+          "name": "Origin · LocalPx",
+          "type": "vector2",
+          "default": [
+            0,
+            0
+          ],
+          "coordinateSpace": "local-px"
+        },
+        {
+          "id": "amplitude",
+          "name": "Amplitude",
+          "type": "float",
+          "default": 0.2
+        },
+        {
+          "id": "frequency",
+          "name": "Frequency",
+          "type": "float",
+          "default": 100
+        },
+        {
+          "id": "decay",
+          "name": "Decay",
+          "type": "float",
+          "default": 27
+        },
+        {
+          "id": "speed",
+          "name": "Speed",
+          "type": "float",
+          "default": 1
+        },
+        {
+          "id": "damping",
+          "name": "Damping",
+          "type": "float",
+          "default": 3.7
+        },
+        {
+          "id": "front_feather",
+          "name": "Front Feather (px)",
+          "type": "float",
+          "default": 0
+        }
+      ],
+      "outputs": [
+        {
+          "id": "height",
+          "name": "Height (px)",
+          "type": "float"
+        },
+        {
+          "id": "dir",
+          "name": "Dir",
+          "type": "vector2"
+        },
+        {
+          "id": "normal",
+          "name": "Normal · Local",
+          "type": "vector3"
+        }
+      ],
+      "defaultParams": {}
     }
   ],
   "stateMachine": {
@@ -7731,6 +7912,23 @@
             "id": "value",
             "name": "Value",
             "type": "float"
+          }
+        ],
+        "defaultParams": {
+          "value": 0
+        }
+      },
+      {
+        "type": "IntInput",
+        "label": "Int Input",
+        "category": "Input",
+        "description": "Define a constant integer value",
+        "inputs": [],
+        "outputs": [
+          {
+            "id": "value",
+            "name": "Value",
+            "type": "int"
           }
         ],
         "defaultParams": {
@@ -7868,6 +8066,120 @@
           }
         ],
         "defaultParams": {}
+      },
+      {
+        "type": "Vector2Input",
+        "label": "Vector2 Input",
+        "category": "Input",
+        "description": "Define a 2D vector value",
+        "inputs": [
+          {
+            "id": "x",
+            "name": "X",
+            "type": "float",
+            "default": 0
+          },
+          {
+            "id": "y",
+            "name": "Y",
+            "type": "float",
+            "default": 0
+          }
+        ],
+        "outputs": [
+          {
+            "id": "vector",
+            "name": "Vector",
+            "type": "vector2"
+          }
+        ],
+        "defaultParams": {
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "type": "Vector3Input",
+        "label": "Vector3 Input",
+        "category": "Input",
+        "description": "Define a 3D vector value",
+        "inputs": [
+          {
+            "id": "x",
+            "name": "X",
+            "type": "float",
+            "default": 0
+          },
+          {
+            "id": "y",
+            "name": "Y",
+            "type": "float",
+            "default": 0
+          },
+          {
+            "id": "z",
+            "name": "Z",
+            "type": "float",
+            "default": 0
+          }
+        ],
+        "outputs": [
+          {
+            "id": "vector",
+            "name": "Vector",
+            "type": "vector3"
+          }
+        ],
+        "defaultParams": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      {
+        "type": "Vector4Input",
+        "label": "Vector4 Input",
+        "category": "Input",
+        "description": "Define a 4D vector value",
+        "inputs": [
+          {
+            "id": "x",
+            "name": "X",
+            "type": "float",
+            "default": 0
+          },
+          {
+            "id": "y",
+            "name": "Y",
+            "type": "float",
+            "default": 0
+          },
+          {
+            "id": "z",
+            "name": "Z",
+            "type": "float",
+            "default": 0
+          },
+          {
+            "id": "w",
+            "name": "W",
+            "type": "float",
+            "default": 0
+          }
+        ],
+        "outputs": [
+          {
+            "id": "vector",
+            "name": "Vector",
+            "type": "vector4"
+          }
+        ],
+        "defaultParams": {
+          "x": 0,
+          "y": 0,
+          "z": 0,
+          "w": 0
+        }
       }
     ],
     "transitionTriggerTypes": [

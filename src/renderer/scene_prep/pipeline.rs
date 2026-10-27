@@ -5,7 +5,7 @@ use rust_wgpu_fiber::ResourceName;
 
 use crate::{
     dsl::{Node, SceneDSL, find_node, incoming_connection},
-    renderer::utils::cpu_num_u32_min_1,
+
     schema,
 };
 
@@ -33,6 +33,7 @@ pub(crate) fn prepare_scene_with_report(
     crate::dsl::normalize_scene_color_literals(&mut expanded, &schema::load_default_scheme()?);
     let expanded_group_instances = expand_group_instances(&mut expanded)?;
     super::procedural_test_texture::expand(&mut expanded)?;
+    crate::input_units::materialize_scene(&mut expanded)?;
     let consumer_scoped_coercions =
         crate::renderer::render_plan::coercion::plan_consumer_scoped_coercions(&mut expanded)?;
     expand_image_passes(&mut expanded)?;
@@ -89,6 +90,7 @@ pub(crate) fn prepare_scene_with_report(
     let scene = SceneDSL {
         version: expanded.version.clone(),
         working_color_space: expanded.working_color_space,
+        dpi: expanded.dpi,
         metadata: expanded.metadata.clone(),
         nodes,
         connections,
@@ -172,12 +174,9 @@ pub(crate) fn prepare_scene_with_report(
         if target.node_type != "RenderTexture" {
             bail!("Composite.target must come from RenderTexture, got {}", target.node_type);
         }
-        [
-            cpu_num_u32_min_1(&scene, &nodes_by_id, target, "width", 1024)?,
-            cpu_num_u32_min_1(&scene, &nodes_by_id, target, "height", 1024)?,
-        ]
+        crate::dsl::render_texture_size(&scene, &nodes_by_id, target)?
     } else {
-        [1024, 1024]
+        [1080, 1080]
     };
 
     let baked_data_parse = bake_data_parse_nodes(&scene, &nodes_by_id, "__global", 1)?;

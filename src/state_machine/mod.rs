@@ -87,10 +87,12 @@ pub fn compile_from_scene(scene: &SceneDSL) -> Result<Option<StateMachineRuntime
     validate_scene_declarations(scene, &sm)?;
     graph_function::prepare_state_machine(&sm)?;
 
-    Ok(Some(StateMachineRuntime::with_initial_values(
+    let mut runtime = StateMachineRuntime::with_initial_values(
         sm,
         collect_state_param_defaults(scene.state_machine.as_ref().expect("checked above")),
-    )))
+    );
+    runtime.dpi = scene.dpi;
+    Ok(Some(runtime))
 }
 
 fn collect_state_param_defaults(
@@ -212,6 +214,13 @@ pub fn apply_overrides(scene: &mut SceneDSL, overrides: &HashMap<OverrideKey, se
                 .and_then(serde_json::Value::as_str);
             if key.node_id == node.id || authored_node_id == Some(key.node_id.as_str()) {
                 node.params.insert(key.param_name.clone(), value.clone());
+                // Runtime overrides already carry evaluated values. They replace the
+                // inline default even when this is an unprepared scene (e.g. a freeze).
+                if let Some(units) = node.params.get_mut("inputUnits")
+                    .and_then(serde_json::Value::as_object_mut)
+                {
+                    units.remove(&key.param_name);
+                }
             }
         }
     }

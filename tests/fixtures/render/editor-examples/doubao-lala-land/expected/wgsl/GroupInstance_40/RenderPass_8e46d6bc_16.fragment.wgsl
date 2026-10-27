@@ -29,7 +29,8 @@ var<uniform> params: Params;
      @location(2) local_px: vec3f,
      // Geometry size in pixels after applying geometry/instance transforms.
      @location(3) geo_size_px: vec2f,
-  };
+     @location(4) @interpolate(flat) instance_index: u32,
+ };
 
 
 struct GraphInputs {
@@ -37,8 +38,6 @@ struct GraphInputs {
     node_IslandRadiusPx_1aff0e03: vec4f,
     // Node: IslandSizePx
     node_IslandSizePx_b573a1f9: vec4f,
-    // Node: Vector2Input_8e46d6bc_18
-    node_Vector2Input_8e46d6bc_18_134a73ed: vec4f,
 };
 
 @group(0) @binding(2)

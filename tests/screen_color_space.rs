@@ -8,7 +8,7 @@ use serde_json::json;
 
 fn scene(working: WorkingColorSpace, output: &str, rgba: [f32; 4]) -> SceneDSL {
     serde_json::from_value(json!({
-        "version": "6.0", "workingColorSpace": working,
+        "version": "6.1", "workingColorSpace": working, "dpi": 3.0,
         "metadata": { "name": "screen-color-space" },
         "nodes": [
             { "id": "color", "type": "ColorInput", "params": { "value": rgba } },

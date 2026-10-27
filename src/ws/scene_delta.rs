@@ -55,6 +55,7 @@ pub type SceneCacheConnectionsById = HashMap<String, Connection>;
 pub struct SceneCache {
     pub version: String,
     pub working_color_space: crate::color::WorkingColorSpace,
+    pub dpi: f64,
     pub metadata: Metadata,
     pub nodes_by_id: SceneCacheNodesById,
     pub connections_by_id: SceneCacheConnectionsById,
@@ -70,6 +71,7 @@ impl SceneCache {
         let mut cache = Self {
             version: scene.version.clone(),
         working_color_space: scene.working_color_space,
+        dpi: scene.dpi,
             metadata: scene.metadata.clone(),
             nodes_by_id: HashMap::new(),
             connections_by_id: HashMap::new(),
@@ -87,6 +89,7 @@ impl SceneCache {
 pub fn apply_scene_update(cache: &mut SceneCache, scene: &SceneDSL) {
     cache.version = scene.version.clone();
     cache.working_color_space = scene.working_color_space;
+    cache.dpi = scene.dpi;
     cache.metadata = scene.metadata.clone();
     cache.groups = scene.groups.clone();
     cache.assets = scene.assets.clone();
@@ -390,6 +393,7 @@ pub fn materialize_scene_dsl(cache: &SceneCache) -> SceneDSL {
     SceneDSL {
         version: cache.version.clone(),
         working_color_space: cache.working_color_space,
+        dpi: cache.dpi,
         metadata: cache.metadata.clone(),
         nodes: cache.nodes_by_id.values().cloned().collect(),
         connections: cache.connections_by_id.values().cloned().collect(),
@@ -422,6 +426,7 @@ mod tests {
     fn base_scene() -> SceneDSL {
         SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "scene".to_string(),
@@ -802,6 +807,7 @@ mod tests {
     fn delta_updates_only_uniform_values_rejects_geometry_allocation_sensitive_change() {
         let scene = SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "scene".to_string(),
@@ -918,6 +924,7 @@ mod tests {
     fn delta_updates_only_uniform_values_accepts_rect_corner_input_change() {
         let scene = SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "scene".to_string(),
@@ -1005,6 +1012,7 @@ mod tests {
     fn delta_updates_only_uniform_values_rejects_rect_position_math_change() {
         let scene = SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "scene".to_string(),
@@ -1101,6 +1109,7 @@ mod tests {
     fn delta_updates_only_uniform_values_rejects_camera_chain_change() {
         let scene = SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "scene".to_string(),

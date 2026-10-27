@@ -34,9 +34,9 @@ var<uniform> params: Params;
 
 struct GraphInputs {
     // Node: FloatInput_blur_sigma_max
-    float_input_blur_sigma_max: vec4f,
+    float_input_dp_28d4b9e7: vec4f,
     // Node: FloatInput_blur_sigma_min
-    float_input_blur_sigma_min: vec4f,
+    float_input_dp: vec4f,
     // Node: FloatInput_blur_y_max
     float_input_blur_y_max: vec4f,
     // Node: FloatInput_blur_y_min
@@ -246,8 +246,8 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         pass_samp_Downsample_gaussian3_d5,
         pass_tex_Downsample_gaussian3_d6,
         pass_samp_Downsample_gaussian3_d6,
-        (graph_inputs.float_input_blur_sigma_min).x,
-        (graph_inputs.float_input_blur_sigma_max).x,
+        (graph_inputs.float_input_dp).x,
+        (graph_inputs.float_input_dp_28d4b9e7).x,
         (graph_inputs.float_input_blur_y_min).x,
         (graph_inputs.float_input_blur_y_max).x,
     );

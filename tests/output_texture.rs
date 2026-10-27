@@ -9,7 +9,7 @@ use serde_json::json;
 
 fn texture_scene(producer: &str, alias: bool) -> SceneDSL {
     let mut value = json!({
-        "version": "6.0", "workingColorSpace": "linear-srgb",
+        "version": "6.1", "workingColorSpace": "linear-srgb", "dpi": 3.0,
         "metadata": { "name": "texture-owned output" },
         "nodes": [
             { "id": "color", "type": "ColorInput", "params": { "value": [0.5, 0.25, 0.125, 1] } },

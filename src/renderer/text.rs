@@ -7,7 +7,7 @@ use std::{
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use cosmic_text::{
     Align, Attrs, Buffer, CacheKey, CacheKeyFlags, Fallback, Family, FontSystem, Metrics, Shaping,
-    SwashCache, SwashContent, Wrap, fontdb,
+    Command, SwashCache, SwashContent, Wrap, fontdb,
 };
 use image::{DynamicImage, Rgba, RgbaImage};
 use serde::Serialize;
@@ -76,6 +76,38 @@ pub(crate) fn prepare_text(
     fonts: &[FontSource],
     max_atlas: u32,
 ) -> Result<Arc<TextMesh>> {
+    validate_request(request, fonts)?;
+    let mut hash = Sha256::new();
+    hash.update(serde_json::to_vec(request)?);
+    hash.update(max_atlas.to_le_bytes());
+    for font in fonts {
+        hash.update(font.face_index.to_le_bytes());
+        hash.update(Sha256::digest(&font.bytes));
+    }
+    let key: [u8; 32] = hash.finalize().into();
+    let cache = CACHE.get_or_init(|| Mutex::new(VecDeque::new()));
+    {
+        let mut cache = cache.lock().map_err(|_| anyhow!("text cache poisoned"))?;
+        if let Some(i) = cache.iter().position(|entry| entry.0 == key) {
+            let entry = cache.remove(i).expect("cache entry exists");
+            let mesh = entry.1.clone();
+            cache.push_back(entry);
+            return Ok(mesh);
+        }
+    }
+    let mesh = Arc::new(build_text(request, fonts, max_atlas)?);
+    let bytes = mesh.vertices.len() + mesh.atlas.as_bytes().len();
+    if bytes <= CACHE_BYTES {
+        let mut cache = cache.lock().map_err(|_| anyhow!("text cache poisoned"))?;
+        while cache.iter().map(|entry| entry.2).sum::<usize>() + bytes > CACHE_BYTES {
+            cache.pop_front();
+        }
+        cache.push_back((key, mesh.clone(), bytes));
+    }
+    Ok(mesh)
+}
+
+fn validate_request(request: &TextRequest, fonts: &[FontSource]) -> Result<()> {
     ensure!(
         !fonts.is_empty() && fonts.len() <= FAMILIES.len(),
         "TextPass needs a primary font and at most one fallback font"
@@ -108,34 +140,7 @@ pub(crate) fn prepare_text(
             "TextPass size must be positive and finite"
         );
     }
-    let mut hash = Sha256::new();
-    hash.update(serde_json::to_vec(request)?);
-    hash.update(max_atlas.to_le_bytes());
-    for font in fonts {
-        hash.update(font.face_index.to_le_bytes());
-        hash.update(Sha256::digest(&font.bytes));
-    }
-    let key: [u8; 32] = hash.finalize().into();
-    let cache = CACHE.get_or_init(|| Mutex::new(VecDeque::new()));
-    {
-        let mut cache = cache.lock().map_err(|_| anyhow!("text cache poisoned"))?;
-        if let Some(i) = cache.iter().position(|entry| entry.0 == key) {
-            let entry = cache.remove(i).expect("cache entry exists");
-            let mesh = entry.1.clone();
-            cache.push_back(entry);
-            return Ok(mesh);
-        }
-    }
-    let mesh = Arc::new(build_text(request, fonts, max_atlas)?);
-    let bytes = mesh.vertices.len() + mesh.atlas.as_bytes().len();
-    if bytes <= CACHE_BYTES {
-        let mut cache = cache.lock().map_err(|_| anyhow!("text cache poisoned"))?;
-        while cache.iter().map(|entry| entry.2).sum::<usize>() + bytes > CACHE_BYTES {
-            cache.pop_front();
-        }
-        cache.push_back((key, mesh.clone(), bytes));
-    }
-    Ok(mesh)
+    Ok(())
 }
 
 fn font_system(fonts: &[FontSource]) -> Result<FontSystem> {
@@ -178,7 +183,15 @@ struct GlyphQuad {
     height: u32,
 }
 
-fn build_text(req: &TextRequest, fonts: &[FontSource], max_atlas: u32) -> Result<TextMesh> {
+struct ShapedText {
+    fs: FontSystem,
+    buffer: Buffer,
+    advance_width: f32,
+    advance_height: f32,
+    v_offset: f32,
+}
+
+fn shape_text(req: &TextRequest, fonts: &[FontSource]) -> Result<ShapedText> {
     let mut fs = font_system(fonts)?;
     let mut buffer = Buffer::new(&mut fs, Metrics::new(req.font_size, req.line_height));
     let align = match req.align.as_str() {
@@ -231,6 +244,100 @@ fn build_text(req: &TextRequest, fonts: &[FontSource], max_atlas: u32) -> Result
         "bottom" => provisional_size[1] - advance_height,
         _ => bail!("invalid TextPass verticalAlign"),
     };
+    Ok(ShapedText { fs, buffer, advance_width, advance_height, v_offset })
+}
+
+fn validate_glyph_weight(fs: &mut FontSystem, id: fontdb::ID, weight: fontdb::Weight, requested: u16) -> Result<()> {
+    if requested == 0 {
+        return Ok(());
+    }
+    let face_weight = fs.db().face(id).context("missing shaped font face")?.weight.0;
+    let font = fs.get_font(id, weight).context("cannot load shaped font")?;
+    if let Some(axis) = font.as_swash().variations().find_by_tag(u32::from_be_bytes(*b"wght")) {
+        ensure!(
+            (axis.min_value()..=axis.max_value()).contains(&(requested as f32)),
+            "TextPass fontWeight {requested} is outside embedded font's wght range"
+        );
+    } else {
+        ensure!(requested == face_weight,
+            "TextPass fontWeight {requested} requires a matching font face (embedded face weight is {face_weight})");
+    }
+    Ok(())
+}
+
+/// One shaped glyph. Commands use a fixed em size, independent of document DPI.
+pub(crate) struct OutlineGlyph {
+    pub key: [u8; 32],
+    pub commands: Arc<[Command]>,
+    /// Baseline from the layout's top-left (private shaping coordinates).
+    pub baseline: [f32; 2],
+    pub scale: f32,
+}
+
+pub(crate) struct OutlineLayout {
+    pub advance: [f32; 2],
+    pub glyphs: Vec<OutlineGlyph>,
+}
+
+pub(crate) fn layout_outlines(req: &TextRequest, fonts: &[FontSource], em_size: f32) -> Result<OutlineLayout> {
+    validate_request(req, fonts)?;
+    let ShapedText { mut fs, buffer, advance_width, advance_height, v_offset } = shape_text(req, fonts)?;
+    let mut swash = SwashCache::new();
+    let mut checked_fonts = HashSet::new();
+    let mut font_hashes = HashMap::new();
+    let mut outlines: HashMap<CacheKey, ([u8; 32], Arc<[Command]>)> = HashMap::new();
+    let mut glyphs = Vec::new();
+    for run in buffer.layout_runs() {
+        for glyph in run.glyphs {
+            ensure!(glyph.glyph_id != 0, "missing glyph for {:?}; embed a fallback font", &run.text[glyph.start..glyph.end]);
+            if checked_fonts.insert(glyph.font_id) {
+                validate_glyph_weight(&mut fs, glyph.font_id, glyph.font_weight, req.weight)?;
+            }
+            let (cache_key, _, _) = CacheKey::new(
+                glyph.font_id, glyph.glyph_id, em_size, (0.0, 0.0),
+                glyph.font_weight, glyph.cache_key_flags,
+            );
+            if !outlines.contains_key(&cache_key) {
+                let font_hash = if let Some(hash) = font_hashes.get(&glyph.font_id) {
+                    *hash
+                } else {
+                    let font = fs.get_font(glyph.font_id, glyph.font_weight).context("missing outline font")?;
+                    let face_index = fs.db().face(glyph.font_id).context("missing font face")?.index;
+                    let mut hash = Sha256::new();
+                    hash.update(font.data());
+                    hash.update(face_index.to_le_bytes());
+                    let hash: [u8; 32] = hash.finalize().into();
+                    font_hashes.insert(glyph.font_id, hash);
+                    hash
+                };
+                let commands: Arc<[Command]> = match swash.get_outline_commands(&mut fs, cache_key) {
+                    Some(commands) => Arc::from(commands),
+                    None if run.text[glyph.start..glyph.end].chars().all(char::is_whitespace) => Arc::from([]),
+                    None => bail!("TextSdf requires vector outlines for {:?}", &run.text[glyph.start..glyph.end]),
+                };
+                let mut hash = Sha256::new();
+                hash.update(font_hash);
+                hash.update(glyph.glyph_id.to_le_bytes());
+                hash.update(glyph.font_weight.0.to_le_bytes());
+                hash.update(glyph.cache_key_flags.bits().to_le_bytes());
+                hash.update(em_size.to_le_bytes());
+                outlines.insert(cache_key, (hash.finalize().into(), commands));
+            }
+            let (key, commands) = &outlines[&cache_key];
+            if commands.is_empty() { continue; }
+            glyphs.push(OutlineGlyph {
+                key: *key, commands: commands.clone(),
+                baseline: [glyph.x + glyph.font_size * glyph.x_offset,
+                    run.line_y + v_offset + glyph.y - glyph.font_size * glyph.y_offset],
+                scale: glyph.font_size / em_size,
+            });
+        }
+    }
+    Ok(OutlineLayout { advance: [advance_width, advance_height], glyphs })
+}
+
+fn build_text(req: &TextRequest, fonts: &[FontSource], max_atlas: u32) -> Result<TextMesh> {
+    let ShapedText { mut fs, buffer, advance_width, advance_height, v_offset } = shape_text(req, fonts)?;
     let mut swash = SwashCache::new();
     let mut checked_fonts = HashSet::new();
     let mut quads = Vec::new();
@@ -244,33 +351,7 @@ fn build_text(req: &TextRequest, fonts: &[FontSource], max_atlas: u32) -> Result
                 &run.text[glyph.start..glyph.end]
             );
             if req.weight != 0 && checked_fonts.insert(glyph.font_id) {
-                let face_weight = fs
-                    .db()
-                    .face(glyph.font_id)
-                    .context("missing shaped font face")?
-                    .weight
-                    .0;
-                let font = fs
-                    .get_font(glyph.font_id, glyph.font_weight)
-                    .context("cannot load shaped font")?;
-                if let Some(axis) = font
-                    .as_swash()
-                    .variations()
-                    .find_by_tag(u32::from_be_bytes(*b"wght"))
-                {
-                    ensure!(
-                        (axis.min_value()..=axis.max_value()).contains(&(req.weight as f32)),
-                        "TextPass fontWeight {} is outside embedded font's wght range",
-                        req.weight
-                    );
-                } else {
-                    ensure!(
-                        req.weight == face_weight,
-                        "TextPass fontWeight {} requires a matching font face (embedded face weight is {})",
-                        req.weight,
-                        face_weight
-                    );
-                }
+                validate_glyph_weight(&mut fs, glyph.font_id, glyph.font_weight, req.weight)?;
             }
             // CacheKey::new preserves fractional Y; LayoutGlyph::physical deliberately truncates it.
             let x = (glyph.x + glyph.font_size * glyph.x_offset) * req.density + req.phase[0];

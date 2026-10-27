@@ -1484,8 +1484,9 @@ mod tests {
 
     fn simple_scene() -> dsl::SceneDSL {
         dsl::SceneDSL {
-            version: "6.0".into(),
+            version: "6.1".into(),
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             metadata: dsl::Metadata {
                 name: "trace-run".into(),
                 created: None,

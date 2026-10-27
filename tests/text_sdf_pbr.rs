@@ -19,7 +19,7 @@ fn scene() -> SceneDSL {
         ("target", "texture", "composite", "target"),
         ("composite", "texture", "screen", "texture"),
     ];
-    serde_json::from_value(json!({"version":"6.0", "workingColorSpace":"linear-srgb", "metadata":{"name":"text-sdf-pbr"},
+    serde_json::from_value(json!({"version":"6.1", "workingColorSpace":"linear-srgb", "dpi": 3.0, "metadata":{"name":"text-sdf-pbr"},
         "nodes":[
             {"id":"font","type":"FontFile","params":{"assetId":"latin"}},
             {"id":"text","type":"TextSdf","params":{"text":"O5", "fontSize":90, "size":[200,140], "align":"center", "verticalAlign":"center"}},

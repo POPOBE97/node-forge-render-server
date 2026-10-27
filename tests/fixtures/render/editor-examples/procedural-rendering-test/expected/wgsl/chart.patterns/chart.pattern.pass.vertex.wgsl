@@ -33,6 +33,10 @@ var<uniform> params: Params;
 
 
 struct GraphInputs {
+    // Node: chart.patterns/dp.chart.pattern.iconInsetPx
+    float_input_dp: vec4f,
+    // Node: chart.patterns/dp.chart.pattern.iconRadiusPx
+    float_input_dp_84690123: vec4f,
     // Node: chart.show_colors
     chart_show_colors: vec4i,
     // Node: chart.show_grid
@@ -216,7 +220,7 @@ fn axis_line_coverage_chart_patterns_chart_pattern_material(value: f32, center: 
 }
 
 fn shader_material_chart_patterns_chart_pattern_material(in: ShaderMaterialInput, blur: texture_2d<f32>, blur_sampler: sampler,
-  show_grid: bool, show_patterns: bool, show_colors: bool) -> vec4f {
+  show_grid: bool, show_patterns: bool, show_colors: bool, iconInsetPx: f32, iconRadiusPx: f32) -> vec4f {
   let p = in.local_position.xy;
   let size = in.target_size;
   // Figma encoded gray 0.39073893427848816, decoded once when authoring.
@@ -270,8 +274,8 @@ fn shader_material_chart_patterns_chart_pattern_material(in: ShaderMaterialInput
     // Smooth, filled placeholder generated from the continuous-corner SDF.
     let icon = inset_box_chart_patterns_chart_pattern_material(cell_box_chart_patterns_chart_pattern_material(size,4,16,5,17));
     if (inside_chart_patterns_chart_pattern_material(p,icon)) {
-      let half_size = vec2f(min(icon.z-icon.x,icon.w-icon.y)*0.5-10.0);
-      let sdf = smooth_rect_sdf_chart_patterns_chart_pattern_material(p-(icon.xy+icon.zw)*0.5,half_size,min(35.0,min(half_size.x,half_size.y)),0.6);
+      let half_size = vec2f(min(icon.z-icon.x,icon.w-icon.y)*0.5-iconInsetPx);
+      let sdf = smooth_rect_sdf_chart_patterns_chart_pattern_material(p-(icon.xy+icon.zw)*0.5,half_size,min(iconRadiusPx,min(half_size.x,half_size.y)),0.6);
       rgb = mix(rgb,vec3f(1.0),smooth_rect_sdf_coverage_chart_patterns_chart_pattern_material(sdf));
     }
 

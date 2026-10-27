@@ -29,18 +29,9 @@ var<uniform> params: Params;
      @location(2) local_px: vec3f,
      // Geometry size in pixels after applying geometry/instance transforms.
      @location(3) geo_size_px: vec2f,
-  };
+     @location(4) @interpolate(flat) instance_index: u32,
+ };
 
-
-struct GraphInputs {
-    // Node: Vector2Input_83
-    node_Vector2Input_83_e8df53bd: vec4f,
-    // Node: Vector2Input_84
-    node_Vector2Input_84_cdeb53bd: vec4f,
-};
-
-@group(0) @binding(2)
-var<uniform> graph_inputs: GraphInputs;
 
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;

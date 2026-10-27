@@ -1,6 +1,7 @@
 {
-  "version": "6.0",
+  "version": "6.1",
   "workingColorSpace": "linear-display-p3",
+  "dpi": 3,
   "metadata": {
     "name": "Procedural Test Texture (generated from procedural-rendering-test.nforge)"
   },
@@ -241,29 +242,29 @@
     },
     {
       "id": "chart.target",
+      "type": "RenderTexture",
       "label": "Chart · linear P3 / HDR · FP16",
       "params": {
         "format": "rgba16float",
-        "height": 2800,
-        "width": 1260
-      },
-      "type": "RenderTexture"
+        "height": 1080,
+        "width": 1080
+      }
     },
     {
       "id": "chart.width",
+      "type": "IntInput",
       "label": "width · physical pixels",
       "params": {
-        "value": 1260
-      },
-      "type": "IntInput"
+        "value": 1080
+      }
     },
     {
       "id": "chart.height",
+      "type": "IntInput",
       "label": "height · physical pixels",
       "params": {
-        "value": 2800
-      },
-      "type": "IntInput"
+        "value": 1080
+      }
     },
     {
       "id": "chart.show_grid",
@@ -591,28 +592,6 @@
       "to": {
         "nodeId": "chart.output",
         "portId": "target"
-      }
-    },
-    {
-      "id": "chart.edge.22",
-      "from": {
-        "nodeId": "chart.width",
-        "portId": "value"
-      },
-      "to": {
-        "nodeId": "chart.target",
-        "portId": "width"
-      }
-    },
-    {
-      "id": "chart.edge.25",
-      "from": {
-        "nodeId": "chart.height",
-        "portId": "value"
-      },
-      "to": {
-        "nodeId": "chart.target",
-        "portId": "height"
       }
     },
     {
@@ -955,6 +934,28 @@
         "nodeId": "chart.output",
         "portId": "dynamic_text_15"
       }
+    },
+    {
+      "id": "chart.width.to.target.width",
+      "from": {
+        "nodeId": "chart.width",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "chart.target",
+        "portId": "width"
+      }
+    },
+    {
+      "id": "chart.height.to.target.height",
+      "from": {
+        "nodeId": "chart.height",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "chart.target",
+        "portId": "height"
+      }
     }
   ],
   "groups": [
@@ -1096,13 +1097,13 @@
         },
         {
           "id": "chart.blur.horizontal.target",
+          "type": "RenderTexture",
           "label": "6 × 320px · scalar coverage · FP16",
           "params": {
             "format": "rgba16float",
             "height": 320,
             "width": 1920
-          },
-          "type": "RenderTexture"
+          }
         },
         {
           "id": "chart.blur.horizontal.output",
@@ -1237,13 +1238,13 @@
         },
         {
           "id": "chart.blur.vertical.target",
+          "type": "RenderTexture",
           "label": "6 × 320px · scalar coverage · FP16",
           "params": {
             "format": "rgba16float",
             "height": 320,
             "width": 1920
-          },
-          "type": "RenderTexture"
+          }
         },
         {
           "id": "chart.blur.vertical.output",
@@ -1291,32 +1292,19 @@
         },
         {
           "id": "chart.pattern.material",
-          "inputBindings": [
-            {
-              "label": "blur",
-              "portId": "resource:blur",
-              "type": "texture",
-              "variableName": "blur"
-            },
-            {
-              "label": "show_grid",
-              "portId": "param:show_grid",
-              "type": "bool",
-              "variableName": "show_grid"
-            },
-            {
-              "label": "show_patterns",
-              "portId": "param:show_patterns",
-              "type": "bool",
-              "variableName": "show_patterns"
-            },
-            {
-              "label": "show_colors",
-              "portId": "param:show_colors",
-              "type": "bool",
-              "variableName": "show_colors"
+          "type": "ShaderMaterial",
+          "label": "chart.pattern.material",
+          "params": {
+            "param:show_grid": false,
+            "param:show_patterns": false,
+            "param:show_colors": false,
+            "param:iconInsetPx": 3.3333333333333335,
+            "param:iconRadiusPx": 11.666666666666666,
+            "inputUnits": {
+              "param:iconInsetPx": "dp",
+              "param:iconRadiusPx": "dp"
             }
-          ],
+          },
           "inputs": [
             {
               "id": "resource:blur",
@@ -1337,47 +1325,106 @@
               "id": "param:show_colors",
               "name": "show_colors",
               "type": "bool"
+            },
+            {
+              "id": "param:iconInsetPx",
+              "name": "iconInsetPx",
+              "type": "float"
+            },
+            {
+              "id": "param:iconRadiusPx",
+              "name": "iconRadiusPx",
+              "type": "float"
             }
           ],
-          "label": "chart.pattern.material",
-          "params": {},
+          "inputBindings": [
+            {
+              "portId": "resource:blur",
+              "label": "blur",
+              "variableName": "blur",
+              "type": "texture"
+            },
+            {
+              "portId": "param:show_grid",
+              "label": "show_grid",
+              "variableName": "show_grid",
+              "type": "bool"
+            },
+            {
+              "portId": "param:show_patterns",
+              "label": "show_patterns",
+              "variableName": "show_patterns",
+              "type": "bool"
+            },
+            {
+              "portId": "param:show_colors",
+              "label": "show_colors",
+              "variableName": "show_colors",
+              "type": "bool"
+            },
+            {
+              "portId": "param:iconInsetPx",
+              "label": "iconInsetPx",
+              "variableName": "iconInsetPx",
+              "type": "float"
+            },
+            {
+              "portId": "param:iconRadiusPx",
+              "label": "iconRadiusPx",
+              "variableName": "iconRadiusPx",
+              "type": "float"
+            }
+          ],
+          "wgslOverride": "builtin:procedural-test-texture/chart.pattern.material.wgsl",
           "shaderMaterial": {
+            "sourceHash": "19052a8159db5cc9",
             "parameters": [
               {
                 "id": "resource:blur",
-                "kind": "resource",
                 "name": "blur",
+                "kind": "resource",
                 "portType": "texture",
-                "samplerParameter": "blur_sampler",
+                "wgslType": "texture_2d<f32> + sampler",
                 "textureParameter": "blur",
-                "wgslType": "texture_2d<f32> + sampler"
+                "samplerParameter": "blur_sampler"
               },
               {
                 "id": "param:show_grid",
-                "kind": "value",
                 "name": "show_grid",
+                "kind": "value",
                 "portType": "bool",
                 "wgslType": "bool"
               },
               {
                 "id": "param:show_patterns",
-                "kind": "value",
                 "name": "show_patterns",
+                "kind": "value",
                 "portType": "bool",
                 "wgslType": "bool"
               },
               {
                 "id": "param:show_colors",
-                "kind": "value",
                 "name": "show_colors",
+                "kind": "value",
                 "portType": "bool",
                 "wgslType": "bool"
+              },
+              {
+                "id": "param:iconInsetPx",
+                "name": "iconInsetPx",
+                "kind": "value",
+                "portType": "float",
+                "wgslType": "f32"
+              },
+              {
+                "id": "param:iconRadiusPx",
+                "name": "iconRadiusPx",
+                "kind": "value",
+                "portType": "float",
+                "wgslType": "f32"
               }
-            ],
-            "sourceHash": "b38e48d83c86f67c"
-          },
-          "type": "ShaderMaterial",
-          "wgslOverride": "builtin:procedural-test-texture/chart.pattern.material.wgsl"
+            ]
+          }
         },
         {
           "id": "chart.pattern.geometry",
@@ -1743,6 +1790,7 @@
         },
         {
           "id": "chart.text.resolution",
+          "type": "TextPass",
           "label": "resolution · 65.33px",
           "params": {
             "align": "center",
@@ -1775,21 +1823,26 @@
             ],
             "dst_alpha_factor": "one-minus-src-alpha",
             "dst_factor": "one-minus-src-alpha",
-            "fontSize": 65.33333587646484,
+            "fontSize": 21.77777862548828,
             "fontWeight": 0,
             "hinting": false,
-            "letterSpacing": 1.1666666269302368,
-            "lineHeight": 84.93333435058594,
+            "letterSpacing": 0.3888888756434123,
+            "lineHeight": 28.311111450195312,
             "src_alpha_factor": "one",
             "src_factor": "one",
             "text": "1260 × 2800",
             "verticalAlign": "center",
-            "wrap": "none"
-          },
-          "type": "TextPass"
+            "wrap": "none",
+            "inputUnits": {
+              "fontSize": "dp",
+              "lineHeight": "dp",
+              "letterSpacing": "dp"
+            }
+          }
         },
         {
           "id": "chart.text.team",
+          "type": "TextPass",
           "label": "team · 42.00px",
           "params": {
             "align": "center",
@@ -1822,21 +1875,26 @@
             ],
             "dst_alpha_factor": "one-minus-src-alpha",
             "dst_factor": "one-minus-src-alpha",
-            "fontSize": 42,
+            "fontSize": 14,
             "fontWeight": 0,
             "hinting": false,
-            "letterSpacing": 1.4358974695205688,
-            "lineHeight": 54.599998474121094,
+            "letterSpacing": 0.47863248984018963,
+            "lineHeight": 18.1999994913737,
             "src_alpha_factor": "one",
             "src_factor": "one",
             "text": "OS Design Team",
             "verticalAlign": "center",
-            "wrap": "none"
-          },
-          "type": "TextPass"
+            "wrap": "none",
+            "inputUnits": {
+              "fontSize": "dp",
+              "lineHeight": "dp",
+              "letterSpacing": "dp"
+            }
+          }
         },
         {
           "id": "chart.text.title",
+          "type": "TextPass",
           "label": "title · 37.33px",
           "params": {
             "align": "center",
@@ -1869,35 +1927,47 @@
             ],
             "dst_alpha_factor": "one-minus-src-alpha",
             "dst_factor": "one-minus-src-alpha",
-            "fontSize": 37.33333206176758,
+            "fontSize": 12.444444020589193,
             "fontWeight": 0,
             "hinting": false,
-            "letterSpacing": 0.8076923489570618,
-            "lineHeight": 48.53333282470703,
+            "letterSpacing": 0.26923078298568726,
+            "lineHeight": 16.177777608235676,
             "src_alpha_factor": "one",
             "src_factor": "one",
             "text": "Rendering Test",
             "verticalAlign": "center",
-            "wrap": "none"
-          },
-          "type": "TextPass"
+            "wrap": "none",
+            "inputUnits": {
+              "fontSize": "dp",
+              "lineHeight": "dp",
+              "letterSpacing": "dp"
+            }
+          }
         },
         {
           "id": "chart.text.layout.titles",
-          "inputBindings": [
-            {
-              "label": "width",
-              "portId": "width",
-              "type": "float",
-              "variableName": "width"
+          "type": "DataParse",
+          "label": "Titles · layout",
+          "params": {
+            "_uiCollapsedFields": [
+              "sec:source"
+            ],
+            "source": "// Scene-relative anchors; DP metrics arrive as physical pixels. Stroke alignment retains texel units.\nreturn {\n  resolutionPosition: [width * 0.5, height * 0.925] as vec2,\n  resolutionSize: [width * 0.5555555555555556 - horizontalPadding2Px, resolutionHeightPx] as vec2,\n  teamPosition: [width * 0.5, height * 0.875 + teamOffsetPx] as vec2,\n  teamSize: [width * 0.3333333333333333 - horizontalPadding2Px, teamHeightPx] as vec2,\n  titlePosition: [width * 0.5, height * 0.875 + titleOffsetPx] as vec2,\n  titleSize: [width * 0.3333333333333333 - horizontalPadding2Px, titleHeightPx] as vec2,\n};\n",
+            "resolutionHeightPx": 28.311111450195312,
+            "inputUnits": {
+              "resolutionHeightPx": "dp",
+              "teamHeightPx": "dp",
+              "titleHeightPx": "dp",
+              "horizontalPadding2Px": "dp",
+              "teamOffsetPx": "dp",
+              "titleOffsetPx": "dp"
             },
-            {
-              "label": "height",
-              "portId": "height",
-              "type": "float",
-              "variableName": "height"
-            }
-          ],
+            "teamHeightPx": 18.1999994913737,
+            "titleHeightPx": 16.177777608235676,
+            "horizontalPadding2Px": 0.6666666666666666,
+            "teamOffsetPx": 8.42221705118815,
+            "titleOffsetPx": -9.433330535888672
+          },
           "inputs": [
             {
               "id": "width",
@@ -1908,54 +1978,126 @@
               "id": "height",
               "name": "height",
               "type": "float"
+            },
+            {
+              "id": "resolutionHeightPx",
+              "name": "resolutionHeightPx",
+              "type": "float"
+            },
+            {
+              "id": "teamHeightPx",
+              "name": "teamHeightPx",
+              "type": "float"
+            },
+            {
+              "id": "titleHeightPx",
+              "name": "titleHeightPx",
+              "type": "float"
+            },
+            {
+              "id": "horizontalPadding2Px",
+              "name": "horizontalPadding2Px",
+              "type": "float"
+            },
+            {
+              "id": "teamOffsetPx",
+              "name": "teamOffsetPx",
+              "type": "float"
+            },
+            {
+              "id": "titleOffsetPx",
+              "name": "titleOffsetPx",
+              "type": "float"
             }
           ],
-          "label": "Titles · layout",
           "outputs": [
             {
-              "coordinateSpace": "scene-px",
               "id": "resolutionPosition",
               "name": "resolutionPosition",
-              "type": "vector2"
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
             },
             {
-              "coordinateSpace": "scene-px",
               "id": "resolutionSize",
               "name": "resolutionSize",
-              "type": "vector2"
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
             },
             {
-              "coordinateSpace": "scene-px",
               "id": "teamPosition",
               "name": "teamPosition",
-              "type": "vector2"
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
             },
             {
-              "coordinateSpace": "scene-px",
               "id": "teamSize",
               "name": "teamSize",
-              "type": "vector2"
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
             },
             {
-              "coordinateSpace": "scene-px",
               "id": "titlePosition",
               "name": "titlePosition",
-              "type": "vector2"
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
             },
             {
-              "coordinateSpace": "scene-px",
               "id": "titleSize",
               "name": "titleSize",
-              "type": "vector2"
+              "type": "vector2",
+              "coordinateSpace": "scene-px"
             }
           ],
-          "params": {
-            "_uiCollapsedFields": [
-              "sec:source"
-            ],
-            "source": "// Layout in ScenePx. Font sizes stay in physical pixels.\nreturn {\n  resolutionPosition: [width * 0.5, height * 0.925] as vec2,\n  resolutionSize: [width * 0.5555555555555556 - 2, 84.93333435058594] as vec2,\n  teamPosition: [width * 0.5, height * 0.875 + (25.266651153564453)] as vec2,\n  teamSize: [width * 0.3333333333333333 - 2, 54.599998474121094] as vec2,\n  titlePosition: [width * 0.5, height * 0.875 + (-28.299991607666016)] as vec2,\n  titleSize: [width * 0.3333333333333333 - 2, 48.53333282470703] as vec2,\n};\n"
-          },
-          "type": "DataParse"
+          "inputBindings": [
+            {
+              "portId": "width",
+              "label": "width",
+              "variableName": "width",
+              "type": "float"
+            },
+            {
+              "portId": "height",
+              "label": "height",
+              "variableName": "height",
+              "type": "float"
+            },
+            {
+              "portId": "resolutionHeightPx",
+              "label": "resolutionHeightPx",
+              "variableName": "resolutionHeightPx",
+              "type": "float"
+            },
+            {
+              "portId": "teamHeightPx",
+              "label": "teamHeightPx",
+              "variableName": "teamHeightPx",
+              "type": "float"
+            },
+            {
+              "portId": "titleHeightPx",
+              "label": "titleHeightPx",
+              "variableName": "titleHeightPx",
+              "type": "float"
+            },
+            {
+              "portId": "horizontalPadding2Px",
+              "label": "horizontalPadding2Px",
+              "variableName": "horizontalPadding2Px",
+              "type": "float"
+            },
+            {
+              "portId": "teamOffsetPx",
+              "label": "teamOffsetPx",
+              "variableName": "teamOffsetPx",
+              "type": "float"
+            },
+            {
+              "portId": "titleOffsetPx",
+              "label": "titleOffsetPx",
+              "variableName": "titleOffsetPx",
+              "type": "float"
+            }
+          ]
         }
       ],
       "connections": [
@@ -2292,16 +2434,20 @@
             ],
             "dst_alpha_factor": "one-minus-src-alpha",
             "dst_factor": "one-minus-src-alpha",
-            "fontSize": 28,
+            "fontSize": 9.333333333333334,
             "fontWeight": 0,
             "hinting": false,
             "letterSpacing": 0,
-            "lineHeight": 36.400001525878906,
+            "lineHeight": 12.133333841959635,
             "src_alpha_factor": "one",
             "src_factor": "one",
             "text": "0.25",
             "verticalAlign": "center",
-            "wrap": "none"
+            "wrap": "none",
+            "inputUnits": {
+              "fontSize": "dp",
+              "lineHeight": "dp"
+            }
           }
         },
         {
@@ -2339,16 +2485,20 @@
             ],
             "dst_alpha_factor": "one-minus-src-alpha",
             "dst_factor": "one-minus-src-alpha",
-            "fontSize": 28,
+            "fontSize": 9.333333333333334,
             "fontWeight": 0,
             "hinting": false,
             "letterSpacing": 0,
-            "lineHeight": 36.400001525878906,
+            "lineHeight": 12.133333841959635,
             "src_alpha_factor": "one",
             "src_factor": "one",
             "text": "0.5",
             "verticalAlign": "center",
-            "wrap": "none"
+            "wrap": "none",
+            "inputUnits": {
+              "fontSize": "dp",
+              "lineHeight": "dp"
+            }
           }
         },
         {
@@ -2386,16 +2536,20 @@
             ],
             "dst_alpha_factor": "one-minus-src-alpha",
             "dst_factor": "one-minus-src-alpha",
-            "fontSize": 28,
+            "fontSize": 9.333333333333334,
             "fontWeight": 0,
             "hinting": false,
             "letterSpacing": 0,
-            "lineHeight": 36.400001525878906,
+            "lineHeight": 12.133333841959635,
             "src_alpha_factor": "one",
             "src_factor": "one",
             "text": "1.0",
             "verticalAlign": "center",
-            "wrap": "none"
+            "wrap": "none",
+            "inputUnits": {
+              "fontSize": "dp",
+              "lineHeight": "dp"
+            }
           }
         },
         {
@@ -2433,16 +2587,20 @@
             ],
             "dst_alpha_factor": "one-minus-src-alpha",
             "dst_factor": "one-minus-src-alpha",
-            "fontSize": 28,
+            "fontSize": 9.333333333333334,
             "fontWeight": 0,
             "hinting": false,
             "letterSpacing": 0,
-            "lineHeight": 36.400001525878906,
+            "lineHeight": 12.133333841959635,
             "src_alpha_factor": "one",
             "src_factor": "one",
             "text": "2.0",
             "verticalAlign": "center",
-            "wrap": "none"
+            "wrap": "none",
+            "inputUnits": {
+              "fontSize": "dp",
+              "lineHeight": "dp"
+            }
           }
         },
         {
@@ -2480,16 +2638,20 @@
             ],
             "dst_alpha_factor": "one-minus-src-alpha",
             "dst_factor": "one-minus-src-alpha",
-            "fontSize": 28,
+            "fontSize": 9.333333333333334,
             "fontWeight": 0,
             "hinting": false,
             "letterSpacing": 0,
-            "lineHeight": 36.400001525878906,
+            "lineHeight": 12.133333841959635,
             "src_alpha_factor": "one",
             "src_factor": "one",
             "text": "4.0",
             "verticalAlign": "center",
-            "wrap": "none"
+            "wrap": "none",
+            "inputUnits": {
+              "fontSize": "dp",
+              "lineHeight": "dp"
+            }
           }
         },
         {
@@ -2527,16 +2689,20 @@
             ],
             "dst_alpha_factor": "one-minus-src-alpha",
             "dst_factor": "one-minus-src-alpha",
-            "fontSize": 28,
+            "fontSize": 9.333333333333334,
             "fontWeight": 0,
             "hinting": false,
             "letterSpacing": 0,
-            "lineHeight": 36.400001525878906,
+            "lineHeight": 12.133333841959635,
             "src_alpha_factor": "one",
             "src_factor": "one",
             "text": "8.0",
             "verticalAlign": "center",
-            "wrap": "none"
+            "wrap": "none",
+            "inputUnits": {
+              "fontSize": "dp",
+              "lineHeight": "dp"
+            }
           }
         },
         {
@@ -2574,16 +2740,20 @@
             ],
             "dst_alpha_factor": "one-minus-src-alpha",
             "dst_factor": "one-minus-src-alpha",
-            "fontSize": 28,
+            "fontSize": 9.333333333333334,
             "fontWeight": 0,
             "hinting": false,
             "letterSpacing": 0,
-            "lineHeight": 36.400001525878906,
+            "lineHeight": 12.133333841959635,
             "src_alpha_factor": "one",
             "src_factor": "one",
             "text": "16.0",
             "verticalAlign": "center",
-            "wrap": "none"
+            "wrap": "none",
+            "inputUnits": {
+              "fontSize": "dp",
+              "lineHeight": "dp"
+            }
           }
         },
         {
@@ -2591,7 +2761,25 @@
           "type": "DataParse",
           "label": "Stroke labels · layout",
           "params": {
-            "source": "// Layout in ScenePx. Font sizes stay in physical pixels.\nconst scale = Math.min(width * 0.0007936507936507937, height * 0.00035714285714285714);\nreturn {\n  stroke025Position: [width * 0.5, (height * 0.65 + scale * 396.666666667) + 0.125] as vec2,\n  stroke025Size: [width * 0.1111111111111111 - 2, 36.400001525878906] as vec2,\n  stroke05Position: [width * 0.5, (height * 0.65 + scale * 350) + 0.25] as vec2,\n  stroke05Size: [width * 0.1111111111111111 - 2, 36.400001525878906] as vec2,\n  stroke1Position: [width * 0.5, (height * 0.65 + scale * 303.333333333) + 0.5] as vec2,\n  stroke1Size: [width * 0.1111111111111111 - 2, 36.400001525878906] as vec2,\n  stroke2Position: [width * 0.5, (height * 0.65 + scale * 256.666666667) + 1] as vec2,\n  stroke2Size: [width * 0.1111111111111111 - 2, 36.400001525878906] as vec2,\n  stroke4Position: [width * 0.5, (height * 0.65 + scale * 210) + 2] as vec2,\n  stroke4Size: [width * 0.1111111111111111 - 2, 36.400001525878906] as vec2,\n  stroke8Position: [width * 0.5, (height * 0.65 + scale * 163.333333333) + 4] as vec2,\n  stroke8Size: [width * 0.1111111111111111 - 2, 36.400001525878906] as vec2,\n  stroke16Position: [width * 0.5, (height * 0.65 + scale * 116.666666667) + 8] as vec2,\n  stroke16Size: [width * 0.1111111111111111 - 2, 36.400001525878906] as vec2,\n};\n"
+            "source": "// Scene-relative anchors; DP metrics arrive as physical pixels. Stroke alignment retains texel units.\nconst scale = Math.min(width * 0.0007936507936507937, height * 0.00035714285714285714);\nreturn {\n  stroke025Position: [width * 0.5, (height * 0.65 + scale * 396.666666667) + 0.125] as vec2,\n  stroke025Size: [width * 0.1111111111111111 - horizontalPadding2Px, stroke025HeightPx] as vec2,\n  stroke05Position: [width * 0.5, (height * 0.65 + scale * 350) + 0.25] as vec2,\n  stroke05Size: [width * 0.1111111111111111 - horizontalPadding2Px, stroke05HeightPx] as vec2,\n  stroke1Position: [width * 0.5, (height * 0.65 + scale * 303.333333333) + 0.5] as vec2,\n  stroke1Size: [width * 0.1111111111111111 - horizontalPadding2Px, stroke1HeightPx] as vec2,\n  stroke2Position: [width * 0.5, (height * 0.65 + scale * 256.666666667) + 1] as vec2,\n  stroke2Size: [width * 0.1111111111111111 - horizontalPadding2Px, stroke2HeightPx] as vec2,\n  stroke4Position: [width * 0.5, (height * 0.65 + scale * 210) + 2] as vec2,\n  stroke4Size: [width * 0.1111111111111111 - horizontalPadding2Px, stroke4HeightPx] as vec2,\n  stroke8Position: [width * 0.5, (height * 0.65 + scale * 163.333333333) + 4] as vec2,\n  stroke8Size: [width * 0.1111111111111111 - horizontalPadding2Px, stroke8HeightPx] as vec2,\n  stroke16Position: [width * 0.5, (height * 0.65 + scale * 116.666666667) + 8] as vec2,\n  stroke16Size: [width * 0.1111111111111111 - horizontalPadding2Px, stroke16HeightPx] as vec2,\n};\n",
+            "stroke025HeightPx": 12.133333841959635,
+            "inputUnits": {
+              "stroke025HeightPx": "dp",
+              "stroke05HeightPx": "dp",
+              "stroke1HeightPx": "dp",
+              "stroke2HeightPx": "dp",
+              "stroke4HeightPx": "dp",
+              "stroke8HeightPx": "dp",
+              "stroke16HeightPx": "dp",
+              "horizontalPadding2Px": "dp"
+            },
+            "stroke05HeightPx": 12.133333841959635,
+            "stroke1HeightPx": 12.133333841959635,
+            "stroke2HeightPx": 12.133333841959635,
+            "stroke4HeightPx": 12.133333841959635,
+            "stroke8HeightPx": 12.133333841959635,
+            "stroke16HeightPx": 12.133333841959635,
+            "horizontalPadding2Px": 0.6666666666666666
           },
           "inputs": [
             {
@@ -2602,6 +2790,46 @@
             {
               "id": "height",
               "name": "height",
+              "type": "float"
+            },
+            {
+              "id": "stroke025HeightPx",
+              "name": "stroke025HeightPx",
+              "type": "float"
+            },
+            {
+              "id": "stroke05HeightPx",
+              "name": "stroke05HeightPx",
+              "type": "float"
+            },
+            {
+              "id": "stroke1HeightPx",
+              "name": "stroke1HeightPx",
+              "type": "float"
+            },
+            {
+              "id": "stroke2HeightPx",
+              "name": "stroke2HeightPx",
+              "type": "float"
+            },
+            {
+              "id": "stroke4HeightPx",
+              "name": "stroke4HeightPx",
+              "type": "float"
+            },
+            {
+              "id": "stroke8HeightPx",
+              "name": "stroke8HeightPx",
+              "type": "float"
+            },
+            {
+              "id": "stroke16HeightPx",
+              "name": "stroke16HeightPx",
+              "type": "float"
+            },
+            {
+              "id": "horizontalPadding2Px",
+              "name": "horizontalPadding2Px",
               "type": "float"
             }
           ],
@@ -2702,6 +2930,54 @@
               "portId": "height",
               "label": "height",
               "variableName": "height",
+              "type": "float"
+            },
+            {
+              "portId": "stroke025HeightPx",
+              "label": "stroke025HeightPx",
+              "variableName": "stroke025HeightPx",
+              "type": "float"
+            },
+            {
+              "portId": "stroke05HeightPx",
+              "label": "stroke05HeightPx",
+              "variableName": "stroke05HeightPx",
+              "type": "float"
+            },
+            {
+              "portId": "stroke1HeightPx",
+              "label": "stroke1HeightPx",
+              "variableName": "stroke1HeightPx",
+              "type": "float"
+            },
+            {
+              "portId": "stroke2HeightPx",
+              "label": "stroke2HeightPx",
+              "variableName": "stroke2HeightPx",
+              "type": "float"
+            },
+            {
+              "portId": "stroke4HeightPx",
+              "label": "stroke4HeightPx",
+              "variableName": "stroke4HeightPx",
+              "type": "float"
+            },
+            {
+              "portId": "stroke8HeightPx",
+              "label": "stroke8HeightPx",
+              "variableName": "stroke8HeightPx",
+              "type": "float"
+            },
+            {
+              "portId": "stroke16HeightPx",
+              "label": "stroke16HeightPx",
+              "variableName": "stroke16HeightPx",
+              "type": "float"
+            },
+            {
+              "portId": "horizontalPadding2Px",
+              "label": "horizontalPadding2Px",
+              "variableName": "horizontalPadding2Px",
               "type": "float"
             }
           ]
@@ -3204,16 +3480,21 @@
             ],
             "dst_alpha_factor": "one-minus-src-alpha",
             "dst_factor": "one-minus-src-alpha",
-            "fontSize": 32,
+            "fontSize": 10.666666666666666,
             "fontWeight": 0,
             "hinting": false,
-            "letterSpacing": -0.11749379336833954,
-            "lineHeight": 42.46666717529297,
+            "letterSpacing": -0.03916459778944651,
+            "lineHeight": 14.155555725097656,
             "src_alpha_factor": "one",
             "src_factor": "one",
             "text": "32px -我能吞下玻璃而不伤害身体。The quick brown fox jumps over the lazy dog.",
             "verticalAlign": "center",
-            "wrap": "none"
+            "wrap": "none",
+            "inputUnits": {
+              "fontSize": "dp",
+              "lineHeight": "dp",
+              "letterSpacing": "dp"
+            }
           }
         },
         {
@@ -3251,16 +3532,21 @@
             ],
             "dst_alpha_factor": "one-minus-src-alpha",
             "dst_factor": "one-minus-src-alpha",
-            "fontSize": 28,
+            "fontSize": 9.333333333333334,
             "fontWeight": 0,
             "hinting": false,
-            "letterSpacing": 0.5080645084381104,
-            "lineHeight": 36.400001525878906,
+            "letterSpacing": 0.16935483614603677,
+            "lineHeight": 12.133333841959635,
             "src_alpha_factor": "one",
             "src_factor": "one",
             "text": "28px -我能吞下玻璃而不伤害身体。The quick brown fox jumps over the lazy dog.",
             "verticalAlign": "center",
-            "wrap": "none"
+            "wrap": "none",
+            "inputUnits": {
+              "fontSize": "dp",
+              "lineHeight": "dp",
+              "letterSpacing": "dp"
+            }
           }
         },
         {
@@ -3298,16 +3584,21 @@
             ],
             "dst_alpha_factor": "one-minus-src-alpha",
             "dst_factor": "one-minus-src-alpha",
-            "fontSize": 24,
+            "fontSize": 8,
             "fontWeight": 0,
             "hinting": false,
-            "letterSpacing": 0.4516128897666931,
-            "lineHeight": 30.33333396911621,
+            "letterSpacing": 0.15053762992223105,
+            "lineHeight": 10.111111323038736,
             "src_alpha_factor": "one",
             "src_factor": "one",
             "text": "24px -我能吞下玻璃而不伤害身体。The quick brown fox jumps over the lazy dog.",
             "verticalAlign": "center",
-            "wrap": "none"
+            "wrap": "none",
+            "inputUnits": {
+              "fontSize": "dp",
+              "lineHeight": "dp",
+              "letterSpacing": "dp"
+            }
           }
         },
         {
@@ -3345,16 +3636,21 @@
             ],
             "dst_alpha_factor": "one-minus-src-alpha",
             "dst_factor": "one-minus-src-alpha",
-            "fontSize": 20,
+            "fontSize": 6.666666666666667,
             "fontWeight": 0,
             "hinting": false,
-            "letterSpacing": 0.3010752499103546,
-            "lineHeight": 24.266666412353516,
+            "letterSpacing": 0.10035841663678487,
+            "lineHeight": 8.088888804117838,
             "src_alpha_factor": "one",
             "src_factor": "one",
             "text": "20px -我能吞下玻璃而不伤害身体。The quick brown fox jumps over the lazy dog.",
             "verticalAlign": "center",
-            "wrap": "none"
+            "wrap": "none",
+            "inputUnits": {
+              "fontSize": "dp",
+              "lineHeight": "dp",
+              "letterSpacing": "dp"
+            }
           }
         },
         {
@@ -3392,16 +3688,21 @@
             ],
             "dst_alpha_factor": "one-minus-src-alpha",
             "dst_factor": "one-minus-src-alpha",
-            "fontSize": 16,
+            "fontSize": 5.333333333333333,
             "fontWeight": 0,
             "hinting": false,
-            "letterSpacing": 0.22580644488334656,
-            "lineHeight": 18.200000762939453,
+            "letterSpacing": 0.07526881496111552,
+            "lineHeight": 6.066666920979817,
             "src_alpha_factor": "one",
             "src_factor": "one",
             "text": "16px -我能吞下玻璃而不伤害身体。The quick brown fox jumps over the lazy dog.",
             "verticalAlign": "center",
-            "wrap": "none"
+            "wrap": "none",
+            "inputUnits": {
+              "fontSize": "dp",
+              "lineHeight": "dp",
+              "letterSpacing": "dp"
+            }
           }
         },
         {
@@ -3439,16 +3740,21 @@
             ],
             "dst_alpha_factor": "one-minus-src-alpha",
             "dst_factor": "one-minus-src-alpha",
-            "fontSize": 8,
+            "fontSize": 2.6666666666666665,
             "fontWeight": 0,
             "hinting": false,
-            "letterSpacing": 0.17213115096092224,
-            "lineHeight": 12.133333206176758,
+            "letterSpacing": 0.05737705032030741,
+            "lineHeight": 4.044444402058919,
             "src_alpha_factor": "one",
             "src_factor": "one",
             "text": "8px -我能吞下玻璃而不伤害身体。The quick brown fox jumps over the lazy dog.",
             "verticalAlign": "center",
-            "wrap": "none"
+            "wrap": "none",
+            "inputUnits": {
+              "fontSize": "dp",
+              "lineHeight": "dp",
+              "letterSpacing": "dp"
+            }
           }
         },
         {
@@ -3486,16 +3792,20 @@
             ],
             "dst_alpha_factor": "one-minus-src-alpha",
             "dst_factor": "one-minus-src-alpha",
-            "fontSize": 18.66666603088379,
+            "fontSize": 6.222222010294597,
             "fontWeight": 0,
             "hinting": false,
             "letterSpacing": 0,
-            "lineHeight": 23.33333396911621,
+            "lineHeight": 7.777777989705403,
             "src_alpha_factor": "one",
             "src_factor": "one",
             "text": "luoruiyao@bytedance.com",
             "verticalAlign": "center",
-            "wrap": "none"
+            "wrap": "none",
+            "inputUnits": {
+              "fontSize": "dp",
+              "lineHeight": "dp"
+            }
           }
         },
         {
@@ -3533,16 +3843,20 @@
             ],
             "dst_alpha_factor": "one-minus-src-alpha",
             "dst_factor": "one-minus-src-alpha",
-            "fontSize": 18.66666603088379,
+            "fontSize": 6.222222010294597,
             "fontWeight": 0,
             "hinting": false,
             "letterSpacing": 0,
-            "lineHeight": 23.33333396911621,
+            "lineHeight": 7.777777989705403,
             "src_alpha_factor": "one",
             "src_factor": "one",
             "text": "2026-09-28",
             "verticalAlign": "center",
-            "wrap": "none"
+            "wrap": "none",
+            "inputUnits": {
+              "fontSize": "dp",
+              "lineHeight": "dp"
+            }
           }
         },
         {
@@ -3550,7 +3864,35 @@
           "type": "DataParse",
           "label": "Type samples · layout",
           "params": {
-            "source": "// Layout in ScenePx. Font sizes stay in physical pixels.\nreturn {\n  sample32Position: [width * 0.5, height * 0.45 + (86.0999755859375)] as vec2,\n  sample32Size: [width - 54, 43] as vec2,\n  sample28Position: [width * 0.5, height * 0.45 + (37.800048828125)] as vec2,\n  sample28Size: [width - 54, 37] as vec2,\n  sample23Position: [width * 0.5, height * 0.45 + (-7)] as vec2,\n  sample23Size: [width - 54, 31] as vec2,\n  sample18Position: [width * 0.5, height * 0.45 + (-45.9666748046875)] as vec2,\n  sample18Size: [width - 54, 25] as vec2,\n  sample14Position: [width * 0.5, height * 0.45 + (-76.7666015625)] as vec2,\n  sample14Size: [width - 54, 19] as vec2,\n  sample9Position: [width * 0.5, height * 0.45 + (-101.7333984375)] as vec2,\n  sample9Size: [width - 54, 13] as vec2,\n};\n"
+            "source": "// Scene-relative anchors; DP metrics arrive as physical pixels. Stroke alignment retains texel units.\nreturn {\n  sample32Position: [width * 0.5, height * 0.45 + sample32OffsetPx] as vec2,\n  sample32Size: [width - horizontalPadding54Px, sample32HeightPx] as vec2,\n  sample28Position: [width * 0.5, height * 0.45 + sample28OffsetPx] as vec2,\n  sample28Size: [width - horizontalPadding54Px, sample28HeightPx] as vec2,\n  sample23Position: [width * 0.5, height * 0.45 + sample23OffsetPx] as vec2,\n  sample23Size: [width - horizontalPadding54Px, sample23HeightPx] as vec2,\n  sample18Position: [width * 0.5, height * 0.45 + sample18OffsetPx] as vec2,\n  sample18Size: [width - horizontalPadding54Px, sample18HeightPx] as vec2,\n  sample14Position: [width * 0.5, height * 0.45 + sample14OffsetPx] as vec2,\n  sample14Size: [width - horizontalPadding54Px, sample14HeightPx] as vec2,\n  sample9Position: [width * 0.5, height * 0.45 + sample9OffsetPx] as vec2,\n  sample9Size: [width - horizontalPadding54Px, sample9HeightPx] as vec2,\n};\n",
+            "sample32HeightPx": 14.333333333333334,
+            "inputUnits": {
+              "sample32HeightPx": "dp",
+              "sample28HeightPx": "dp",
+              "sample23HeightPx": "dp",
+              "sample18HeightPx": "dp",
+              "sample14HeightPx": "dp",
+              "sample9HeightPx": "dp",
+              "horizontalPadding54Px": "dp",
+              "sample32OffsetPx": "dp",
+              "sample28OffsetPx": "dp",
+              "sample23OffsetPx": "dp",
+              "sample18OffsetPx": "dp",
+              "sample14OffsetPx": "dp",
+              "sample9OffsetPx": "dp"
+            },
+            "sample28HeightPx": 12.333333333333334,
+            "sample23HeightPx": 10.333333333333334,
+            "sample18HeightPx": 8.333333333333334,
+            "sample14HeightPx": 6.333333333333333,
+            "sample9HeightPx": 4.333333333333333,
+            "horizontalPadding54Px": 18,
+            "sample32OffsetPx": 28.699991861979168,
+            "sample28OffsetPx": 12.600016276041666,
+            "sample23OffsetPx": -2.3333333333333335,
+            "sample18OffsetPx": -15.322224934895834,
+            "sample14OffsetPx": -25.5888671875,
+            "sample9OffsetPx": -33.9111328125
           },
           "inputs": [
             {
@@ -3561,6 +3903,71 @@
             {
               "id": "height",
               "name": "height",
+              "type": "float"
+            },
+            {
+              "id": "sample32HeightPx",
+              "name": "sample32HeightPx",
+              "type": "float"
+            },
+            {
+              "id": "sample28HeightPx",
+              "name": "sample28HeightPx",
+              "type": "float"
+            },
+            {
+              "id": "sample23HeightPx",
+              "name": "sample23HeightPx",
+              "type": "float"
+            },
+            {
+              "id": "sample18HeightPx",
+              "name": "sample18HeightPx",
+              "type": "float"
+            },
+            {
+              "id": "sample14HeightPx",
+              "name": "sample14HeightPx",
+              "type": "float"
+            },
+            {
+              "id": "sample9HeightPx",
+              "name": "sample9HeightPx",
+              "type": "float"
+            },
+            {
+              "id": "horizontalPadding54Px",
+              "name": "horizontalPadding54Px",
+              "type": "float"
+            },
+            {
+              "id": "sample32OffsetPx",
+              "name": "sample32OffsetPx",
+              "type": "float"
+            },
+            {
+              "id": "sample28OffsetPx",
+              "name": "sample28OffsetPx",
+              "type": "float"
+            },
+            {
+              "id": "sample23OffsetPx",
+              "name": "sample23OffsetPx",
+              "type": "float"
+            },
+            {
+              "id": "sample18OffsetPx",
+              "name": "sample18OffsetPx",
+              "type": "float"
+            },
+            {
+              "id": "sample14OffsetPx",
+              "name": "sample14OffsetPx",
+              "type": "float"
+            },
+            {
+              "id": "sample9OffsetPx",
+              "name": "sample9OffsetPx",
               "type": "float"
             }
           ],
@@ -3650,6 +4057,84 @@
               "label": "height",
               "variableName": "height",
               "type": "float"
+            },
+            {
+              "portId": "sample32HeightPx",
+              "label": "sample32HeightPx",
+              "variableName": "sample32HeightPx",
+              "type": "float"
+            },
+            {
+              "portId": "sample28HeightPx",
+              "label": "sample28HeightPx",
+              "variableName": "sample28HeightPx",
+              "type": "float"
+            },
+            {
+              "portId": "sample23HeightPx",
+              "label": "sample23HeightPx",
+              "variableName": "sample23HeightPx",
+              "type": "float"
+            },
+            {
+              "portId": "sample18HeightPx",
+              "label": "sample18HeightPx",
+              "variableName": "sample18HeightPx",
+              "type": "float"
+            },
+            {
+              "portId": "sample14HeightPx",
+              "label": "sample14HeightPx",
+              "variableName": "sample14HeightPx",
+              "type": "float"
+            },
+            {
+              "portId": "sample9HeightPx",
+              "label": "sample9HeightPx",
+              "variableName": "sample9HeightPx",
+              "type": "float"
+            },
+            {
+              "portId": "horizontalPadding54Px",
+              "label": "horizontalPadding54Px",
+              "variableName": "horizontalPadding54Px",
+              "type": "float"
+            },
+            {
+              "portId": "sample32OffsetPx",
+              "label": "sample32OffsetPx",
+              "variableName": "sample32OffsetPx",
+              "type": "float"
+            },
+            {
+              "portId": "sample28OffsetPx",
+              "label": "sample28OffsetPx",
+              "variableName": "sample28OffsetPx",
+              "type": "float"
+            },
+            {
+              "portId": "sample23OffsetPx",
+              "label": "sample23OffsetPx",
+              "variableName": "sample23OffsetPx",
+              "type": "float"
+            },
+            {
+              "portId": "sample18OffsetPx",
+              "label": "sample18OffsetPx",
+              "variableName": "sample18OffsetPx",
+              "type": "float"
+            },
+            {
+              "portId": "sample14OffsetPx",
+              "label": "sample14OffsetPx",
+              "variableName": "sample14OffsetPx",
+              "type": "float"
+            },
+            {
+              "portId": "sample9OffsetPx",
+              "label": "sample9OffsetPx",
+              "variableName": "sample9OffsetPx",
+              "type": "float"
             }
           ]
         },
@@ -3658,7 +4143,19 @@
           "type": "DataParse",
           "label": "Watermark · layout",
           "params": {
-            "source": "// Layout in ScenePx. Font sizes stay in physical pixels.\nreturn {\n  emailPosition: [width * 0.5, height * 0.025 + (23.800016403198242)] as vec2,\n  emailSize: [width * 0.3333333333333333 - 2, 24.266666412353516] as vec2,\n  datePosition: [width * 0.5, height * 0.025 + (-0.4665851593017578)] as vec2,\n  dateSize: [width * 0.3333333333333333 - 2, 24.266666412353516] as vec2,\n};\n"
+            "source": "// Scene-relative anchors; DP metrics arrive as physical pixels. Stroke alignment retains texel units.\nreturn {\n  emailPosition: [width * 0.5, height * 0.025 + emailOffsetPx] as vec2,\n  emailSize: [width * 0.3333333333333333 - horizontalPadding2Px, emailHeightPx] as vec2,\n  datePosition: [width * 0.5, height * 0.025 + dateOffsetPx] as vec2,\n  dateSize: [width * 0.3333333333333333 - horizontalPadding2Px, dateHeightPx] as vec2,\n};\n",
+            "emailHeightPx": 8.088888804117838,
+            "inputUnits": {
+              "emailHeightPx": "dp",
+              "dateHeightPx": "dp",
+              "horizontalPadding2Px": "dp",
+              "emailOffsetPx": "dp",
+              "dateOffsetPx": "dp"
+            },
+            "dateHeightPx": 8.088888804117838,
+            "horizontalPadding2Px": 0.6666666666666666,
+            "emailOffsetPx": 7.933338801066081,
+            "dateOffsetPx": -0.15552838643391928
           },
           "inputs": [
             {
@@ -3669,6 +4166,31 @@
             {
               "id": "height",
               "name": "height",
+              "type": "float"
+            },
+            {
+              "id": "emailHeightPx",
+              "name": "emailHeightPx",
+              "type": "float"
+            },
+            {
+              "id": "dateHeightPx",
+              "name": "dateHeightPx",
+              "type": "float"
+            },
+            {
+              "id": "horizontalPadding2Px",
+              "name": "horizontalPadding2Px",
+              "type": "float"
+            },
+            {
+              "id": "emailOffsetPx",
+              "name": "emailOffsetPx",
+              "type": "float"
+            },
+            {
+              "id": "dateOffsetPx",
+              "name": "dateOffsetPx",
               "type": "float"
             }
           ],
@@ -3709,6 +4231,36 @@
               "portId": "height",
               "label": "height",
               "variableName": "height",
+              "type": "float"
+            },
+            {
+              "portId": "emailHeightPx",
+              "label": "emailHeightPx",
+              "variableName": "emailHeightPx",
+              "type": "float"
+            },
+            {
+              "portId": "dateHeightPx",
+              "label": "dateHeightPx",
+              "variableName": "dateHeightPx",
+              "type": "float"
+            },
+            {
+              "portId": "horizontalPadding2Px",
+              "label": "horizontalPadding2Px",
+              "variableName": "horizontalPadding2Px",
+              "type": "float"
+            },
+            {
+              "portId": "emailOffsetPx",
+              "label": "emailOffsetPx",
+              "variableName": "emailOffsetPx",
+              "type": "float"
+            },
+            {
+              "portId": "dateOffsetPx",
+              "label": "dateOffsetPx",
+              "variableName": "dateOffsetPx",
               "type": "float"
             }
           ]

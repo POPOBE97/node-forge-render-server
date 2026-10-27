@@ -21,7 +21,7 @@ const PIXELS: [[u8; 4]; 8] = [
 
 fn scene(encoding: &str, alpha: &str, output: &str) -> SceneDSL {
     let mut value = json!({
-        "version": "6.0", "workingColorSpace": "linear-srgb",
+        "version": "6.1", "workingColorSpace": "linear-srgb", "dpi": 3.0,
         "metadata": { "name": "image-texture-color-space" },
         "nodes": [
             { "id": "image", "type": "ImageTexture", "params": {

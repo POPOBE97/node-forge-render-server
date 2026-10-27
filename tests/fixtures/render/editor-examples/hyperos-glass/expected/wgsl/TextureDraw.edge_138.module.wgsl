@@ -29,16 +29,19 @@ var<uniform> params: Params;
      @location(2) local_px: vec3f,
      // Geometry size in pixels after applying geometry/instance transforms.
      @location(3) geo_size_px: vec2f,
-  };
+     @location(4) @interpolate(flat) instance_index: u32,
+ };
 
 
 struct GraphInputs {
+    // Node: dp.TextureDraw.edge_138.size
+    node_dp_TextureDraw_edge_138_size_71598f19: vec4f,
     // Node: sys.image-pass.TextureDraw.edge_138.alpha.default
-    sys_image_pass_texture_draw_edge_138_alpha_default: vec4f,
+    node_sys_image_pass_TextureDraw_edge_138_alpha_default_4b592629: vec4f,
     // Node: sys.image-pass.TextureDraw.edge_138.alpha.max
-    sys_image_pass_texture_draw_edge_138_alpha_max: vec4f,
+    node_sys_image_pass_TextureDraw_edge_138_alpha_max_b8f53df6: vec4f,
     // Node: sys.image-pass.TextureDraw.edge_138.alpha.min
-    sys_image_pass_texture_draw_edge_138_alpha_min: vec4f,
+    node_sys_image_pass_TextureDraw_edge_138_alpha_min_72ac54f6: vec4f,
 };
 
 @group(0) @binding(2)
@@ -76,8 +79,11 @@ fn nf_math_closure_fragment_closure_sample_image_texture(uv: vec2f) -> vec4f {
  fn vs_main(
      @location(0) position: vec3f,
      @location(1) uv: vec2f,
+     @builtin(instance_index) instance_index: u32,
  ) -> VSOut {
  var out: VSOut;
+
+ out.instance_index = instance_index;
 
  let _unused_geo_size = params.geo_size;
  let _unused_geo_translate = params.geo_translate;
@@ -86,16 +92,20 @@ fn nf_math_closure_fragment_closure_sample_image_texture(uv: vec2f) -> vec4f {
  // UV passed as vertex attribute.
  out.uv = vec2f(uv.x, 1.0 - uv.y);
 
- out.geo_size_px = params.geo_size;
+ let rect_size_px_base = vec2f((graph_inputs.node_dp_TextureDraw_edge_138_size_71598f19).x, (graph_inputs.node_dp_TextureDraw_edge_138_size_71598f19).y);
+ let rect_center_px = baked_data_parse[(instance_index) * 8u + 7u].xy;
+ let rect_dyn = vec4f(rect_center_px, rect_size_px_base);
+ out.geo_size_px = rect_dyn.zw;
  // Geometry-local pixel coordinate (GeoFragcoord).
  out.local_px = vec3f(uv * out.geo_size_px, 0.0);
 
- var p_local = position;
+ let p_rect_local_px = vec3f(position.xy * rect_dyn.zw, position.z);
+ var p_local = p_rect_local_px;
 
  // Geometry vertices are in local pixel units centered at (0,0).
  // Convert to target pixel coordinates with bottom-left origin.
  out.local_px = vec3f(out.local_px.xy, p_local.z);
- let p_px = params.center + p_local.xy;
+ let p_px = rect_dyn.xy + p_local.xy;
 
  out.position = params.camera * vec4f(p_px, p_local.z, 1.0);
 
@@ -108,9 +118,9 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     let math_closure_out = nf_math_closure_fragment_closure(vec2f(in.uv.x, 1.0 - in.uv.y));
     // MathClamp sys.image-pass.TextureDraw.edge_138.alpha.clamp.result
     let math_clamp = clamp(
-        (graph_inputs.sys_image_pass_texture_draw_edge_138_alpha_default).x,
-        (graph_inputs.sys_image_pass_texture_draw_edge_138_alpha_min).x,
-        (graph_inputs.sys_image_pass_texture_draw_edge_138_alpha_max).x,
+        (graph_inputs.node_sys_image_pass_TextureDraw_edge_138_alpha_default_4b592629).x,
+        (graph_inputs.node_sys_image_pass_TextureDraw_edge_138_alpha_min_72ac54f6).x,
+        (graph_inputs.node_sys_image_pass_TextureDraw_edge_138_alpha_max_b8f53df6).x,
     );
     // Final composite
     let _frag_out = (math_closure_out * vec4f(math_clamp));

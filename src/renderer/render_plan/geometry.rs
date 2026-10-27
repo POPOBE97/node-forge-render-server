@@ -14,7 +14,7 @@ use crate::{
         node_compiler::geometry_nodes::load_geometry_from_asset,
         types::{BakedValue, GraphFieldKind, MaterialCompileContext, TypedExpr, ValueType},
         utils::{
-            IDENTITY_MAT4, coerce_to_type, cpu_num_f32, cpu_num_u32_min_1,
+            IDENTITY_MAT4, coerce_to_type, cpu_num_u32_min_1,
             fmt_f32 as fmt_f32_utils, parse_strict_mat4_param_column_major,
         },
     },
@@ -290,12 +290,12 @@ fn resolve_cpu_numeric_output(
         };
         match node.node_type.as_str() {
             "Vector2Input" if output_port_id == "vector" => {
-                let x = cpu_num_f32(scene, nodes_by_id, node, "x", 0.0)?;
-                let y = cpu_num_f32(scene, nodes_by_id, node, "y", 0.0)?;
+                let x = crate::dsl::numeric_input_output_component(scene, nodes_by_id, node, "x")? as f32;
+                let y = crate::dsl::numeric_input_output_component(scene, nodes_by_id, node, "y")? as f32;
                 Ok(Some(CpuNumericValue::Vec2([x, y])))
             }
             "FloatInput" | "IntInput" if output_port_id == "value" => {
-                let value = cpu_num_f32(scene, nodes_by_id, node, "value", 0.0)?;
+                let value = crate::dsl::numeric_input_output_component(scene, nodes_by_id, node, "value")? as f32;
                 Ok(Some(CpuNumericValue::Scalar(value)))
             }
             "BoolInput" if output_port_id == "value" => Ok(Some(CpuNumericValue::Scalar(
@@ -1708,6 +1708,7 @@ mod tests {
     fn scene(nodes: Vec<Node>, connections: Vec<Connection>) -> SceneDSL {
         SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0.0".to_string(),
             metadata: Metadata {
                 name: "test".to_string(),

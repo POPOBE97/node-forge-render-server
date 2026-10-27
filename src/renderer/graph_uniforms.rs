@@ -405,92 +405,28 @@ fn write_shader_i32_array_slots(
     }
 }
 
-fn connected_packed_input_value(scene: &SceneDSL, node: &Node) -> Value {
+pub(crate) fn connected_packed_input_value(scene: &SceneDSL, node: &Node) -> Result<Value> {
     if let Some(value) = node.params.get("value").and_then(Value::as_array) {
-        return Value::Array(value.clone());
+        return Ok(Value::Array(value.clone()));
     }
-    let nodes_by_id = scene
-        .nodes
-        .iter()
-        .map(|candidate| (candidate.id.as_str(), candidate))
-        .collect::<HashMap<_, _>>();
-    let values = node
-        .inputs
-        .iter()
-        .map(|input| {
-            let source = scene
-                .connections
-                .iter()
-                .find(|connection| {
-                    connection.to.node_id == node.id && connection.to.port_id == input.id
-                })
-                .and_then(|connection| nodes_by_id.get(connection.from.node_id.as_str()).copied());
-            let Some(source) = source else {
-                return Value::Null;
-            };
-            match source.node_type.as_str() {
-                "Vector2Input" => json!([
-                    source
-                        .params
-                        .get("x")
-                        .and_then(parse_json_number_f32)
-                        .unwrap_or(0.0),
-                    source
-                        .params
-                        .get("y")
-                        .and_then(parse_json_number_f32)
-                        .unwrap_or(0.0)
-                ]),
-                "Vector3Input" => json!([
-                    source
-                        .params
-                        .get("x")
-                        .and_then(parse_json_number_f32)
-                        .unwrap_or(0.0),
-                    source
-                        .params
-                        .get("y")
-                        .and_then(parse_json_number_f32)
-                        .unwrap_or(0.0),
-                    source
-                        .params
-                        .get("z")
-                        .and_then(parse_json_number_f32)
-                        .unwrap_or(0.0)
-                ]),
-                "Vector4Input" => {
-                    let value = parse_vec4_xyzw(source).unwrap_or([0.0; 4]);
-                    json!(value)
-                }
-                "ColorInput" => source
-                    .params
-                    .get("value")
-                    .cloned()
-                    .unwrap_or_else(|| json!([1.0, 0.0, 1.0, 1.0])),
-                "BoolInput" => source
-                    .params
-                    .get("value")
-                    .cloned()
-                    .unwrap_or(Value::Bool(false)),
-                _ => source
-                    .params
-                    .get("value")
-                    .cloned()
-                    .or_else(|| {
-                        source
-                            .params
-                            .get("x")
-                            .and_then(parse_json_number_f32)
-                            .map(|value| json!(value))
-                    })
-                    .unwrap_or(Value::Null),
-            }
-        })
-        .collect();
-    Value::Array(values)
+    let values = node.inputs.iter().map(|input| {
+        let source = crate::dsl::incoming_connection(scene, &node.id, &input.id)
+            .and_then(|edge| scene.nodes.iter().find(|n| n.id == edge.from.node_id));
+        match source {
+            Some(source) => crate::dsl::numeric_declaration_value(scene, source),
+            None => Ok(Value::Null),
+        }
+    }).collect::<Result<Vec<_>>>()?;
+    Ok(Value::Array(values))
 }
 
 pub fn pack_graph_values(scene: &SceneDSL, schema: &GraphSchema) -> Result<Vec<u8>> {
+    let mut physical_scene;
+    let scene = if scene.nodes.iter().any(|node| node.params.contains_key("inputUnits")) {
+        physical_scene = scene.clone();
+        crate::input_units::materialize_scene(&mut physical_scene)?;
+        &physical_scene
+    } else { scene };
     if schema.is_empty() {
         return Ok(Vec::new());
     }
@@ -529,7 +465,7 @@ pub fn pack_graph_values(scene: &SceneDSL, schema: &GraphSchema) -> Result<Vec<u
         let shader_value =
             shader_parameter.and_then(|(_, parameter_id)| node.params.get(parameter_id));
         let packed_input_value = match node.node_type.as_str() {
-            "PackedInput" => Some(connected_packed_input_value(scene, node)),
+            "PackedInput" => Some(connected_packed_input_value(scene, node)?),
             "ColorArrayInput" | "Vector2ArrayInput" | "BezierCurveInput" => {
                 node.params.get("value").cloned()
             }
@@ -549,11 +485,15 @@ pub fn pack_graph_values(scene: &SceneDSL, schema: &GraphSchema) -> Result<Vec<u
                 write_f32_slot(&mut bytes, slot_index, [v, 0.0, 0.0, 0.0]);
             }
             GraphFieldKind::I32 => {
-                let v = if shader_parameter.is_some() {
-                    shader_value.and_then(parse_json_number_f32).unwrap_or(0.0) as i32
+                let value = if shader_parameter.is_some() {
+                    shader_value
                 } else {
-                    parse_const_f32(node).unwrap_or(0.0) as i32
+                    node.params.get("value").or_else(|| node.params.get("x"))
+                        .or_else(|| node.params.get("v"))
                 };
+                // Preserve all i32 bits: an f32 intermediary loses integer precision
+                // above 2^24, including correctly rounded inline dp values.
+                let v = value.and_then(Value::as_f64).unwrap_or(0.0) as i32;
                 write_i32_slot(&mut bytes, slot_index, [v, 0, 0, 0]);
             }
             GraphFieldKind::Bool => {
@@ -770,7 +710,7 @@ fn collect_ignored_input_value_node_ids_for_pass_bindings(
 
     // Text layout and instance counts are CPU-built. Values shared with GPU
     // uniforms must still invalidate these render-plan dependencies.
-    let mut pending: Vec<String> = scene.nodes.iter().filter(|node| node.node_type == "TextPass")
+    let mut pending: Vec<String> = scene.nodes.iter().filter(|node| matches!(node.node_type.as_str(), "TextPass" | "TextSdf" | "RenderTexture" | "Rect2DGeometry" | "PlaneGeometry" | "CircleGeometry" | "TransformGeometry" | "SetTransform" | "Downsample" | "Upsample" | "OrthographicCamera" | "PerspectiveCamera") || node.params.contains_key("inputUnits"))
         .map(|node| node.id.clone()).collect();
     pending.extend(scene.connections.iter().filter(|edge| {
         edge.to.port_id == "count"
@@ -1113,6 +1053,7 @@ fn canonical_scene_value(
     json!({
         "version": scene.version,
         "workingColorSpace": scene.working_color_space,
+        "dpi": scene.dpi,
         "nodes": canonicalize_nodes(&scene.nodes, ignored_input_value_node_ids),
         "connections": sort_connections(&scene.connections),
         "outputs": outputs_sorted,
@@ -1289,6 +1230,7 @@ mod tests {
     fn base_scene() -> SceneDSL {
         SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "sig".to_string(),
@@ -1344,6 +1286,7 @@ mod tests {
     fn pack_graph_values_writes_expected_slots() {
         let scene = SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "pack".to_string(),
@@ -1391,6 +1334,7 @@ mod tests {
     fn pack_graph_values_writes_hdr_color_components_without_clamping() {
         let scene = SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "hdr-colors".to_string(),
@@ -1450,6 +1394,7 @@ mod tests {
     fn pack_graph_values_maps_midi_raw_value_to_range() {
         let scene = SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "midi".to_string(),
@@ -1499,6 +1444,7 @@ mod tests {
     fn pack_graph_values_reads_shader_material_parameter_slots() {
         let scene = SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "shader-params".to_string(),
@@ -1557,6 +1503,7 @@ mod tests {
     fn pack_graph_values_resolves_vector4_input_component_connections() {
         let scene = SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "midi-vector".to_string(),
@@ -1649,6 +1596,7 @@ mod tests {
     fn signature_for_pass_bindings_only_ignores_bound_input_values() {
         let mut scene = SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "sig-bind".to_string(),
@@ -1749,6 +1697,7 @@ mod tests {
     fn signature_for_pass_bindings_ignores_upstream_values_of_bound_vector_inputs() {
         let mut scene = SceneDSL {
             working_color_space: crate::color::WorkingColorSpace::Srgb,
+            dpi: 3.0,
             version: "1.0".to_string(),
             metadata: Metadata {
                 name: "sig-vec4-bind".to_string(),

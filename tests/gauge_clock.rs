@@ -58,7 +58,7 @@ fn assert_palette(uniforms: &serde_json::Value, position: f64) {
 #[test]
 fn gauge_advances_by_six_blends_oklab_from_80_to_90_and_holds_at_100() {
     let _registry = support::function_registry_lock();
-    let (scene, assets) = support::load_render_case("practive-gaudge-meter");
+    let (scene, assets) = support::load_render_case("practice-gaudge-meter");
     let renderer = HeadlessRenderer::new(HeadlessRendererConfig::default())
         .expect("native GPU required");
     let mut player = PlaybackRuntime::new(
