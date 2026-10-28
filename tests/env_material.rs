@@ -159,6 +159,36 @@ fn hdri_hdr_and_exr_preserve_radiance_and_map_rotation_poles_and_seam() {
 }
 
 #[test]
+fn env_color_and_material_outputs_honor_filter_and_independent_address_modes() {
+    let gpu =
+        HeadlessRenderer::new(HeadlessRendererConfig::default()).expect("native GPU required");
+    let map = assets(false, None);
+    for output in ["material", "color"] {
+        let mut input = scene();
+        input.connections[0].from.port_id = output.into();
+        set(&mut input, "env", "rotation", json!(89.9));
+        // Linear sampling crosses the horizontal panorama seam by default.
+        near(render(&gpu, &input, &map), [5.0, 2.5, 1.5, 1.0]);
+        set(&mut input, "env", "magFilter", json!("nearest"));
+        set(&mut input, "env", "minFilter", json!("nearest"));
+        near(render(&gpu, &input, &map), [8.0, 1.0, 2.0, 1.0]);
+        set(&mut input, "env", "magFilter", json!("linear"));
+        set(&mut input, "env", "minFilter", json!("linear"));
+        for address in ["clamp-to-edge", "mirror-repeat"] {
+            set(&mut input, "env", "addressModeU", json!(address));
+            near(render(&gpu, &input, &map), [8.0, 1.0, 2.0, 1.0]);
+        }
+
+        set(&mut input, "env", "normal", json!([0, 1, 1]));
+        near(render(&gpu, &input, &map), [16.0, 0.0, 0.0, 1.0]);
+        set(&mut input, "env", "addressModeV", json!("repeat"));
+        near(render(&gpu, &input, &map), [8.0, 0.0, 6.0, 1.0]);
+        set(&mut input, "env", "addressModeV", json!("mirror-repeat"));
+        near(render(&gpu, &input, &map), [16.0, 0.0, 0.0, 1.0]);
+    }
+}
+
+#[test]
 fn env_roughness_exposure_alpha_and_connected_image_are_independent() {
     let gpu =
         HeadlessRenderer::new(HeadlessRendererConfig::default()).expect("native GPU required");

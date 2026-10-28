@@ -2195,7 +2195,11 @@
       ],
       "defaultParams": {
         "assetId": "",
-        "encoderSpace": "linear"
+        "encoderSpace": "linear",
+        "addressModeU": "repeat",
+        "addressModeV": "clamp-to-edge",
+        "magFilter": "linear",
+        "minFilter": "linear"
       }
     },
     {

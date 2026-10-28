@@ -117,12 +117,39 @@ where
         .entry("env_material".into())
         .or_insert_with(|| include_str!("templates/env_material.wgsl").into());
     let texture = MaterialCompileContext::tex_var_name(&node.id);
+    let address_u = sampler_option(
+        node,
+        "addressModeU",
+        &["clamp-to-edge", "repeat", "mirror-repeat"],
+        "repeat",
+    )?;
+    let address_v = sampler_option(
+        node,
+        "addressModeV",
+        &["clamp-to-edge", "repeat", "mirror-repeat"],
+        "clamp-to-edge",
+    )?;
+    let mag = sampler_option(node, "magFilter", &["nearest", "linear"], "linear")?;
+    let min = sampler_option(node, "minFilter", &["nearest", "linear"], "linear")?;
     Ok(TypedExpr::with_time(
         format!(
-            "nf_env_material({texture}, in.world_pos, in.local_px.xy, {})",
+            "nf_env_material({texture}, vec2i({address_u}, {address_v}), vec2i({mag}, {min}), in.world_pos, in.local_px.xy, {})",
             args.join(", ")
         ),
         ValueType::Vec4,
         uses_time,
     ))
+}
+
+fn sampler_option(node: &Node, key: &str, values: &[&str], default: &str) -> Result<usize> {
+    let value = match node.params.get(key) {
+        Some(value) => value
+            .as_str()
+            .with_context(|| format!("EnvMaterial {key} must be a string"))?,
+        None => default,
+    };
+    values
+        .iter()
+        .position(|candidate| *candidate == value)
+        .with_context(|| format!("EnvMaterial unsupported {key}: {value}"))
 }

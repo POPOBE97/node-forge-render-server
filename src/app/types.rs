@@ -911,7 +911,7 @@ impl App {
         if let Err(error) = crate::asset_store::save_debug_artifacts_to_nforge(
             nforge_path.as_path(),
             &scene,
-            &self.shell.debug_artifacts,
+            &mut self.shell.debug_artifacts,
         ) {
             eprintln!(
                 "[debug-artifacts] failed to persist {}: {error:#}",

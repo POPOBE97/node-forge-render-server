@@ -46,6 +46,7 @@ pub enum MutationPlan {
     Repeat {
         child: Box<MutationPlan>,
         count: i64,
+        interval: Option<f64>,
     },
     Delay {
         child: Box<MutationPlan>,
@@ -108,12 +109,21 @@ impl MutationPlan {
                     child.validate_inner(depth + 1, nodes)?;
                 }
             }
-            Self::Repeat { child, count } => {
+            Self::Repeat {
+                child,
+                count,
+                interval,
+            } => {
                 if *count != -1 && *count < 1 {
                     anyhow::bail!("repeat count must be -1 or an integer >= 1");
                 }
                 child.validate_inner(depth + 1, nodes)?;
-                if *count == -1 && child.minimum_duration() <= 0.0 {
+                if let Some(interval) = interval {
+                    if !interval.is_finite() || *interval <= 0.0 {
+                        anyhow::bail!("repeat interval must be finite and > 0");
+                    }
+                }
+                if interval.is_none() && *count == -1 && child.minimum_duration() <= 0.0 {
                     anyhow::bail!("infinite repeat requires a child that consumes time");
                 }
             }
@@ -135,11 +145,15 @@ impl MutationPlan {
                 } => duration + delay,
             },
             Self::Sequence(children) => children.iter().map(Self::minimum_duration).sum(),
-            Self::Repeat { child, count } => {
+            Self::Repeat {
+                child,
+                count,
+                interval,
+            } => {
                 if *count == -1 {
                     f64::INFINITY
                 } else {
-                    child.minimum_duration() * *count as f64
+                    interval.unwrap_or_else(|| child.minimum_duration()) * *count as f64
                 }
             }
             Self::Delay { child, delay } => delay + child.minimum_duration(),
@@ -1706,6 +1720,8 @@ enum MutationInstructionKind {
     },
     RepeatStart {
         count: i64,
+        interval: Option<f64>,
+        end: usize,
     },
     RepeatEnd {
         start: usize,
@@ -1715,8 +1731,11 @@ enum MutationInstructionKind {
 #[derive(Debug, Clone)]
 struct RepeatCursor {
     start: usize,
+    end: usize,
     count: i64,
     iteration: u64,
+    interval: Option<f64>,
+    remaining: Option<f64>,
 }
 
 #[derive(Debug, Clone)]
@@ -1724,6 +1743,7 @@ enum ActiveMutationSegment {
     Wait {
         remaining: f64,
         path: String,
+        advance_pc: bool,
     },
     Linear {
         driver: TimelineDriver,
@@ -1780,6 +1800,16 @@ impl MutationPlanExecutor {
         &self.plan == plan
     }
 
+    fn expired_repeat(&self) -> Option<usize> {
+        // The outermost deadline owns a simultaneous boundary and cancels its nested cursors.
+        self.repeats.iter().position(|cursor| {
+            cursor
+                .remaining
+                .zip(cursor.interval)
+                .is_some_and(|(remaining, interval)| remaining <= interval * 1.0e-12)
+        })
+    }
+
     fn advance(&mut self, dt: f64) -> anyhow::Result<()> {
         if self.completed {
             return Ok(());
@@ -1792,63 +1822,68 @@ impl MutationPlanExecutor {
                 anyhow::bail!("Mutation plan exceeded the per-frame operation budget");
             }
 
+            if let Some(index) = self.expired_repeat() {
+                self.repeats.truncate(index + 1);
+                self.pc = self.repeats[index].end;
+                self.active = None;
+            }
+
+            let step = self
+                .repeats
+                .iter()
+                .filter_map(|cursor| cursor.remaining)
+                .fold(remaining, f64::min);
             if let Some(active) = &mut self.active {
-                match active {
+                if step <= 0.0 {
+                    break;
+                }
+                let (consumed, completed, advance_pc) = match active {
                     ActiveMutationSegment::Wait {
-                        remaining: wait, ..
+                        remaining: wait,
+                        advance_pc,
+                        ..
                     } => {
-                        if remaining <= 0.0 {
-                            break;
-                        }
-                        let consumed = remaining.min(*wait);
+                        let consumed = step.min(*wait);
                         *wait -= consumed;
-                        remaining -= consumed;
-                        if *wait <= f64::EPSILON {
-                            self.active = None;
-                            self.pc += 1;
-                            continue;
-                        }
-                        break;
+                        (consumed, *wait <= 0.0, *advance_pc)
                     }
                     ActiveMutationSegment::Linear { driver, .. } => {
-                        if remaining <= 0.0 {
-                            break;
-                        }
                         let consumed =
-                            remaining.min((driver.duration.max(0.0) - driver.elapsed).max(0.0));
+                            step.min((driver.duration.max(0.0) - driver.elapsed).max(0.0));
                         driver.step(consumed);
                         let sample = driver.sample();
                         self.sample = NumericSample {
                             value: sample.value,
                             velocity: sample.velocity,
                         };
-                        remaining -= consumed;
-                        if sample.completed {
-                            self.active = None;
-                            self.pc += 1;
-                            continue;
-                        }
-                        break;
+                        (consumed, sample.completed, true)
                     }
                     ActiveMutationSegment::Spring { driver, .. } => {
-                        if remaining <= 0.0 {
-                            break;
-                        }
-                        let consumed = advance_spring_exact(driver, remaining);
+                        let consumed = advance_spring_exact(driver, step);
                         let sample = driver.sample();
                         self.sample = NumericSample {
                             value: sample.value,
                             velocity: sample.velocity,
                         };
-                        remaining = (remaining - consumed).max(0.0);
-                        if sample.completed {
-                            self.active = None;
-                            self.pc += 1;
-                            continue;
-                        }
-                        break;
+                        (consumed, sample.completed, true)
+                    }
+                };
+                remaining = (remaining - consumed).max(0.0);
+                for cursor in &mut self.repeats {
+                    if let Some(wait) = &mut cursor.remaining {
+                        *wait = (*wait - consumed).max(0.0);
                     }
                 }
+                if completed {
+                    self.active = None;
+                    if advance_pc {
+                        self.pc += 1;
+                    }
+                }
+                if completed || self.expired_repeat().is_some() {
+                    continue;
+                }
+                break;
             }
 
             let Some(instruction) = self.instructions.get(self.pc).cloned() else {
@@ -1880,6 +1915,7 @@ impl MutationPlanExecutor {
                     self.active = Some(ActiveMutationSegment::Wait {
                         remaining: duration,
                         path: instruction.path,
+                        advance_pc: true,
                     });
                 }
                 MutationInstructionKind::Linear { target, duration } => {
@@ -1929,11 +1965,18 @@ impl MutationPlanExecutor {
                         path: instruction.path,
                     });
                 }
-                MutationInstructionKind::RepeatStart { count } => {
+                MutationInstructionKind::RepeatStart {
+                    count,
+                    interval,
+                    end,
+                } => {
                     self.repeats.push(RepeatCursor {
                         start: self.pc,
+                        end,
                         count,
                         iteration: 0,
+                        interval,
+                        remaining: interval,
                     });
                     self.pc += 1;
                 }
@@ -1944,8 +1987,23 @@ impl MutationPlanExecutor {
                     if cursor.start != start {
                         anyhow::bail!("Mutation repeat cursor does not match its plan");
                     }
+                    if let Some(wait) = cursor
+                        .remaining
+                        .filter(|wait| *wait > cursor.interval.unwrap_or(0.0) * 1.0e-12)
+                    {
+                        // A short child holds its final value until the fixed interval expires.
+                        self.sample.velocity = self.sample.value
+                            .same_shape(vec![0.0; self.sample.value.len()]);
+                        self.active = Some(ActiveMutationSegment::Wait {
+                            remaining: wait,
+                            path: instruction.path,
+                            advance_pc: false,
+                        });
+                        continue;
+                    }
                     cursor.iteration = cursor.iteration.saturating_add(1);
                     if cursor.count == -1 || cursor.iteration < cursor.count as u64 {
+                        cursor.remaining = cursor.interval;
                         self.pc = start + 1;
                     } else {
                         self.repeats.pop();
@@ -2067,11 +2125,19 @@ fn compile_mutation_plan(
                 )?;
             }
         }
-        MutationPlan::Repeat { child, count } => {
+        MutationPlan::Repeat {
+            child,
+            count,
+            interval,
+        } => {
             let start = instructions.len();
             instructions.push(MutationInstruction {
                 path: format!("{path}/repeat"),
-                kind: MutationInstructionKind::RepeatStart { count: *count },
+                kind: MutationInstructionKind::RepeatStart {
+                    count: *count,
+                    interval: *interval,
+                    end: 0,
+                },
             });
             compile_mutation_plan(
                 child,
@@ -2079,6 +2145,12 @@ fn compile_mutation_plan(
                 expected_shape,
                 instructions,
             )?;
+            let end = instructions.len();
+            instructions[start].kind = MutationInstructionKind::RepeatStart {
+                count: *count,
+                interval: *interval,
+                end,
+            };
             instructions.push(MutationInstruction {
                 path: format!("{path}/repeat-end"),
                 kind: MutationInstructionKind::RepeatEnd { start },
@@ -4224,6 +4296,7 @@ mod tests {
 
     fn phase_cycle_plan(start_delay: f64) -> MutationPlan {
         let cycle = MutationPlan::Repeat {
+            interval: None,
             child: Box::new(MutationPlan::Sequence(vec![
                 set_plan(0.0),
                 linear_plan(1.0, 2.5, 0.0),
@@ -4267,10 +4340,175 @@ mod tests {
     }
 
     #[test]
+    fn fixed_repeat_interrupts_unsettled_spring_and_consumes_leftover_time() {
+        let cycle = MutationPlan::Repeat {
+            child: Box::new(MutationPlan::Sequence(vec![
+                set_plan(0.0),
+                MutationPlan::To {
+                    target: serde_json::json!(1.0),
+                    timing: MutationTiming::Spring {
+                        duration: 5.0,
+                        bounce: 0.6,
+                        delay: 0.0,
+                    },
+                },
+            ])),
+            count: -1,
+            interval: Some(3.0),
+        };
+        let initial = hold_driver(serde_json::json!(0.0)).sample();
+        let mut executor = MutationPlanExecutor::new(cycle.clone(), initial.clone()).unwrap();
+        executor.advance(2.99).unwrap();
+        assert!(executor.sample().velocity.components()[0].abs() > 0.01);
+        executor.advance(0.01).unwrap();
+        assert_eq!(executor.debug().repeat_iteration, Some(2));
+        assert!(executor.sample().value.components()[0].abs() < 1.0e-12);
+        assert!(executor.sample().velocity.components()[0].abs() < 1.0e-12);
+        executor.advance(6.25).unwrap();
+        assert_eq!(executor.debug().repeat_iteration, Some(4));
+
+        let mut reference = MutationPlanExecutor::new(cycle.clone(), initial.clone()).unwrap();
+        reference.advance(0.25).unwrap();
+        assert_eq!(
+            executor.sample().value.components(),
+            reference.sample().value.components()
+        );
+        assert_eq!(
+            executor.sample().velocity.components(),
+            reference.sample().velocity.components()
+        );
+        let mut fine = MutationPlanExecutor::new(cycle, initial).unwrap();
+        for _ in 0..925 {
+            fine.advance(0.01).unwrap();
+        }
+        assert_eq!(fine.debug().repeat_iteration, Some(4));
+        assert!(
+            (fine.sample().value.components()[0] - reference.sample().value.components()[0]).abs()
+                < 1.0e-6
+        );
+    }
+
+    #[test]
+    fn fixed_repeat_holds_early_completion_and_finishes_after_total_slots() {
+        let plan = MutationPlan::Sequence(vec![
+            MutationPlan::Repeat {
+                child: Box::new(MutationPlan::Sequence(vec![
+                    set_plan(0.0),
+                    linear_plan(1.0, 0.5, 0.0),
+                ])),
+                count: 2,
+                interval: Some(3.0),
+            },
+            linear_plan(2.0, 1.0, 0.0),
+        ]);
+        let mut executor =
+            MutationPlanExecutor::new(plan, hold_driver(serde_json::json!(0.0)).sample()).unwrap();
+        executor.advance(1.0).unwrap();
+        assert_eq!(executor.sample().value.components(), &[1.0]);
+        assert_eq!(executor.debug().delay_remaining, Some(2.0));
+        executor.advance(2.0).unwrap();
+        assert_eq!(executor.sample().value.components(), &[0.0]);
+        assert_eq!(executor.debug().repeat_iteration, Some(2));
+        executor.advance(3.25).unwrap();
+        assert_eq!(executor.sample().value.components(), &[1.25]);
+        executor.advance(0.75).unwrap();
+        assert!(executor.sample().completed);
+        assert_eq!(executor.sample().value.components(), &[2.0]);
+    }
+
+    #[test]
+    fn fixed_repeat_cancels_nested_infinite_plan_and_delayed_children() {
+        let initial = hold_driver(serde_json::json!(0.0)).sample();
+        let nested = MutationPlan::Repeat {
+            child: Box::new(MutationPlan::Sequence(vec![
+                set_plan(0.0),
+                linear_plan(1.0, 1.0, 0.0),
+            ])),
+            count: -1,
+            interval: Some(0.5),
+        };
+        let plan = MutationPlan::Sequence(vec![
+            MutationPlan::Repeat {
+                child: Box::new(nested),
+                count: 2,
+                interval: Some(0.75),
+            },
+            set_plan(9.0),
+        ]);
+        let mut executor = MutationPlanExecutor::new(plan, initial.clone()).unwrap();
+        executor.advance(1.0).unwrap();
+        assert_eq!(executor.sample().value.components(), &[0.25]);
+        executor.advance(0.5).unwrap();
+        assert!(executor.sample().completed);
+        assert_eq!(executor.sample().value.components(), &[9.0]);
+        assert!(executor.repeats.is_empty());
+
+        let delayed = MutationPlan::Repeat {
+            child: Box::new(MutationPlan::Delay {
+                child: Box::new(set_plan(99.0)),
+                delay: 5.0,
+            }),
+            count: 2,
+            interval: Some(3.0),
+        };
+        let mut executor = MutationPlanExecutor::new(delayed, initial).unwrap();
+        executor.advance(6.0).unwrap();
+        assert!(executor.sample().completed);
+        assert_eq!(executor.sample().value.components(), &[0.0]);
+    }
+
+    #[test]
+    fn fixed_repeat_hold_preserves_packed_velocity_shape() {
+        let value = serde_json::json!([[1.0, 2.0], [3.0, 4.0]]);
+        let plan = MutationPlan::Repeat {
+            child: Box::new(MutationPlan::SetTo {
+                target: value.clone(),
+                velocity: None,
+            }),
+            count: -1,
+            interval: Some(3.0),
+        };
+        let mut executor = MutationPlanExecutor::new(plan, hold_driver(value).sample()).unwrap();
+        executor.advance(3.5).unwrap();
+        let sample = executor.sample();
+        assert!(sample.value.has_same_shape(&sample.velocity));
+        assert_eq!(sample.velocity.components(), &[0.0, 0.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn fixed_repeat_validates_interval_and_can_repeat_an_instant_child() {
+        for interval in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            let plan = MutationPlan::Repeat {
+                child: Box::new(set_plan(1.0)),
+                count: -1,
+                interval: Some(interval),
+            };
+            assert!(
+                plan.validate()
+                    .unwrap_err()
+                    .to_string()
+                    .contains("repeat interval")
+            );
+        }
+        let plan = MutationPlan::Repeat {
+            child: Box::new(set_plan(1.0)),
+            count: -1,
+            interval: Some(3.0),
+        };
+        let mut executor =
+            MutationPlanExecutor::new(plan, hold_driver(serde_json::json!(0.0)).sample()).unwrap();
+        executor.advance(9.0).unwrap();
+        assert_eq!(executor.debug().repeat_iteration, Some(4));
+        assert_eq!(executor.sample().value.components(), &[1.0]);
+        assert!(!executor.sample().completed);
+    }
+
+    #[test]
     fn finite_repeat_count_is_total_plays_and_completes() {
         let plan = MutationPlan::Sequence(vec![
             set_plan(0.0),
             MutationPlan::Repeat {
+                interval: None,
                 child: Box::new(MutationPlan::Sequence(vec![
                     linear_plan(1.0, 0.2, 0.2),
                     linear_plan(0.0, 0.2, 0.0),
@@ -4291,12 +4529,14 @@ mod tests {
         let cycle = MutationPlan::Sequence(vec![set_plan(0.0), linear_plan(1.0, 1.0, 0.0)]);
         let delay_once = MutationPlan::Delay {
             child: Box::new(MutationPlan::Repeat {
+                interval: None,
                 child: Box::new(cycle.clone()),
                 count: 2,
             }),
             delay: 0.5,
         };
         let delay_each_time = MutationPlan::Repeat {
+            interval: None,
             child: Box::new(MutationPlan::Delay {
                 child: Box::new(cycle),
                 delay: 0.5,
@@ -4461,6 +4701,7 @@ mod tests {
     fn mutation_plan_rejects_invalid_repeat_and_timing_values() {
         assert!(
             MutationPlan::Repeat {
+                interval: None,
                 child: Box::new(set_plan(0.0)),
                 count: -1,
             }
@@ -4479,6 +4720,7 @@ mod tests {
         for count in [0, -2] {
             assert!(
                 MutationPlan::Repeat {
+                    interval: None,
                     child: Box::new(linear_plan(1.0, 1.0, 0.0)),
                     count,
                 }

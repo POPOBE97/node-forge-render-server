@@ -15,6 +15,7 @@ pub struct DebugArtifactTextSnapshot {
 
 #[derive(Clone, Debug, Default)]
 pub struct DebugArtifactStore {
+    pub(crate) persisted: Option<(String, String, std::collections::BTreeMap<String, (serde_json::Value, String, i64)>)>,
     manifest: DebugArtifacts,
     text_contents: HashMap<String, String>,
     binary_contents: HashMap<String, Vec<u8>>,

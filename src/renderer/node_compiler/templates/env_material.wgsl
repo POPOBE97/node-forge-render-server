@@ -16,30 +16,53 @@ fn nf_env_normal(world: vec3f, local: vec2f, normal: vec3f, strength: f32) -> ve
 }
 
 // Equirectangular LocalUV: +X is u=.5, +Z is u=.75, +Y is v=1.
-// File storage rows are top-down; only this private sampling boundary uses them.
-// Manual bilinear filtering preserves float32 HDR and handles the panorama seam
-// independently from the pole clamp.
-fn nf_env_sample(image: texture_2d<f32>, direction: vec3f, rotation: f32) -> vec3f {
+fn nf_env_uv(direction: vec3f, rotation: f32) -> vec2f {
     let c = cos(rotation); let s = sin(rotation);
     let d = nf_env_unit(vec3f(c * direction.x - s * direction.z, direction.y,
         s * direction.x + c * direction.z));
     let u = atan2(d.z, d.x) / 6.28318530718 + 0.5;
     let v = asin(clamp(d.y, -1.0, 1.0)) / 3.14159265359 + 0.5;
+    return vec2f(u, v);
+}
+
+// Manual addressing/filtering supports float32 HDR without requiring the
+// optional float32-filterable GPU feature. U and V are independent.
+fn nf_env_address(index: i32, size: i32, mode: i32) -> i32 {
+    if (mode == 1) { return ((index % size) + size) % size; }
+    if (mode == 2) {
+        let period = size * 2;
+        let wrapped = ((index % period) + period) % period;
+        return select(period - 1 - wrapped, wrapped, wrapped < size);
+    }
+    return clamp(index, 0, size - 1);
+}
+
+fn nf_env_sample(image: texture_2d<f32>, direction: vec3f, rotation: f32,
+    address: vec2i, linear_filter: bool) -> vec3f {
+    let uv = nf_env_uv(direction, rotation);
     let size = vec2i(textureDimensions(image));
-    let p = vec2f(u, 1.0 - v) * vec2f(size) - 0.5;
+    // File storage rows are top-down; only this private boundary uses them.
+    let pixel = vec2f(uv.x, 1.0 - uv.y) * vec2f(size);
+    if (!linear_filter) {
+        let nearest = vec2i(floor(pixel));
+        return textureLoad(image, vec2i(nf_env_address(nearest.x, size.x, address.x),
+            nf_env_address(nearest.y, size.y, address.y)), 0).rgb;
+    }
+    let p = pixel - 0.5;
     let base = vec2i(floor(p));
     let f = fract(p);
-    let x0 = ((base.x % size.x) + size.x) % size.x;
-    let x1 = (x0 + 1) % size.x;
-    let y0 = clamp(base.y, 0, size.y - 1);
-    let y1 = clamp(base.y + 1, 0, size.y - 1);
+    let x0 = nf_env_address(base.x, size.x, address.x);
+    let x1 = nf_env_address(base.x + 1, size.x, address.x);
+    let y0 = nf_env_address(base.y, size.y, address.y);
+    let y1 = nf_env_address(base.y + 1, size.y, address.y);
     return mix(
         mix(textureLoad(image, vec2i(x0, y0), 0).rgb, textureLoad(image, vec2i(x1, y0), 0).rgb, f.x),
         mix(textureLoad(image, vec2i(x0, y1), 0).rgb, textureLoad(image, vec2i(x1, y1), 0).rgb, f.x), f.y);
 }
 
-fn nf_env_reflection(image: texture_2d<f32>, r: vec3f, roughness: f32, rotation: f32) -> vec3f {
-    if (roughness <= 0.001) { return nf_env_sample(image, r, rotation); }
+fn nf_env_reflection(image: texture_2d<f32>, r: vec3f, roughness: f32, rotation: f32,
+    address: vec2i, linear_filter: bool) -> vec3f {
+    if (roughness <= 0.001) { return nf_env_sample(image, r, rotation, address, linear_filter); }
     // Deterministic GGX convolution about the reflection direction. This is a
     // finite-sample reflection approximation, not a diffuse/BRDF IBL integral.
     let up = select(vec3f(0.0, 1.0, 0.0), vec3f(0.0, 0.0, 1.0), abs(r.y) > 0.999);
@@ -56,18 +79,26 @@ fn nf_env_reflection(image: texture_2d<f32>, r: vec3f, roughness: f32, rotation:
         let h = tx * (cos(phi) * sin_theta) + ty * (sin(phi) * sin_theta) + r * cos_theta;
         let l = nf_env_unit(2.0 * dot(r, h) * h - r);
         let w = max(dot(r, l), 0.0);
-        radiance += nf_env_sample(image, l, rotation) * w;
+        radiance += nf_env_sample(image, l, rotation, address, linear_filter) * w;
         weight += w;
     }
     return radiance / max(weight, 1e-6);
 }
 
-fn nf_env_material(image: texture_2d<f32>, world: vec3f, local: vec2f,
+fn nf_env_material(image: texture_2d<f32>, address: vec2i, filters: vec2i, world: vec3f, local: vec2f,
     local_normal: vec3f, normal_strength: f32, view: vec3f, roughness: f32,
     rotation: f32, exposure: f32, intensity: f32, tint: vec4f, alpha: f32) -> vec4f {
     let n = nf_env_normal(world, local, local_normal, normal_strength);
     let r = nf_env_unit(reflect(-nf_env_unit(view), n));
-    let radiance = nf_env_reflection(image, r, clamp(roughness, 0.0, 1.0), radians(rotation));
+    let angle = radians(rotation);
+    let uv = nf_env_uv(r, angle);
+    let dx = dpdx(uv); let dy = dpdy(uv);
+    let size = vec2f(textureDimensions(image));
+    // The panorama's U seam must not appear to be a full-texture footprint.
+    let footprint = max(length(vec2f(dx.x - round(dx.x), dx.y) * size),
+        length(vec2f(dy.x - round(dy.x), dy.y) * size));
+    let linear_filter = select(filters.x, filters.y, footprint > 1.0) == 1;
+    let radiance = nf_env_reflection(image, r, clamp(roughness, 0.0, 1.0), angle, address, linear_filter);
     let color = tint.rgb / max(tint.a, 1e-8);
     let coverage = clamp(alpha * tint.a, 0.0, 1.0);
     return vec4f(radiance * color * exp2(clamp(exposure, -32.0, 32.0))

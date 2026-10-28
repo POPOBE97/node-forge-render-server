@@ -183,7 +183,7 @@ pub fn load_from_nforge_with_debug_artifacts(nforge_path: &Path) -> Result<Loade
 pub fn save_debug_artifacts_to_nforge(
     nforge_path: &Path,
     _scene: &SceneDSL,
-    debug_artifacts: &DebugArtifactStore,
+    debug_artifacts: &mut DebugArtifactStore,
 ) -> Result<()> {
     crate::nforge::save_debug_artifacts(nforge_path, debug_artifacts)
 }
@@ -233,7 +233,7 @@ mod tests {
             .unwrap()
             .clone();
         artifacts.upsert(item, Some(artifact_text.to_string()));
-        crate::nforge::save_debug_artifacts(path, &artifacts).unwrap();
+        crate::nforge::save_debug_artifacts(path, &mut artifacts).unwrap();
     }
 
     #[test]
@@ -319,9 +319,9 @@ mod tests {
         loaded
             .debug_artifacts
             .upsert(item, Some(updated_patch_text.to_string()));
-        super::save_debug_artifacts_to_nforge(&path, &loaded.scene, &loaded.debug_artifacts)
+        super::save_debug_artifacts_to_nforge(&path, &loaded.scene, &mut loaded.debug_artifacts)
             .unwrap();
-        super::save_debug_artifacts_to_nforge(&path, &loaded.scene, &loaded.debug_artifacts)
+        super::save_debug_artifacts_to_nforge(&path, &loaded.scene, &mut loaded.debug_artifacts)
             .unwrap();
 
         let reloaded = super::load_from_nforge_with_debug_artifacts(&path).unwrap();

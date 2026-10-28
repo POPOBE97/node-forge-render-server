@@ -1,4 +1,4 @@
-//! Function ABI v10 on QuickJS, with the same Rust MotionEngine and schema validation.
+//! Function ABI v11 on QuickJS, with the same Rust MotionEngine and schema validation.
 use std::{cell::RefCell, collections::HashMap, time::Duration};
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::Value;
@@ -177,7 +177,11 @@ fn motion_from_json(value: &Value, port: &ReflectedPort, depth: usize, nodes: &m
         "repeat" => {
             let count = number("count")?;
             if count.fract() != 0.0 || count < -1.0 || count >= -(i64::MIN as f64) { bail!("invalid repeat count"); }
-            MutationPlan::Repeat { child: Box::new(motion_from_json(&value["child"], port, depth + 1, nodes)?), count: count as i64 }
+            MutationPlan::Repeat {
+                child: Box::new(motion_from_json(&value["child"], port, depth + 1, nodes)?),
+                count: count as i64,
+                interval: value.get("interval").map(|_| number("interval")).transpose()?,
+            }
         }
         _ => bail!("unknown Motion helper"),
     })
@@ -186,7 +190,7 @@ fn motion_from_json(value: &Value, port: &ReflectedPort, depth: usize, nodes: &m
 const INSTALL_PREFIX: &str = "(() => { 'use strict';";
 const INSTALL_SUFFIX: &str = r#"
 if (!installed || typeof installed.entry !== 'function' || !Array.isArray(installed.bindings))
-    throw new Error('Invalid Function ABI v10 installer');
+    throw new Error('Invalid Function ABI v11 installer');
 if (ports.some(p => p.motion) && typeof installed.motionKind !== 'symbol')
     throw new Error('Missing Motion symbol');
 function freeze(value, seen = new Set()) {
@@ -204,7 +208,7 @@ function motion(value, depth, count) {
       case 'setTo': return {kind, target:value.target, velocity:value.velocity};
       case 'to': return {kind, target:value.target, timing:value.timing, duration:value.duration, timingDelay:value.timingDelay, bounce:value.bounce};
       case 'sequence': return {kind, children:value.children.map(child => motion(child, depth+1, count))};
-      case 'repeat': return {kind, child:motion(value.child, depth+1, count), count:value.count};
+      case 'repeat': return {kind, child:motion(value.child, depth+1, count), count:value.count, interval:value.interval};
       case 'delay': return {kind, child:motion(value.child, depth+1, count), seconds:value.seconds};
       default: throw new Error('Motion output was not created by a Motion helper');
     }
@@ -239,7 +243,7 @@ mod tests {
         let resource = FunctionResource {
             scope: scope.into(), node_id: "fn".into(), kind: kind.into(), language: "typescript".into(),
             source: source.into(), source_hash: format!("{:x}", Sha256::digest(source.as_bytes())),
-            compiled_java_script: source.into(), abi_version: 10,
+            compiled_java_script: source.into(), abi_version: 11,
             inputs: vec![ReflectedPort { id:"value".into(), name:"value".into(), port_type:port_type.into(), array_length:None, motion:None }],
             outputs: vec![ReflectedPort { id:"value".into(), name:"value".into(), port_type:port_type.into(), array_length:None, motion:Some(motion) }],
         };
@@ -252,7 +256,38 @@ mod tests {
         let color = GraphValue::Color([4.0,1.5,0.25,0.6]);
         assert_eq!(evaluate_function("derivation:test","fn",&[color.clone()],Duration::from_millis(100)).unwrap(),vec![FunctionOutput::Value(color.clone())]);
         install("(() => {const motionKind=Symbol();return {motionKind,bindings:[],entry:input=>({value:{[motionKind]:'repeat',count:3,child:{[motionKind]:'delay',seconds:0.25,child:{[motionKind]:'setTo',target:input.value}}}})}})()", "mutation", "color", true);
-        assert_eq!(evaluate_function("state:test","fn",&[color.clone()],Duration::from_millis(100)).unwrap(),vec![FunctionOutput::Motion(MutationPlan::Repeat { count:3,child:Box::new(MutationPlan::Delay {delay:0.25,child:Box::new(MutationPlan::SetTo {target:color.to_json(),velocity:None})}) })]);
+        assert_eq!(evaluate_function("state:test","fn",&[color.clone()],Duration::from_millis(100)).unwrap(),vec![FunctionOutput::Motion(MutationPlan::Repeat { interval:None,count:3,child:Box::new(MutationPlan::Delay {delay:0.25,child:Box::new(MutationPlan::SetTo {target:color.to_json(),velocity:None})}) })]);
+    }
+
+    #[test]
+    fn fixed_repeat_interval_survives_portable_js_and_rejects_invalid_values() {
+        for interval in ["3", "0", "-1", "Infinity", "NaN", "'three'"] {
+            let script = format!(
+                "(() => {{const motionKind=Symbol();return {{motionKind,bindings:[],entry:input=>({{value:{{[motionKind]:'repeat',count:-1,interval:{interval},child:{{[motionKind]:'setTo',target:input.value}}}}}})}}}})()"
+            );
+            install(&script, "mutation", "float", true);
+            let output = evaluate_function(
+                "state:test",
+                "fn",
+                &[GraphValue::Float(1.0)],
+                Duration::from_millis(100),
+            );
+            if interval == "3" {
+                assert_eq!(
+                    output.unwrap(),
+                    vec![FunctionOutput::Motion(MutationPlan::Repeat {
+                        child: Box::new(MutationPlan::SetTo {
+                            target: Value::from(1.0),
+                            velocity: None
+                        }),
+                        count: -1,
+                        interval: Some(3.0),
+                    })]
+                );
+            } else {
+                assert!(output.is_err(), "interval {interval} must be rejected");
+            }
+        }
     }
 
     #[test]

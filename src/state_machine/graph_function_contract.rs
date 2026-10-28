@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use super::types::{GraphInnerNode, GraphInnerNodeType, GraphPort};
 use crate::dsl::SceneDSL;
-pub(crate) const GRAPH_FUNCTION_ABI_VERSION: u32 = 10;
+pub(crate) const GRAPH_FUNCTION_ABI_VERSION: u32 = 11;
 pub(crate) fn resource_key(scope: &str, node_id: &str) -> String { format!("{scope}/{node_id}") }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]

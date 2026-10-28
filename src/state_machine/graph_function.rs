@@ -20,7 +20,7 @@ use super::{
 };
 use crate::dsl::SceneDSL;
 
-const GRAPH_FUNCTION_ABI_VERSION: u32 = 10;
+const GRAPH_FUNCTION_ABI_VERSION: u32 = 11;
 const WATCHDOG_IDLE: u8 = 0;
 const WATCHDOG_ARMED: u8 = 1;
 const WATCHDOG_FIRING: u8 = 2;
@@ -335,19 +335,19 @@ impl GraphJsRuntime {
                 .ok_or_else(|| javascript_error!(scope, "installation failed"))?;
             let installed = installed
                 .to_object(scope)
-                .ok_or_else(|| anyhow!("Graph Function ABI v10 installer returned no object"))?;
+                .ok_or_else(|| anyhow!("Graph Function ABI v11 installer returned no object"))?;
             let entry_key = v8::String::new(scope, "entry").unwrap();
             let bindings_key = v8::String::new(scope, "bindings").unwrap();
             let motion_kind_key = v8::String::new(scope, "motionKind").unwrap();
             let entry = installed
                 .get(scope, entry_key.into())
                 .and_then(|value| v8::Local::<v8::Function>::try_from(value).ok())
-                .ok_or_else(|| anyhow!("Graph Function ABI v10 installer returned no entry"))?;
+                .ok_or_else(|| anyhow!("Graph Function ABI v11 installer returned no entry"))?;
             let bindings = installed
                 .get(scope, bindings_key.into())
                 .and_then(|value| v8::Local::<v8::Array>::try_from(value).ok())
                 .ok_or_else(|| {
-                    anyhow!("Graph Function ABI v10 installer returned no bindings array")
+                    anyhow!("Graph Function ABI v11 installer returned no bindings array")
                 })?;
             let motion_kind = installed
                 .get(scope, motion_kind_key.into())
@@ -359,7 +359,7 @@ impl GraphJsRuntime {
                 .any(|output| output.motion == Some(true))
                 && motion_kind.is_none()
             {
-                bail!("Graph Function ABI v10 installer returned no motion symbol");
+                bail!("Graph Function ABI v11 installer returned no motion symbol");
             }
             for index in 0..bindings.length() {
                 let binding = bindings
@@ -622,6 +622,16 @@ fn motion_plan_from_v8(
         "repeat" => {
             let child_key = v8::String::new(scope, "child").unwrap();
             let count_key = v8::String::new(scope, "count").unwrap();
+            let interval_key = v8::String::new(scope, "interval").unwrap();
+            let interval = object
+                .get(scope, interval_key.into())
+                .filter(|value| !value.is_undefined())
+                .map(|value| {
+                    value
+                        .number_value(scope)
+                        .ok_or_else(|| anyhow!("repeat(...) interval must be numeric"))
+                })
+                .transpose()?;
             let child = object
                 .get(scope, child_key.into())
                 .ok_or_else(|| anyhow!("repeat(...) omitted child"))?;
@@ -646,6 +656,7 @@ fn motion_plan_from_v8(
                     nodes,
                 )?),
                 count: count as i64,
+                interval,
             })
         }
         "delay" => {
@@ -1229,6 +1240,7 @@ mod tests {
               const motion = (kind, fields) => ({ [motionKind]: kind, ...fields });
               const cycle = motion('repeat', {
                 count: -1,
+                interval: 3,
                 child: motion('sequence', { children: [
                   motion('setTo', { target: 0 }),
                   motion('to', { target: 1, timing: 'linear', duration: 2.5, timingDelay: 0 })
@@ -1257,6 +1269,7 @@ mod tests {
             }],
         };
         let expected_cycle = MutationPlan::Repeat {
+            interval: Some(3.0),
             child: Box::new(MutationPlan::Sequence(vec![
                 MutationPlan::SetTo {
                     target: serde_json::json!(0.0),

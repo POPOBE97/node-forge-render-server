@@ -154,7 +154,7 @@ fn serve(stream: TcpStream, bridge: &Bridge) -> Result<()> {
     bridge.incoming.lock().unwrap().clear();
     bridge.outgoing.lock().unwrap().clear();
     bridge.connected.store(generation, Ordering::Release);
-    bridge.send(generation, "player_hello", None, json!({"protocolVersion":PROTOCOL_VERSION,"functionAbi":10,"schema":"6.1","generation":generation,"status":*bridge.status.lock().unwrap()}));
+    bridge.send(generation, "player_hello", None, json!({"protocolVersion":PROTOCOL_VERSION,"functionAbi":11,"schema":"6.1","generation":generation,"status":*bridge.status.lock().unwrap()}));
     bridge.send(
         generation,
         "scene_resync_request",

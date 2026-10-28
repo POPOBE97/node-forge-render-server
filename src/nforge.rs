@@ -18,7 +18,7 @@ use crate::{
 };
 
 const APPLICATION_ID: i64 = 1_313_232_455;
-const FORMAT_VERSION: i64 = 6;
+const FORMAT_VERSION: i64 = 7;
 const SCENE_DSL_VERSION: &str = "6.1";
 const SYNC_LOG_RETENTION: i64 = 10_000;
 const CONTENT_HISTORY_RETENTION: i64 = 256;
@@ -154,11 +154,7 @@ fn readonly_sqlite_uri(path: &Path) -> Result<String> {
             write!(&mut encoded, "%{byte:02X}").expect("writing to String cannot fail");
         }
     }
-    if std::path::PathBuf::from(format!("{}-wal", path.display())).exists() {
-        Ok(format!("file:{encoded}?mode=ro"))
-    } else {
-        Ok(format!("file:{encoded}?mode=ro&immutable=1"))
-    }
+    Ok(format!("file:{encoded}?mode=ro"))
 }
 
 fn open_readonly(path: &Path) -> Result<Connection> {
@@ -604,6 +600,16 @@ fn read_scene(connection: &Connection) -> Result<(SceneDSL, AssetStore, DebugArt
             debug_store.upsert_bytes(item, content);
         }
     }
+    let identity: (String, String) = connection.query_row(
+        "SELECT d.document_id, i.epoch FROM document d JOIN document_identity i ON i.singleton = d.singleton", [], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    let mut baseline = BTreeMap::new();
+    if let Some(manifest) = debug_store.export_manifest() {
+        for item in manifest.items.values() {
+            let bytes = debug_store.bytes(&item.id).unwrap_or_default();
+            baseline.insert(item.id.clone(), (serde_json::to_value(item)?, sha256_hex(bytes), bytes.len() as i64));
+        }
+    }
+    debug_store.persisted = Some((identity.0, identity.1, baseline));
     Ok((parsed, asset_store, debug_store))
 }
 
@@ -643,9 +649,10 @@ pub fn load_bytes(bytes: &[u8]) -> Result<LoadedNforge> {
 }
 
 pub fn load(path: &Path) -> Result<LoadedNforge> {
-    let connection = open_readonly(path)?;
-    validate_container(&connection)?;
-    let (scene, asset_store, debug_artifacts) = read_scene(&connection)?;
+    let mut connection = open_readonly(path)?;
+    let transaction = connection.transaction()?;
+    validate_container(&transaction)?;
+    let (scene, asset_store, debug_artifacts) = read_scene(&transaction)?;
     Ok(LoadedNforge {
         scene,
         asset_store,
@@ -712,7 +719,7 @@ pub fn load_frame_freeze_case(path: &Path, selector: &str) -> Result<FrameFreeze
     }
 }
 
-pub fn save_debug_artifacts(path: &Path, debug_artifacts: &DebugArtifactStore) -> Result<()> {
+pub fn save_debug_artifacts(path: &Path, debug_artifacts: &mut DebugArtifactStore) -> Result<()> {
     let mut connection = open_writable(path)?;
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -724,6 +731,12 @@ pub fn save_debug_artifacts(path: &Path, debug_artifacts: &DebugArtifactStore) -
             |row| row.get(0),
         )
         .context("invalid .nforge document row")?;
+    let identity: (String, String) = transaction.query_row(
+        "SELECT d.document_id, i.epoch FROM document d JOIN document_identity i ON i.singleton = d.singleton", [], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    if debug_artifacts.persisted.as_ref().is_some_and(|(id, epoch, _)| id != &identity.0 || epoch != &identity.1) {
+        bail!("DOCUMENT_REPLACED: reload debug artifacts before editing");
+    }
+    let baseline = debug_artifacts.persisted.as_ref().map(|(_, _, items)| items.clone()).unwrap_or_default();
     let mut existing = BTreeMap::<String, (Value, String, i64)>::new();
     {
         let mut statement = transaction.prepare(
@@ -770,14 +783,14 @@ pub fn save_debug_artifacts(path: &Path, debug_artifacts: &DebugArtifactStore) -
         }
     }
 
-    let changed_ids = existing
+    let changed_ids = baseline
         .keys()
         .chain(desired.keys())
         .cloned()
         .collect::<BTreeSet<_>>()
         .into_iter()
         .filter(|id| {
-            existing
+            baseline
                 .get(id)
                 .map(|(item, hash, length)| (item, hash, length))
                 != desired
@@ -785,8 +798,22 @@ pub fn save_debug_artifacts(path: &Path, debug_artifacts: &DebugArtifactStore) -
                     .map(|(item, _, hash, length)| (item, hash, length))
         })
         .collect::<Vec<_>>();
+    for id in &changed_ids {
+        let after = desired.get(id).map(|(item, _, hash, length)| (item, hash, length));
+        let before = baseline.get(id).map(|(item, hash, length)| (item, hash, length));
+        let actual = existing.get(id).map(|(item, hash, length)| (item, hash, length));
+        if actual != before && actual != after {
+            bail!("PATCH_CONFLICT: debug artifact '{id}' changed in another process");
+        }
+    }
+    let changed_ids = changed_ids.into_iter().filter(|id|
+        existing.get(id).map(|(item, hash, length)| (item, hash, length)) !=
+        desired.get(id).map(|(item, _, hash, length)| (item, hash, length))
+    ).collect::<Vec<_>>();
+    let next_baseline = desired.iter().map(|(id, (item, _, hash, length))| (id.clone(), (item.clone(), hash.clone(), *length))).collect();
     if changed_ids.is_empty() {
         transaction.rollback()?;
+        debug_artifacts.persisted = Some((identity.0, identity.1, next_baseline));
         return Ok(());
     }
 
@@ -935,6 +962,7 @@ pub fn save_debug_artifacts(path: &Path, debug_artifacts: &DebugArtifactStore) -
     transaction
         .commit()
         .context("failed to commit debug artifacts")?;
+    debug_artifacts.persisted = Some((identity.0, identity.1, next_baseline));
     Ok(())
 }
 

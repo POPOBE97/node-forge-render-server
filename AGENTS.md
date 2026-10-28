@@ -125,12 +125,12 @@ Render Graph
 
 #### Mutation Function ABI
 
-Graph Functions use ABI v10. Mutation Functions expose the Motion helpers:
+Graph Functions use ABI v11. Mutation Functions expose the Motion helpers:
 
 ```ts
 interface Motion<T> {
   readonly __nodeForgeMotionValue: T
-  repeat(n?: number): Motion<T>
+  repeat(n?: number, options?: { interval: number }): Motion<T>
   delay(seconds: number): Motion<T>
 }
 
@@ -157,6 +157,14 @@ plays, while `repeat(-1)` is infinite. Wrapper order is semantic: `plan.repeat(3
 the group once; `plan.delay(1).repeat(3)` delays every play. The same descriptor on the same binding
 continues its persistent cursor; State activation or a descriptor change replaces it atomically.
 Plan advancement consumes the exact remaining `dt` across delays, segments, and repeat boundaries.
+
+`plan.repeat(n, { interval: seconds })` uses fixed-length plays, independent of child completion.
+The interval must be finite and positive. At each boundary the engine cancels the active child and
+all nested cursors, then restarts the child with the current value and velocity. Use an initial
+`setTo(0, 0)` in the child to reset both explicitly. Early completion holds the final value until
+the boundary. Finite repeat completes after exactly `n * interval` seconds, including its final
+slot; outer delays remain outside that clock. Frame time left after a boundary advances the next
+play or following sequence segment. Omitting interval keeps completion-based repeats.
 
 #### Mutation transaction
 

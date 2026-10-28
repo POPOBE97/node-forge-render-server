@@ -13,7 +13,7 @@ use super::{
 };
 use crate::dsl::SceneDSL;
 
-const GRAPH_FUNCTION_ABI_VERSION: u32 = 10;
+const GRAPH_FUNCTION_ABI_VERSION: u32 = 11;
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -206,7 +206,7 @@ pub fn prepare(graph_scope: &str, node_id: &str) -> Result<()> {
     let entry = Reflect::get(&installed, &JsValue::from_str("entry"))
         .map_err(|error| js_error("entry lookup failed", error))?
         .dyn_into::<Function>()
-        .map_err(|_| anyhow!("Graph Function ABI v10 installer returned no entry"))?;
+        .map_err(|_| anyhow!("Graph Function ABI v11 installer returned no entry"))?;
     let motion_kind = Reflect::get(&installed, &JsValue::from_str("motionKind"))
         .map_err(|error| js_error("motion symbol lookup failed", error))?;
     if resource
@@ -215,7 +215,7 @@ pub fn prepare(graph_scope: &str, node_id: &str) -> Result<()> {
         .any(|port| port.motion == Some(true))
         && motion_kind.is_undefined()
     {
-        bail!("Graph Function ABI v10 installer returned no motion symbol");
+        bail!("Graph Function ABI v11 installer returned no motion symbol");
     }
     PREPARED.with(|prepared| {
         prepared.borrow_mut().insert(
@@ -401,6 +401,11 @@ fn motion_plan_from_js(
         }
         "repeat" => {
             let count = number_property(value, "count")?;
+            let interval = if property(value, "interval")?.is_undefined() {
+                None
+            } else {
+                Some(number_property(value, "interval")?)
+            };
             if count.fract() != 0.0 || count < i64::MIN as f64 || count > i64::MAX as f64 {
                 bail!("repeat(...) count must be an integer");
             }
@@ -413,6 +418,7 @@ fn motion_plan_from_js(
                     nodes,
                 )?),
                 count: count as i64,
+                interval,
             })
         }
         "delay" => Ok(MutationPlan::Delay {
