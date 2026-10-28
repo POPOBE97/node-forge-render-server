@@ -16,6 +16,7 @@ pub mod parade;
 pub mod pass_debug;
 pub mod pass_debug_window;
 mod pass_graph;
+mod pass_graph_layout;
 pub mod pass_graph_window;
 pub mod qualifier_map;
 pub mod resource_tree;

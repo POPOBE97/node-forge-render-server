@@ -4,3 +4,4 @@ tests/fixtures/render/editor-examples/procedural-rendering-test/expected/baselin
 out/doubao-e2e-20261020/*.exr filter=lfs diff=lfs merge=lfs -text
 tests/fixtures/render/editor-examples/doubao-sdf-avatar/scene.nforge filter=lfs diff=lfs merge=lfs -text
 tests/fixtures/render/editor-examples/practive-gaudge-meter/scene.nforge filter=lfs diff=lfs merge=lfs -text
+tests/fixtures/render/editor-examples/practice-wave/scene.nforge filter=lfs diff=lfs merge=lfs -text

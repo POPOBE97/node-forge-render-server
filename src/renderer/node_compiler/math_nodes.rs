@@ -1,4 +1,4 @@
-//! Compilers for math operation nodes (MathAdd, MathSubtract, MathMultiply, MathDivide, Lerp, MathClamp, MathMax, MathPower).
+//! Compilers for math operation nodes (Abs, MathAdd, MathSubtract, MathMultiply, MathDivide, Lerp, MathClamp, MathMax, MathPower).
 
 use anyhow::Result;
 use std::collections::HashMap;
@@ -33,6 +33,42 @@ pub(super) fn inline_numeric_expr(node: &Node, port: &str, dpi: f64) -> Result<O
         return Ok(Some(TypedExpr::new(format!("vec{}f({})", values.len(), parts.join(", ")), ty)));
     }
     anyhow::bail!("inline math input {}.{port} must be numeric", node.id)
+}
+
+/// Compile component-wise absolute value, preserving vector dimensions.
+pub fn compile_math_abs<F>(
+    scene: &SceneDSL,
+    _nodes_by_id: &HashMap<String, Node>,
+    node: &Node,
+    _out_port: Option<&str>,
+    ctx: &mut MaterialCompileContext,
+    cache: &mut HashMap<(String, String), TypedExpr>,
+    compile_fn: F,
+) -> Result<TypedExpr>
+where
+    F: Fn(
+        &str,
+        Option<&str>,
+        &mut MaterialCompileContext,
+        &mut HashMap<(String, String), TypedExpr>,
+    ) -> Result<TypedExpr>,
+{
+    let x = if let Some(conn) = incoming_connection(scene, &node.id, "x") {
+        compile_fn(&conn.from.node_id, Some(&conn.from.port_id), ctx, cache)?
+    } else {
+        inline_numeric_expr(node, "x", scene.dpi)?
+            .unwrap_or_else(|| TypedExpr::new("0.0", ValueType::F32))
+    };
+    // Generic math ports infer scalar inputs as float, including int and bool.
+    let x = match x.ty {
+        ValueType::F32 | ValueType::Vec2 | ValueType::Vec3 | ValueType::Vec4 => x,
+        ValueType::I32 | ValueType::Bool => coerce_to_type(x, ValueType::F32)?,
+        ValueType::U32 => TypedExpr::with_time(
+            format!("f32({})", x.expr), ValueType::F32, x.uses_time,
+        ),
+        _ => anyhow::bail!("Abs '{}'.x requires a scalar or vector, got {:?}", node.id, x.ty),
+    };
+    Ok(TypedExpr::with_time(format!("abs({})", x.expr), x.ty, x.uses_time))
 }
 
 /// Compile a MathAdd node to WGSL.
@@ -502,6 +538,90 @@ mod tests {
     use super::*;
     use crate::dsl::{Connection, Endpoint, Metadata, SceneDSL};
     use anyhow::bail;
+
+    fn abs_node(params: serde_json::Value) -> Node {
+        serde_json::from_value(serde_json::json!({
+            "id": "abs", "type": "Abs", "params": params,
+        })).unwrap()
+    }
+
+    fn validate_abs_wgsl(expr: &TypedExpr) {
+        let source = format!("fn magnitude() -> {} {{ return {}; }}", expr.ty.wgsl(), expr.expr);
+        let module = naga::front::wgsl::parse_str(&source).unwrap();
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        ).validate(&module).unwrap();
+    }
+
+    #[test]
+    fn abs_inline_scalar_vectors_and_default_compile_through_dispatch() {
+        use serde_json::json;
+        for (params, expected, ty) in [
+            (json!({}), "abs(0.0)", ValueType::F32),
+            (json!({"x": -2.5}), "abs(-2.5)", ValueType::F32),
+            (json!({"x": [-1, 2]}), "abs(vec2f(-1.0, 2.0))", ValueType::Vec2),
+            (json!({"x": [-1, 2, -3]}), "abs(vec3f(-1.0, 2.0, -3.0))", ValueType::Vec3),
+            (json!({"x": [-1, 2, -3, 4]}), "abs(vec4f(-1.0, 2.0, -3.0, 4.0))", ValueType::Vec4),
+            (json!({"x": -2, "inputUnits": {"x": "dp"}}), "abs(-6.0)", ValueType::F32),
+        ] {
+            let node = abs_node(params);
+            let scene = create_test_scene_with_connections(vec![node.clone()], vec![]);
+            let result = super::super::compile_material_expr(
+                &scene, &HashMap::from([(node.id.clone(), node)]), "abs", Some("result"),
+                &mut MaterialCompileContext::default(), &mut HashMap::new(),
+            ).unwrap();
+            assert_eq!(result.ty, ty);
+            assert_eq!(result.expr, expected);
+            assert!(!result.uses_time);
+            validate_abs_wgsl(&result);
+        }
+    }
+
+    #[test]
+    fn abs_connected_input_wins_and_preserves_time_with_numeric_coercion() {
+        let node = abs_node(serde_json::json!({"x": "ignored invalid inline value"}));
+        let scene = create_test_scene_with_connections(vec![node.clone()], vec![
+            super::super::test_utils::test_connection("source", "value", "abs", "x"),
+        ]);
+        for (value, input_type, output_type) in [
+            ("-2.5", ValueType::F32, ValueType::F32),
+            ("-2", ValueType::I32, ValueType::F32),
+            ("2u", ValueType::U32, ValueType::F32),
+            ("true", ValueType::Bool, ValueType::F32),
+            ("vec2f(-1.0, 2.0)", ValueType::Vec2, ValueType::Vec2),
+            ("vec3f(-1.0, 2.0, -3.0)", ValueType::Vec3, ValueType::Vec3),
+            ("vec4f(-1.0)", ValueType::Vec4, ValueType::Vec4),
+        ] {
+            let result = compile_math_abs(
+                &scene, &HashMap::new(), &node, Some("result"),
+                &mut MaterialCompileContext::default(), &mut HashMap::new(),
+                |id, port, _, _| {
+                    assert_eq!((id, port), ("source", Some("value")));
+                    Ok(TypedExpr::with_time(value, input_type, true))
+                },
+            ).unwrap();
+            assert_eq!(result.ty, output_type);
+            assert!(result.uses_time);
+            validate_abs_wgsl(&result);
+        }
+    }
+
+    #[test]
+    fn abs_rejects_non_numeric_connected_values() {
+        let node = abs_node(serde_json::json!({}));
+        let scene = create_test_scene_with_connections(vec![node.clone()], vec![
+            super::super::test_utils::test_connection("source", "value", "abs", "x"),
+        ]);
+        for ty in [ValueType::Texture2D, ValueType::Mat4, ValueType::F32Array(2)] {
+            let result = compile_math_abs(
+                &scene, &HashMap::new(), &node, Some("result"),
+                &mut MaterialCompileContext::default(), &mut HashMap::new(),
+                |_, _, _, _| Ok(TypedExpr::new("unsupported", ty)),
+            );
+            assert!(result.unwrap_err().to_string().contains("requires a scalar or vector"));
+        }
+    }
 
     fn create_test_scene_with_connections(
         nodes: Vec<Node>,

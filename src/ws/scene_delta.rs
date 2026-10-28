@@ -309,12 +309,31 @@ pub fn delta_updates_only_uniform_values(cache: &SceneCache, delta: &SceneDelta)
         ) {
             return false;
         }
-        if uniform_delta_change_requires_render_plan_rebuild(cache, &updated.id) {
-            return false;
-        }
     }
 
-    true
+    // Inspect the same explicit boundary wiring as scene preparation, before
+    // ResourcePool projection removes selectors and inactive resource branches.
+    // This also follows nested groups and dependencies leaving group outputs.
+    let expanded_cache;
+    let dependency_cache = if cache
+        .nodes_by_id
+        .values()
+        .any(|node| node.node_type == "GroupInstance")
+    {
+        let mut scene = materialize_scene_dsl(cache);
+        if crate::renderer::scene_prep::expand_group_instances(&mut scene).is_err() {
+            // Let the normal scene-update path report invalid group wiring.
+            return false;
+        }
+        expanded_cache = SceneCache::from_scene_update(&scene);
+        &expanded_cache
+    } else {
+        cache
+    };
+
+    delta.nodes.updated.iter().all(|updated| {
+        !uniform_delta_change_requires_render_plan_rebuild(dependency_cache, &updated.id)
+    })
 }
 
 fn is_render_plan_rebuild_sink(node_type: &str, port_id: &str) -> bool {
@@ -322,6 +341,7 @@ fn is_render_plan_rebuild_sink(node_type: &str, port_id: &str) -> bool {
         (node_type, port_id),
         ("Rect2DGeometry", "size")
             | ("Rect2DGeometry", "position")
+            | ("ResourcePool", "selectedIndex")
             | ("InstancedGeometryStart", "count")
             | ("RenderPass", "camera")
             | ("GuassianBlurPass", "camera")
@@ -762,6 +782,96 @@ mod tests {
             assets_removed: None,
         };
         assert!(!delta_updates_only_uniform_values(&cache, &delta));
+    }
+
+    #[test]
+    fn resource_pool_index_delta_requires_rebuild() {
+        for indirect in [false, true] {
+            let mut scene = base_scene();
+            scene.nodes[0] = node("FloatInput_1", "IntInput", json!({"value": 0}));
+            scene.nodes.push(node("pool", "ResourcePool", json!({"selectedIndex": 0})));
+            scene.connections.push(serde_json::from_value(json!({
+                "id": "select",
+                "from": {
+                    "nodeId": if indirect { "MathAdd_1" } else { "FloatInput_1" },
+                    "portId": if indirect { "result" } else { "value" }
+                },
+                "to": {"nodeId": "pool", "portId": "selectedIndex"}
+            })).unwrap());
+            let delta: SceneDelta = serde_json::from_value(json!({
+                "version": scene.version,
+                "nodes": {"added": [], "removed": [], "updated": [
+                    {"id": "FloatInput_1", "type": "IntInput", "params": {"value": 1}}
+                ]},
+                "connections": {"added": [], "updated": [], "removed": []}
+            })).unwrap();
+            assert!(!delta_updates_only_uniform_values(
+                &SceneCache::from_scene_update(&scene), &delta
+            ), "ResourcePool selection requires rebuilding (indirect={indirect})");
+        }
+    }
+
+    #[test]
+    fn resource_pool_index_delta_traverses_group_inputs_and_outputs() {
+        let mut scene = base_scene();
+        scene.nodes = vec![
+            node("index", "IntInput", json!({"value": 0})),
+            node("gain", "FloatInput", json!({"value": 0.5})),
+            node("offset", "GroupInstance", json!({"groupId": "offset-group"})),
+            node("outer", "GroupInstance", json!({"groupId": "outer-group"})),
+            node("consumer", "MathAdd", json!({})),
+        ];
+        scene.connections = serde_json::from_value(json!([
+            {"id":"index-in", "from":{"nodeId":"index","portId":"value"},
+             "to":{"nodeId":"offset","portId":"index"}},
+            {"id":"offset-out", "from":{"nodeId":"offset","portId":"result"},
+             "to":{"nodeId":"outer","portId":"index"}},
+            {"id":"gain-in", "from":{"nodeId":"gain","portId":"value"},
+             "to":{"nodeId":"outer","portId":"gain"}},
+            {"id":"output", "from":{"nodeId":"outer","portId":"result"},
+             "to":{"nodeId":"consumer","portId":"a"}}
+        ])).unwrap();
+        scene.groups = serde_json::from_value(json!([
+            {
+                "id": "offset-group",
+                "nodes": [{"id":"add","type":"MathAdd","params":{"b":0}}],
+                "inputBindings": [{"groupPortId":"index","to":{"nodeId":"add","portId":"a"}}],
+                "outputBindings": [{"groupPortId":"result","from":{"nodeId":"add","portId":"result"}}]
+            },
+            {
+                "id": "outer-group",
+                "nodes": [{"id":"inner","type":"GroupInstance","params":{"groupId":"pool-group"}}],
+                "inputBindings": [
+                    {"groupPortId":"index","to":{"nodeId":"inner","portId":"index"}},
+                    {"groupPortId":"gain","to":{"nodeId":"inner","portId":"gain"}}
+                ],
+                "outputBindings": [{"groupPortId":"result","from":{"nodeId":"inner","portId":"result"}}]
+            },
+            {
+                "id": "pool-group",
+                "nodes": [{"id":"pool","type":"ResourcePool","params":{"selectedIndex":0}}],
+                "inputBindings": [
+                    {"groupPortId":"index","to":{"nodeId":"pool","portId":"selectedIndex"}},
+                    {"groupPortId":"gain","to":{"nodeId":"pool","portId":"input_0"}}
+                ],
+                "outputBindings": [{"groupPortId":"result","from":{"nodeId":"pool","portId":"output"}}]
+            }
+        ])).unwrap();
+        let cache = SceneCache::from_scene_update(&scene);
+        for (id, node_type, uniform_only) in [
+            ("index", "IntInput", false),
+            ("gain", "FloatInput", true),
+        ] {
+            let delta: SceneDelta = serde_json::from_value(json!({
+                "version": scene.version,
+                "nodes": {"added": [], "removed": [], "updated": [
+                    {"id": id, "type": node_type, "params": {"value": 1}}
+                ]},
+                "connections": {"added": [], "updated": [], "removed": []}
+            })).unwrap();
+            assert_eq!(delta_updates_only_uniform_values(&cache, &delta), uniform_only,
+                "group input {id} must preserve its internal consumer's update behavior");
+        }
     }
 
     #[test]

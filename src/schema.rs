@@ -814,6 +814,7 @@ fn validate_connection(
                 | "MathPower"
                 | "MathClamp"
                 | "MathMax"
+                | "Abs"
                 | "Sin"
                 | "Cos"
                 | "Tan"

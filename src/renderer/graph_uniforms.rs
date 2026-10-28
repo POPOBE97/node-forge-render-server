@@ -708,14 +708,15 @@ fn collect_ignored_input_value_node_ids_for_pass_bindings(
         }
     }
 
-    // Text layout and instance counts are CPU-built. Values shared with GPU
-    // uniforms must still invalidate these render-plan dependencies.
+    // Text layout, instance counts, and ResourcePool selection are CPU-built.
+    // Values shared with GPU uniforms must still invalidate these dependencies.
     let mut pending: Vec<String> = scene.nodes.iter().filter(|node| matches!(node.node_type.as_str(), "TextPass" | "TextSdf" | "RenderTexture" | "Rect2DGeometry" | "PlaneGeometry" | "CircleGeometry" | "TransformGeometry" | "SetTransform" | "Downsample" | "Upsample" | "OrthographicCamera" | "PerspectiveCamera") || node.params.contains_key("inputUnits"))
         .map(|node| node.id.clone()).collect();
     pending.extend(scene.connections.iter().filter(|edge| {
-        edge.to.port_id == "count"
-            && nodes_by_id.get(&edge.to.node_id)
-                .is_some_and(|node| node.node_type == "InstancedGeometryStart")
+        nodes_by_id.get(&edge.to.node_id).is_some_and(|node| matches!(
+            (node.node_type.as_str(), edge.to.port_id.as_str()),
+            ("InstancedGeometryStart", "count") | ("ResourcePool", "selectedIndex")
+        ))
     }).map(|edge| edge.from.node_id.clone()));
     let mut visited = BTreeSet::new();
     while let Some(id) = pending.pop() {
@@ -1685,11 +1686,18 @@ mod tests {
                          "portId":if indirect {"result"} else {"value"}},
                  "to":{"nodeId":"instances","portId":"count"}}
             ])).unwrap();
-            scene.nodes[0].params.insert("value".into(), json!(12));
-            let before = compute_pipeline_signature_for_pass_bindings(&scene, &[pass.clone()]);
-            scene.nodes[0].params.insert("value".into(), json!(19));
-            let after = compute_pipeline_signature_for_pass_bindings(&scene, &[pass.clone()]);
-            assert_ne!(before, after, "GPU-shared instance count must rebuild");
+            for (node_type, port_id) in [
+                ("InstancedGeometryStart", "count"),
+                ("ResourcePool", "selectedIndex"),
+            ] {
+                scene.nodes[3].node_type = node_type.into();
+                scene.connections[1].to.port_id = port_id.into();
+                scene.nodes[0].params.insert("value".into(), json!(12));
+                let before = compute_pipeline_signature_for_pass_bindings(&scene, &[pass.clone()]);
+                scene.nodes[0].params.insert("value".into(), json!(19));
+                let after = compute_pipeline_signature_for_pass_bindings(&scene, &[pass.clone()]);
+                assert_ne!(before, after, "GPU-shared {node_type}.{port_id} must rebuild");
+            }
         }
     }
 

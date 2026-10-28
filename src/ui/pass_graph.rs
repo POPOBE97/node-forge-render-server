@@ -61,6 +61,16 @@ impl GraphNode {
             .iter()
             .chain(self.collapsed_passes.is_empty().then_some(&self.pass))
     }
+
+    pub fn blur_label(&self) -> &'static str {
+        if self.passes().any(|pass| pass.name.starts_with("sys.cb.")) {
+            "Chromatic blur"
+        } else if self.pass.name.starts_with("sys.gb.") {
+            "Gradient blur"
+        } else {
+            "Gaussian blur"
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -405,6 +415,21 @@ impl PassGraph {
 /// The assembler's internal stage names, parsed from the right because authored
 /// node IDs may contain dots. Composite draws are deliberately kept separate.
 fn blur_owner(name: &str) -> Option<&str> {
+    // ChromaticBlur runs its color stages and then the gradient-blur pyramid
+    // under the same authored owner. Treat that whole consecutive run as one
+    // expandable effect, including all mip inputs to its final resolve.
+    if let Some(name) = name.strip_prefix("sys.cb.") {
+        let (owner, stage) = name.strip_suffix(".pass")?.rsplit_once('.')?;
+        return matches!(stage, "radial" | "rgb").then_some(owner);
+    }
+    if let Some(name) = name.strip_prefix("sys.gb.") {
+        let (owner, stage) = name.strip_suffix(".pass")?.rsplit_once('.')?;
+        return (matches!(stage, "pad" | "final")
+            || stage
+                .strip_prefix("mip")
+                .is_some_and(|level| level.parse::<u32>().is_ok()))
+        .then_some(owner);
+    }
     let name = name.strip_prefix("sys.blur.")?;
     let name = if let Some((base, route)) = name.rsplit_once(".route") {
         if route.parse::<u32>().is_ok() {
@@ -435,6 +460,18 @@ mod tests {
 
     #[test]
     fn doubao_blur_groups_match_active_render_plan() {
+        assert_blur_groups_match_active_render_plan("doubao-voice-interaction");
+    }
+
+    #[test]
+    fn chromatic_blur_groups_match_active_render_plan() {
+        let graph = assert_blur_groups_match_active_render_plan("blur-chromatic");
+        assert!(graph.nodes.iter().any(|node| {
+            node.blur_label() == "Chromatic blur" && node.collapsed_passes.len() == 10
+        }));
+    }
+
+    fn assert_blur_groups_match_active_render_plan(case: &str) -> PassGraph {
         use crate::renderer::{
             ShaderSpacePresentationMode,
             render_plan::{
@@ -442,8 +479,9 @@ mod tests {
                 types::{PlanBuildOptions, PlanningGpuCaps},
             },
         };
-        let archive = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/render/editor-examples/doubao-voice-interaction/scene.nforge");
+        let archive = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+            "tests/fixtures/render/editor-examples/{case}/scene.nforge"
+        ));
         let (scene, assets) = crate::asset_store::load_from_nforge(&archive).unwrap();
         let plan = RenderPlanner::new(PlanBuildOptions {
             gpu_caps: PlanningGpuCaps::default(),
@@ -531,6 +569,7 @@ mod tests {
                 "the active blur route must form one expandable group"
             );
         }
+        collapsed
     }
 
     fn pass(name: &str, reads: &[&str], target: &str) -> Invocation {
@@ -698,6 +737,162 @@ mod tests {
                 .map(|e| (&e.resources, e.from, e.to, e.ordering))
                 .collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn chromatic_blur_collapses_color_stages_and_mips_as_one_effect() {
+        let owner = "group/ChromaticBlur.with.dots";
+        let mut invocations = vec![pass("source", &[], "image"), pass("mask", &[], "mask")];
+        let stages = [
+            "cb.radial",
+            "cb.rgb",
+            "gb.pad",
+            "gb.mip1",
+            "gb.mip2",
+            "gb.mip3",
+            "gb.mip4",
+            "gb.mip5",
+            "gb.mip6",
+            "gb.final",
+        ];
+        let mut textures = vec!["image".to_owned()];
+        for stage in stages {
+            let (prefix, stage) = stage.split_once('.').unwrap();
+            let target = format!("sys.{prefix}.{owner}.{stage}");
+            let reads = if stage == "final" {
+                textures
+                    .iter()
+                    .skip(2)
+                    .map(String::as_str)
+                    .chain(["mask"])
+                    .collect::<Vec<_>>()
+            } else {
+                vec![textures.last().unwrap().as_str()]
+            };
+            invocations.push(pass(&format!("{target}.pass"), &reads, &target));
+            textures.push(target);
+        }
+        invocations.push(pass("present", &[textures.last().unwrap()], "screen"));
+        let graph = PassGraph::build(invocations, Some("screen"));
+        let collapsed = graph.presentation(&BTreeSet::new(), false);
+        assert_eq!(graph.nodes.len(), 13);
+        assert_eq!(collapsed.nodes.len(), 4);
+        let blur = &collapsed.nodes[2];
+        assert_eq!(blur.blur_label(), "Chromatic blur");
+        assert_eq!(blur.pass.display_label.as_deref(), Some(owner));
+        assert_eq!(blur.collapsed_passes.len(), 10);
+        assert_eq!(
+            collapsed
+                .edges
+                .iter()
+                .map(|edge| (edge.from, edge.to))
+                .collect::<Vec<_>>(),
+            [(0, 2), (1, 2), (2, 3)]
+        );
+        let expanded =
+            graph.presentation(&BTreeSet::from([blur.blur_group.clone().unwrap()]), true);
+        assert_eq!(expanded.nodes.len(), graph.nodes.len());
+        assert_eq!(
+            expanded
+                .edges
+                .iter()
+                .map(|e| (e.from, e.to, &e.resources, e.ordering))
+                .collect::<Vec<_>>(),
+            graph
+                .edges
+                .iter()
+                .map(|e| (e.from, e.to, &e.resources, e.ordering))
+                .collect::<Vec<_>>()
+        );
+        assert!(expanded.nodes.last().unwrap().is_output);
+        assert_eq!(blur_owner("sys.gb.group/effect.to.root.compose.pass"), None);
+        assert_eq!(blur_owner("sys.gb.group/effect.mipmap.pass"), None);
+    }
+
+    fn assert_layout_clear(graph: &PassGraph, columns: usize) {
+        use super::super::pass_graph_layout::{GraphLayout, LayoutMode};
+        let layout = GraphLayout::new(graph, LayoutMode::Compact, columns);
+        for (index, rect) in layout.rects.iter().enumerate() {
+            assert!(rect.is_finite());
+            assert!(
+                layout.rects[index + 1..]
+                    .iter()
+                    .all(|other| !rect.intersects(*other))
+            );
+        }
+        assert_eq!(layout.paths.len(), graph.edges.len());
+        for path in &layout.paths {
+            for segment in path.windows(2) {
+                let [a, b] = [segment[0], segment[1]];
+                assert!(a.is_finite() && b.is_finite() && a != b);
+                assert!(a.x == b.x || a.y == b.y, "edges must remain orthogonal");
+                for rect in &layout.rects {
+                    let rect = rect.shrink(0.5);
+                    let crosses = if a.x == b.x {
+                        a.x > rect.left()
+                            && a.x < rect.right()
+                            && a.y.min(b.y) < rect.bottom()
+                            && a.y.max(b.y) > rect.top()
+                    } else {
+                        a.y > rect.top()
+                            && a.y < rect.bottom()
+                            && a.x.min(b.x) < rect.right()
+                            && a.x.max(b.x) > rect.left()
+                    };
+                    assert!(!crosses, "edge {a:?} -> {b:?} crosses card {rect:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn compact_layout_folds_long_chains_and_routes_all_skip_dependencies() {
+        use super::super::pass_graph_layout::{GraphLayout, LayoutMode};
+        use rust_wgpu_fiber::eframe::egui;
+        let names: Vec<_> = (0..13).map(|i| format!("pass{i}")).collect();
+        let graph = PassGraph::build(
+            names
+                .iter()
+                .enumerate()
+                .map(|(index, name)| {
+                    let reads: Vec<_> = names[..index].iter().map(String::as_str).collect();
+                    pass(name, &reads, name)
+                })
+                .collect(),
+            Some("pass12"),
+        );
+        for columns in 1..=13 {
+            assert_layout_clear(&graph, columns);
+        }
+        let available = egui::vec2(1120.0, 600.0);
+        let columns = GraphLayout::columns_for(&graph, available);
+        let compact = GraphLayout::new(&graph, LayoutMode::Compact, columns);
+        let vertical = GraphLayout::new(&graph, LayoutMode::Vertical, 1);
+        let fit =
+            |bounds: egui::Rect| (available.x / bounds.width()).min(available.y / bounds.height());
+        assert!(columns > 1 && columns < 13);
+        assert!(fit(compact.bounds) > fit(vertical.bounds) * 2.0);
+    }
+
+    #[test]
+    fn compact_layout_preserves_parallel_branches_and_avoids_cards_at_row_turns() {
+        let graph = PassGraph::build(
+            vec![
+                pass("source", &[], "base"),
+                pass("left", &["base"], "left"),
+                pass("middle", &["base"], "middle"),
+                pass("right", &["base"], "right"),
+                pass("join", &["left", "middle", "right"], "join"),
+                pass("a", &["join", "base"], "a"),
+                pass("b", &["join"], "b"),
+                pass("final", &["a", "b", "base", "middle"], "out"),
+            ],
+            Some("out"),
+        );
+        assert_eq!(graph.rows[1].len(), 3);
+        for columns in 1..=graph.rows.len() {
+            assert_layout_clear(&graph, columns);
+        }
     }
 
     #[test]

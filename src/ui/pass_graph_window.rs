@@ -9,14 +9,13 @@ use super::{
     button::{self, ButtonOptions, ButtonSize, ButtonVariant},
     design_tokens::{self, FontWeight, TextRole},
     pass_graph::{self, GraphNode, PassGraph},
+    pass_graph_layout::{GraphLayout, LayoutMode},
     resource_tree::ResourceSnapshot,
     tool_window,
 };
 
 const CANVAS_BG: egui::Color32 = egui::Color32::from_gray(12);
 const CARD_BG: egui::Color32 = egui::Color32::from_gray(23);
-const CARD: egui::Vec2 = egui::vec2(240.0, 112.0);
-const STEP: egui::Vec2 = egui::vec2(284.0, 184.0);
 const MIN_ZOOM: f32 = 0.04;
 const MAX_ZOOM: f32 = 2.0;
 
@@ -55,6 +54,7 @@ impl WindowState {
         self.graph = self
             .execution_graph
             .presentation(&self.expanded_blurs, self.show_ordering);
+        self.view.columns = 0;
         self.view.selected = selected.and_then(|(name, occurrence, group)| {
             let mut seen = 0;
             self.graph
@@ -80,15 +80,19 @@ impl WindowState {
             self.expanded_blurs.insert(key.to_owned());
         }
         self.rebuild_presentation();
+        self.view.focus_selection = true;
     }
 }
 
 struct View {
+    layout: LayoutMode,
+    columns: usize,
     zoom: f32,
     pan: egui::Vec2,
     fit: bool,
     initial_frame: bool,
     focus_search: bool,
+    focus_selection: bool,
     selected: Option<usize>,
     query: String,
 }
@@ -96,11 +100,14 @@ struct View {
 impl Default for View {
     fn default() -> Self {
         Self {
+            layout: LayoutMode::default(),
+            columns: 0,
             zoom: 1.0,
             pan: egui::Vec2::ZERO,
             fit: true,
             initial_frame: true,
             focus_search: false,
+            focus_selection: false,
             selected: None,
             query: String::new(),
         }
@@ -290,6 +297,18 @@ fn contents(ui: &mut egui::Ui, state: &mut WindowState) {
                 ));
                 ui.add_space(tool_window::GAP);
                 ui.horizontal_wrapped(|ui| {
+                    let layout_label = match state.view.layout {
+                        LayoutMode::Compact => "Layout: Compact",
+                        LayoutMode::Vertical => "Layout: Vertical",
+                    };
+                    if control(ui, layout_label, "Switch between compact rows and a vertical dependency graph").clicked() {
+                        state.view.layout = match state.view.layout {
+                            LayoutMode::Compact => LayoutMode::Vertical,
+                            LayoutMode::Vertical => LayoutMode::Compact,
+                        };
+                        state.view.fit = true;
+                        state.view.initial_frame = true;
+                    }
                     let search = ui.add(
                         egui::TextEdit::singleline(&mut state.view.query)
                             .hint_text("Find a pass or texture…")
@@ -310,11 +329,15 @@ fn contents(ui: &mut egui::Ui, state: &mut WindowState) {
                     if control(ui, "Collapse blurs", "Group each blur's internal GPU passes").clicked() {
                         state.expanded_blurs.clear();
                         state.rebuild_presentation();
+                        state.view.fit = true;
+                        state.view.initial_frame = true;
                     }
                     if control(ui, "Expand blurs", "Show every active GPU pass").clicked() {
                         state.expanded_blurs = state.execution_graph.nodes.iter()
                             .filter_map(|node| node.blur_group.clone()).collect();
                         state.rebuild_presentation();
+                        state.view.fit = true;
+                        state.view.initial_frame = true;
                     }
                     if ui.checkbox(&mut state.show_ordering, "Reuse order")
                         .on_hover_text("Include write-after-read/write constraints; these are execution hazards, not sampled inputs")
@@ -590,20 +613,6 @@ fn detail(ui: &mut egui::Ui, label: &str, value: &str) {
     ui.add_space(10.0);
 }
 
-fn node_rects(graph: &PassGraph) -> Vec<egui::Rect> {
-    let mut rects = vec![egui::Rect::NOTHING; graph.nodes.len()];
-    for (row, nodes) in graph.rows.iter().enumerate() {
-        for (column, &index) in nodes.iter().enumerate() {
-            let center_x = (column as f32 - (nodes.len() as f32 - 1.0) / 2.0) * STEP.x;
-            rects[index] = egui::Rect::from_min_size(
-                egui::pos2(center_x - CARD.x / 2.0, row as f32 * STEP.y),
-                CARD,
-            );
-        }
-    }
-    rects
-}
-
 fn zoom_at(view: &mut View, anchor: egui::Vec2, factor: f32) {
     let zoom = (view.zoom * factor).clamp(MIN_ZOOM, MAX_ZOOM);
     view.pan = anchor - (anchor - view.pan) * (zoom / view.zoom);
@@ -640,17 +649,20 @@ fn canvas(ui: &mut egui::Ui, state: &mut WindowState, toolbar_zoom: f32) {
         );
         return;
     }
-    let rects = node_rects(&state.graph);
-    let bounds = rects
-        .iter()
-        .fold(egui::Rect::NOTHING, |bounds, rect| bounds.union(*rect))
-        .expand(44.0);
     if !ui.ctx().egui_wants_keyboard_input()
         && ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::F))
     {
         state.view.fit = true;
         state.view.initial_frame = false;
     }
+    // Reflow on Fit or a topology change, keeping the layout stable while the
+    // user pans, zooms, or opens the details panel.
+    if state.view.columns == 0 || state.view.fit {
+        state.view.columns = GraphLayout::columns_for(&state.graph, canvas.size());
+    }
+    let layout = GraphLayout::new(&state.graph, state.view.layout, state.view.columns);
+    let rects = &layout.rects;
+    let bounds = layout.bounds;
     if state.view.fit {
         let fitted_zoom = (canvas.width() / bounds.width())
             .min(canvas.height() / bounds.height())
@@ -670,6 +682,11 @@ fn canvas(ui: &mut egui::Ui, state: &mut WindowState, toolbar_zoom: f32) {
         state.view.initial_frame = false;
     }
     let query = state.view.query.trim().to_lowercase();
+    if std::mem::take(&mut state.view.focus_selection)
+        && let Some(index) = state.view.selected
+    {
+        state.view.pan = canvas.size() / 2.0 - rects[index].center().to_vec2() * state.view.zoom;
+    }
     if std::mem::take(&mut state.view.focus_search)
         && !query.is_empty()
         && let Some(index) = state
@@ -730,8 +747,6 @@ fn canvas(ui: &mut egui::Ui, state: &mut WindowState, toolbar_zoom: f32) {
         })
         .collect();
     for (index, edge) in state.graph.edges.iter().enumerate() {
-        let from = screen_rects[edge.from];
-        let to = screen_rects[edge.to];
         let highlighted = state.view.selected.is_some() && matching[edge.from] && matching[edge.to];
         let color = if highlighted {
             design_tokens::RESOURCE_ACCENT
@@ -740,14 +755,10 @@ fn canvas(ui: &mut egui::Ui, state: &mut WindowState, toolbar_zoom: f32) {
         } else {
             design_tokens::white(10)
         };
-        let points = edge_path(
-            from,
-            to,
-            canvas.min.x + state.view.pan.x,
-            bounds.left() * zoom,
-            index,
-            zoom,
-        );
+        let points: Vec<_> = layout.paths[index]
+            .iter()
+            .map(|point| origin + point.to_vec2() * zoom)
+            .collect();
         paint_edge(
             &painter,
             &points,
@@ -755,11 +766,8 @@ fn canvas(ui: &mut egui::Ui, state: &mut WindowState, toolbar_zoom: f32) {
             edge.ordering,
             zoom,
         );
-        if highlighted && zoom >= 0.65 && to.top() - from.bottom() < STEP.y * zoom {
-            let center = egui::pos2(
-                (from.center().x + to.center().x) / 2.0,
-                (from.bottom() + to.top()) / 2.0,
-            );
+        if highlighted && zoom >= 0.65 && points.len() == 2 {
+            let center = points[0].lerp(points[1], 0.5);
             let label = if edge.ordering {
                 "reuse order"
             } else {
@@ -816,6 +824,7 @@ fn canvas(ui: &mut egui::Ui, state: &mut WindowState, toolbar_zoom: f32) {
                 )
                 .clicked()
             {
+                state.view.selected = Some(index);
                 toggle_blur = node.blur_group.clone();
                 clicked_node = true;
             }
@@ -838,7 +847,7 @@ fn canvas(ui: &mut egui::Ui, state: &mut WindowState, toolbar_zoom: f32) {
     }
     if let Some(key) = toggle_blur {
         state.toggle_blur(&key);
-        // Keep the camera on the clicked group while replacing it with its steps.
+        // Focus the selected pass after replacing the group with its steps.
         ui.ctx().request_repaint();
     }
 }
@@ -875,39 +884,6 @@ fn paint_grid(painter: &egui::Painter, canvas: egui::Rect, origin: egui::Pos2, z
     }
 }
 
-fn edge_path(
-    from: egui::Rect,
-    to: egui::Rect,
-    origin_x: f32,
-    left: f32,
-    index: usize,
-    zoom: f32,
-) -> Vec<egui::Pos2> {
-    let start = from.center_bottom();
-    let end = to.center_top() - egui::vec2(0.0, 3.0 * zoom);
-    if to.top() - from.bottom() > STEP.y * zoom {
-        // Long edges travel outside the cards instead of cutting through intermediate rows.
-        let lane = origin_x + left + (index % 6) as f32 * 5.0 * zoom;
-        let gap = 24.0 * zoom;
-        vec![
-            start,
-            start + egui::vec2(0.0, gap),
-            egui::pos2(lane, start.y + gap),
-            egui::pos2(lane, end.y - gap),
-            end - egui::vec2(0.0, gap),
-            end,
-        ]
-    } else {
-        let middle = (start.y + end.y) / 2.0;
-        vec![
-            start,
-            egui::pos2(start.x, middle),
-            egui::pos2(end.x, middle),
-            end,
-        ]
-    }
-}
-
 fn paint_edge(
     painter: &egui::Painter,
     points: &[egui::Pos2],
@@ -940,12 +916,14 @@ fn paint_edge(
         painter.add(egui::Shape::line(rounded, stroke));
     }
     let end = *points.last().unwrap_or(&points[0]);
+    let direction = (end - points[points.len() - 2]).normalized();
+    let normal = egui::vec2(-direction.y, direction.x);
     let size = (4.0 * zoom).max(2.0);
     painter.add(egui::Shape::convex_polygon(
         vec![
             end,
-            end + egui::vec2(-size, -size * 1.6),
-            end + egui::vec2(size, -size * 1.6),
+            end - direction * size * 1.6 - normal * size,
+            end - direction * size * 1.6 + normal * size,
         ],
         stroke.color,
         egui::Stroke::NONE,
@@ -1008,7 +986,7 @@ fn paint_card(
     let kind = if node.is_output {
         "Final output"
     } else if !node.collapsed_passes.is_empty() {
-        "Gaussian blur"
+        node.blur_label()
     } else if node.pass.is_compute {
         "Compute pass"
     } else {

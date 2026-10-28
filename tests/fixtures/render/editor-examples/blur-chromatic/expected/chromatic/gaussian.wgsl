@@ -33,8 +33,6 @@ struct VSOut {
 
 
 struct GraphInputs {
-    // Node: dp.chromatic.blur.gaussianSigma
-    float_input_dp: vec4f,
     // Node: dp.mask.gaussianMask
     dp_mask_gaussian_mask: vec4f,
     // Node: effect.center
@@ -93,13 +91,65 @@ var pass_samp_sys_cb_chromatic_blur_rgb: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---
+fn nf_math_closure_fragment_closure(uv: vec2<f32>, size: vec2<f32>, center: vec2<f32>, shape: vec4<f32>, xy: vec2<f32>) -> f32 {
+    var uv_1: vec2<f32>;
+    var size_1: vec2<f32>;
+    var center_1: vec2<f32>;
+    var shape_1: vec4<f32>;
+    var xy_1: vec2<f32>;
+    var output: f32;
+    var distance: f32;
+    var outer: f32;
+    var inner: f32;
+    var outside: f32;
+    var local: f32;
+    var local_1: f32;
 
-fn cb_mask(uv: vec2f, center: vec2f, size: vec2f, mask: vec4f) -> f32 {
-    let distance = length((uv - center) * size);
-    let outer = max(mask.x, 1.0);
-    let inner = outer * (1.0 - clamp(mask.y, 0.001, 1.0));
-    let outside = smoothstep(inner, outer, distance);
-    return pow(select(1.0 - outside, outside, mask.w > 0.5), max(mask.z, 0.01));
+    uv_1 = uv;
+    size_1 = size;
+    center_1 = center;
+    shape_1 = shape;
+    xy_1 = xy;
+    let _e11: vec2<f32> = xy_1;
+    let _e12: vec2<f32> = center_1;
+    let _e14: vec2<f32> = xy_1;
+    let _e15: vec2<f32> = center_1;
+    distance = length((_e14 - _e15));
+    let _e19: vec4<f32> = shape_1;
+    let _e22: vec4<f32> = shape_1;
+    outer = max(_e22.x, 1f);
+    let _e27: f32 = outer;
+    let _e29: vec4<f32> = shape_1;
+    let _e33: vec4<f32> = shape_1;
+    inner = (_e27 * (1f - clamp(_e33.y, 0.001f, 1f)));
+    let _e44: f32 = inner;
+    let _e45: f32 = outer;
+    let _e46: f32 = distance;
+    outside = smoothstep(_e44, _e45, _e46);
+    let _e49: vec4<f32> = shape_1;
+    if (_e49.w > 0.5f) {
+        let _e53: f32 = outside;
+        local = _e53;
+    } else {
+        let _e55: f32 = outside;
+        local = (1f - _e55);
+    }
+    let _e59: vec4<f32> = shape_1;
+    let _e62: vec4<f32> = shape_1;
+    let _e66: vec4<f32> = shape_1;
+    if (_e66.w > 0.5f) {
+        let _e70: f32 = outside;
+        local_1 = _e70;
+    } else {
+        let _e72: f32 = outside;
+        local_1 = (1f - _e72);
+    }
+    let _e75: f32 = local_1;
+    let _e76: vec4<f32> = shape_1;
+    let _e79: vec4<f32> = shape_1;
+    output = pow(_e75, max(_e79.z, 0.01f));
+    let _e84: f32 = output;
+    return _e84;
 }
 
 
@@ -156,10 +206,11 @@ fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    // Evaluate mask → sigma in pixels.
+        let math_closure_out = nf_math_closure_fragment_closure(vec2f(in.uv.x, 1.0 - in.uv.y), in.geo_size_px, (graph_inputs.effect_center).xy, (graph_inputs.dp_mask_gaussian_mask), in.local_px.xy);
+// Evaluate mask → sigma in pixels.
     // NOTE: The mask expression sees user coordinates (in.local_px),
     // i.e. (0,0) = bottom-left of the original source image.
-    let gb_sigma = max(select(0.0, max((graph_inputs.float_input_dp).x, 0.0) * cb_mask(in.local_px.xy / params.geo_size, (graph_inputs.effect_center).xy, params.geo_size, (graph_inputs.dp_mask_gaussian_mask)), true), 0.0);
+    let gb_sigma = max(select(0.0, max(13.333333, 0.0) * clamp(math_closure_out, 0.0, 1.0), true), 0.0);
     if (gb_sigma <= 0.0) { return textureSampleLevel(pass_tex_sys_cb_chromatic_blur_rgb, pass_samp_sys_cb_chromatic_blur_rgb, in.uv, 0.0); }
 
     // Sigma → mip level (clamped to safe range).
@@ -168,11 +219,11 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         gb_m = clamp(log2(gb_sigma * 1.333333), 0.0, 6.0);
     }
 
-    let gb_mip0_size = vec2f(1344.0, 2880.0);
+    let gb_mip0_size = vec2f(1152.0, 1152.0);
 
     // Transform from user coordinates (original image space) to padded
     // texture coordinates.  User (0,0) → padded (pad_offset).
-    let gb_pad_offset = vec2f(42.0, 40.0);
+    let gb_pad_offset = vec2f(36.0, 36.0);
     let gb_coord = in.local_px.xy + gb_pad_offset;
 
     // Floor / ceil mip levels.

@@ -5,6 +5,7 @@
     "version": "0.1.0"
   },
   "nodeTypes": [
+    "Abs",
     "Acos",
     "Asin",
     "Atan",
@@ -992,6 +993,29 @@
   },
   "nodes": [
     {
+      "type": "Abs",
+      "label": "Abs",
+      "category": "Math",
+      "description": "Compute absolute value component-wise; output type follows input",
+      "inputs": [
+        {
+          "id": "x",
+          "name": "X",
+          "type": "any"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "result",
+          "name": "Result",
+          "type": "any"
+        }
+      ],
+      "defaultParams": {
+        "x": 0
+      }
+    },
+    {
       "type": "Acos",
       "label": "Acos",
       "category": "Math",
@@ -1419,7 +1443,7 @@
       "type": "ChromaticBlur",
       "label": "Chromatic Blur",
       "category": "Filter",
-      "description": "Apply radial blur, RGB separation, and masked Gaussian blur to a texture",
+      "description": "Apply radial blur, RGB separation, and Gaussian blur with three material masks (0–1)",
       "inputs": [
         {
           "id": "texture",
@@ -1451,13 +1475,13 @@
         },
         {
           "id": "center",
-          "name": "Center · LocalUV",
+          "name": "Center · LocalPx",
           "type": "vector2",
           "default": [
-            0.5,
-            0.5
+            0,
+            0
           ],
-          "coordinateSpace": "local-uv"
+          "coordinateSpace": "local-px"
         },
         {
           "id": "radialEnabled",
@@ -1490,13 +1514,7 @@
         {
           "id": "radialMask",
           "name": "Radial Mask",
-          "type": "vector4",
-          "default": [
-            640,
-            0.86,
-            1.7,
-            1
-          ]
+          "type": "material"
         },
         {
           "id": "rgbEnabled",
@@ -1567,13 +1585,7 @@
         {
           "id": "rgbMask",
           "name": "RGB Mask",
-          "type": "vector4",
-          "default": [
-            640,
-            0.59,
-            1,
-            1
-          ]
+          "type": "material"
         },
         {
           "id": "gaussianEnabled",
@@ -1595,13 +1607,7 @@
         {
           "id": "gaussianMask",
           "name": "Gaussian Mask",
-          "type": "vector4",
-          "default": [
-            640,
-            0.86,
-            1.7,
-            1
-          ]
+          "type": "material"
         }
       ],
       "outputs": [

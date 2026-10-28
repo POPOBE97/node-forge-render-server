@@ -7,11 +7,12 @@ use crate::{
     renderer::{
         pass_source::{TextureSourceRef, processing_input_connection, resolve_texture_source_ref},
         scene_prep::composite_layers_in_draw_order,
-        types::{PassOutputRegistry, PassTextureRef},
+        types::{MaterialCompileContext, PassOutputRegistry, PassTextureRef},
         wgsl::{
             build_bloom_extract_material_bundle, build_blur_image_wgsl_bundle,
             build_pass_wgsl_bundle,
         },
+        wgsl_chromatic_blur::compile_mask,
     },
 };
 
@@ -104,10 +105,24 @@ fn deps_for_pass_node(
         }
         "Downsample" | "Convolution" | "Upsample" | "GradientBlur" | "ChromaticBlur" => {
             let (source_conn, _) = processing_input_connection(scene, pass_node_id)?;
-            match resolve_texture_source_ref(scene, nodes_by_id, &source_conn.from)? {
-                TextureSourceRef::Image { .. } => Ok(Vec::new()),
-                TextureSourceRef::Surface(texture_ref) => Ok(vec![texture_ref.source.node_id]),
+            let mut dependencies =
+                match resolve_texture_source_ref(scene, nodes_by_id, &source_conn.from)? {
+                    TextureSourceRef::Image { .. } => Vec::new(),
+                    TextureSourceRef::Surface(texture_ref) => vec![texture_ref.source.node_id],
+                };
+            if node.node_type == "ChromaticBlur" {
+                let mut ctx = MaterialCompileContext::default();
+                let mut cache = HashMap::new();
+                for port in ["radialMask", "rgbMask", "gaussianMask"] {
+                    compile_mask(scene, nodes_by_id, node, port, &mut ctx, &mut cache)?;
+                }
+                dependencies.extend(
+                    ctx.pass_textures.into_iter().map(|texture| texture.source.node_id),
+                );
+                dependencies.sort();
+                dependencies.dedup();
             }
+            Ok(dependencies)
         }
         "Composite" => composite_layers_in_draw_order(scene, nodes_by_id, pass_node_id),
         "IntelligentLight" | "MeshGradient" | "TextPass" => Ok(Vec::new()),

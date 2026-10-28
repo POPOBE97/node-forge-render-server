@@ -4,13 +4,13 @@
   "actions": [
     { "type": "step", "frames": 1 },
     { "type": "assertState", "stateId": "initial" },
-    { "type": "mouse", "x": 315, "y": 2100 },
+    { "type": "mouse", "x": 270, "y": 810 },
     { "type": "event", "eventType": "mousemove" },
     { "type": "assertState", "stateId": "following" },
     { "type": "step", "frames": 1 },
     { "type": "mouse", "x": 0, "y": 0 },
     { "type": "step", "frames": 1 },
-    { "type": "mouse", "x": 1260, "y": 2800 },
+    { "type": "mouse", "x": 1080, "y": 1080 },
     { "type": "step", "frames": 1 }
   ]
 }

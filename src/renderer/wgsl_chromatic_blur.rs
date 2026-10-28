@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use anyhow::{Result, anyhow, bail};
 
 use super::{
+    geometry_resolver::is_pass_like_node_type,
     node_compiler::{
         compile_material_expr,
         shader_material::{SYSTEM_DECL, SYSTEM_DECL_KEY},
@@ -20,26 +21,15 @@ use crate::{
     schema,
 };
 
-const MASK_HELPER: &str = r#"
-fn cb_mask(uv: vec2f, center: vec2f, size: vec2f, mask: vec4f) -> f32 {
-    let distance = length((uv - center) * size);
-    let outer = max(mask.x, 1.0);
-    let inner = outer * (1.0 - clamp(mask.y, 0.001, 1.0));
-    let outside = smoothstep(inner, outer, distance);
-    return pow(select(1.0 - outside, outside, mask.w > 0.5), max(mask.z, 0.01));
-}
-"#;
-
 const SAMPLE_HELPER: &str = r#"
 fn cb_read(image: texture_2d<f32>, image_sampler: sampler, uv: vec2f) -> vec4f {
-    let value = sample_texture_local_uv(image, image_sampler, uv);
-    return select(value, vec4f(0.0), any(uv < vec2f(0.0)) || any(uv > vec2f(1.0)));
+    return sample_texture_local_uv(image, image_sampler, uv);
 }
 
 fn cb_radial(image: texture_2d<f32>, image_sampler: sampler, uv: vec2f,
-    center: vec2f, amount: f32, samples: i32) -> vec4f {
+    center_px: vec2f, size: vec2f, amount: f32, samples: i32) -> vec4f {
     let count = u32(clamp(samples, 2, 48));
-    let ray = uv - center;
+    let ray = (uv * size - center_px) / size;
     var result = vec4f(0.0);
     for (var i = 0u; i < count; i++) {
         let t = f32(i) / f32(count - 1u) - 0.5;
@@ -49,9 +39,9 @@ fn cb_radial(image: texture_2d<f32>, image_sampler: sampler, uv: vec2f,
 }
 
 fn cb_rgb(image: texture_2d<f32>, image_sampler: sampler, uv: vec2f,
-    center: vec2f, size: vec2f, amount: f32, offset: f32, spread: f32,
+    center_px: vec2f, size: vec2f, amount: f32, offset: f32, spread: f32,
     samples: i32, channels: vec3f, fixed_direction: bool, angle_degrees: f32) -> vec4f {
-    let delta = (uv - center) * size;
+    let delta = uv * size - center_px;
     let angle = angle_degrees * 0.017453292519943295;
     let direction = select(delta / max(length(delta), 0.0001), vec2f(cos(angle), sin(angle)), fixed_direction);
     let step = direction * amount / size;
@@ -153,6 +143,51 @@ fn input(
     })
 }
 
+/// Evaluate a connected mask in the consuming pass's LocalPx/LocalUV space.
+/// Scalars are coverage; material colors/vectors use their first (red) channel.
+pub(crate) fn compile_mask(
+    scene: &SceneDSL,
+    nodes: &HashMap<String, Node>,
+    node: &Node,
+    port: &str,
+    ctx: &mut MaterialCompileContext,
+    cache: &mut HashMap<(String, String), TypedExpr>,
+) -> Result<TypedExpr> {
+    let edge = incoming_connection(scene, &node.id, port).ok_or_else(|| {
+        anyhow!("ChromaticBlur {}: '{port}' material input is not connected", node.id)
+    })?;
+    let upstream = nodes.get(&edge.from.node_id).ok_or_else(|| {
+        anyhow!("ChromaticBlur {}: missing mask node {}", node.id, edge.from.node_id)
+    })?;
+    if is_pass_like_node_type(&upstream.node_type) {
+        bail!(
+            "ChromaticBlur {}: '{port}' requires a material expression, got pass node {}",
+            node.id, upstream.id,
+        );
+    }
+    let value = compile_material_expr(
+        scene,
+        nodes,
+        &edge.from.node_id,
+        Some(&edge.from.port_id),
+        ctx,
+        cache,
+    )?;
+    let scalar = match value.ty {
+        ValueType::Vec2 | ValueType::Vec3 | ValueType::Vec4 => TypedExpr::with_time(
+            format!("({}).x", value.expr),
+            ValueType::F32,
+            value.uses_time,
+        ),
+        _ => coerce_to_type(value, ValueType::F32)?,
+    };
+    Ok(TypedExpr::with_time(
+        format!("clamp({}, 0.0, 1.0)", scalar.expr),
+        ValueType::F32,
+        scalar.uses_time,
+    ))
+}
+
 pub(crate) fn compile_sigma(
     scene: &SceneDSL,
     nodes: &HashMap<String, Node>,
@@ -160,18 +195,7 @@ pub(crate) fn compile_sigma(
     ctx: &mut MaterialCompileContext,
     cache: &mut HashMap<(String, String), TypedExpr>,
 ) -> Result<TypedExpr> {
-    ctx.extra_wgsl_decls
-        .insert("chromatic.mask".into(), MASK_HELPER.into());
-    let center = input(scene, nodes, node, "center", ValueType::Vec2, ctx, cache)?;
-    let mask = input(
-        scene,
-        nodes,
-        node,
-        "gaussianMask",
-        ValueType::Vec4,
-        ctx,
-        cache,
-    )?;
+    let mask = compile_mask(scene, nodes, node, "gaussianMask", ctx, cache)?;
     let sigma = input(
         scene,
         nodes,
@@ -190,11 +214,10 @@ pub(crate) fn compile_sigma(
         ctx,
         cache,
     )?;
-    Ok(TypedExpr::new(
-        format!(
-            "select(0.0, max({sigma}, 0.0) * cb_mask(in.local_px.xy / params.geo_size, {center}, params.geo_size, {mask}), {enabled})"
-        ),
+    Ok(TypedExpr::with_time(
+        format!("select(0.0, max({sigma}, 0.0) * {}, {enabled})", mask.expr),
         ValueType::F32,
+        mask.uses_time,
     ))
 }
 
@@ -215,26 +238,23 @@ pub fn build_chromatic_stage_bundle(
     ctx.extra_wgsl_decls
         .insert(SYSTEM_DECL_KEY.into(), SYSTEM_DECL.into());
     ctx.extra_wgsl_decls
-        .insert("chromatic.mask".into(), MASK_HELPER.into());
-    ctx.extra_wgsl_decls
         .insert("chromatic.sample".into(), SAMPLE_HELPER.into());
+    let prefix = stage.name();
+    let mask = compile_mask(scene, nodes, node, &format!("{prefix}Mask"), &mut ctx, &mut cache)?;
     let mut get = |port: &str, ty| input(scene, nodes, node, port, ty, &mut ctx, &mut cache);
     let center = get("center", ValueType::Vec2)?;
-    let prefix = stage.name();
-    let mask = get(&format!("{prefix}Mask"), ValueType::Vec4)?;
     let enabled = get(&format!("{prefix}Enabled"), ValueType::Bool)?;
     let samples = get(&format!("{prefix}Samples"), ValueType::I32)?;
     // Same renderer-owned RasterUV → LocalUV boundary as ShaderMaterialInput.
     // Preserve interpolated UV precision instead of dividing interpolated pixel positions.
     let uv = "vec2f(in.uv.x, 1.0 - in.uv.y)";
-    let amount =
-        format!("select(0.0, cb_mask({uv}, {center}, params.geo_size, {mask}), {enabled})");
+    let amount = format!("select(0.0, {}, {enabled})", mask.expr);
     let tex = MaterialCompileContext::pass_tex_var_name(source_id);
     let sampler = MaterialCompileContext::pass_sampler_var_name(source_id);
     let expression = match stage {
         ChromaticStage::Radial => {
             let strength = get("radialStrength", ValueType::F32)?;
-            format!("cb_radial({tex}, {sampler}, {uv}, {center}, {amount} * {strength}, {samples})")
+            format!("cb_radial({tex}, {sampler}, {uv}, {center}, params.geo_size, {amount} * {strength}, {samples})")
         }
         ChromaticStage::Rgb => {
             let offset = get("rgbOffset", ValueType::F32)?;
@@ -271,4 +291,46 @@ pub fn build_chromatic_stage_bundle(
         graph_binding_kind,
         shader_parameter_schema: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn material_masks_require_connections_even_for_disabled_stages() {
+        let scene: SceneDSL = serde_json::from_value(json!({
+            "version":"6.1", "workingColorSpace":"linear-srgb", "dpi":3,
+            "metadata":{"name":"mask contract"},
+            "nodes":[{"id":"blur", "type":"ChromaticBlur", "params":{
+                "radialEnabled":false, "rgbEnabled":false, "gaussianEnabled":false
+            }}], "connections":[]
+        })).unwrap();
+        let nodes = scene.nodes.iter().cloned().map(|n| (n.id.clone(), n)).collect();
+        for port in ["radialMask", "rgbMask", "gaussianMask"] {
+            let error = compile_mask(
+                &scene, &nodes, &scene.nodes[0], port,
+                &mut MaterialCompileContext::default(), &mut HashMap::new(),
+            ).unwrap_err();
+            assert!(error.to_string().contains(&format!("'{port}' material input is not connected")));
+        }
+    }
+
+    #[test]
+    fn material_masks_reject_raw_pass_outputs() {
+        let scene: SceneDSL = serde_json::from_value(json!({
+            "version":"6.1", "workingColorSpace":"linear-srgb", "dpi":3,
+            "metadata":{"name":"mask contract"},
+            "nodes":[{"id":"blur", "type":"ChromaticBlur"}, {"id":"pass", "type":"ImagePass"}],
+            "connections":[{"id":"mask", "from":{"nodeId":"pass","portId":"texture"},
+                "to":{"nodeId":"blur","portId":"rgbMask"}}]
+        })).unwrap();
+        let nodes = scene.nodes.iter().cloned().map(|n| (n.id.clone(), n)).collect();
+        let error = compile_mask(
+            &scene, &nodes, &scene.nodes[0], "rgbMask",
+            &mut MaterialCompileContext::default(), &mut HashMap::new(),
+        ).unwrap_err();
+        assert!(error.to_string().contains("requires a material expression, got pass node pass"));
+    }
 }

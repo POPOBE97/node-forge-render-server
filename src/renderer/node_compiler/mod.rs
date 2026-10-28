@@ -284,6 +284,7 @@ fn is_pure_group_node_type(node_type: &str) -> bool {
             | "MathClamp"
             | "MathMax"
             | "MathPower"
+            | "Abs"
             | "Lerp"
             | "MathClosure"
             | "Remap"
@@ -899,6 +900,15 @@ fn compile_expr(
         "Attribute" => attribute::compile_attribute(node, out_port)?,
 
         // Math nodes
+        "Abs" => math_nodes::compile_math_abs(
+            scene,
+            nodes_by_id,
+            node,
+            out_port,
+            ctx,
+            cache,
+            compile_fn,
+        )?,
         "MathAdd" => math_nodes::compile_math_add(
             scene,
             nodes_by_id,
